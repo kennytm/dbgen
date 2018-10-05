@@ -97,7 +97,7 @@ where
 {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> T {
         let normalized_index = self.searcher.sample(rng);
-        let offset = self.ranges.range(normalized_index..).next().expect("found").1;
+        let offset = self.ranges.range(..=normalized_index).next_back().expect("found").1;
         normalized_index + *offset
     }
 }
@@ -115,8 +115,8 @@ where
 
     {
         let mut push = |start, end| {
+            normalized_ranges.insert(normalized_len, start - normalized_len);
             normalized_len += end - start + one;
-            normalized_ranges.insert(normalized_len, end - normalized_len + one);
         };
 
         for r in ranges {
@@ -267,5 +267,39 @@ impl Compiled {
                 output.push(b);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use rand::{rngs::SmallRng, FromEntropy};
+    use regex::Regex;
+    use std::str::from_utf8;
+
+    fn check(pattern: &str) {
+        let r = Regex::new(pattern).unwrap();
+        let gen = Compiled::new(pattern, "", 100).unwrap();
+        let mut rng = SmallRng::from_entropy();
+
+        let mut res = Vec::with_capacity(100);
+        for _ in 0..10000 {
+            res.clear();
+            gen.eval_into(&mut rng, &mut res);
+            let s = from_utf8(&res).unwrap();
+            assert!(r.is_match(s), "Wrong sample: {}", s);
+        }
+    }
+
+    #[test]
+    fn test_class() {
+        check("[0-9A-Z]{20}");
+        check(r"\d\D\s\S\w\W");
+        check(".");
+    }
+
+    #[test]
+    fn test_alt() {
+        check("12{3,}|4{5,6}|7[89]");
     }
 }
