@@ -52,13 +52,17 @@ expr_float = @{
     ) ~ (^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+)? |
     ASCII_DIGIT+ ~ ^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+
 }
+expr_neg = {
+    "-" ~ expr
+}
 
 expr = _{
     expr_rownum |
     expr_function |
     expr_string |
     expr_integer |
-    expr_float
+    expr_float |
+    expr_neg
 }
 
 insert_into = _{

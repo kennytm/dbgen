@@ -1,8 +1,8 @@
 use data_encoding::HEXUPPER;
 use failure::ResultExt;
-use rand::{prng::Hc128Rng, Rng, SeedableRng};
+use rand::{distributions as distr, prng::Hc128Rng, Rng, SeedableRng};
 use std::io::Write;
-use std::str;
+use std::{i64, str, u64};
 
 use crate::error::{Error, ErrorKind};
 use crate::parser::{Expr, Function, Template};
@@ -10,8 +10,7 @@ use crate::quote::Quote;
 
 #[derive(Clone)]
 enum Value {
-    Signed(i64),
-    Unsigned(u64),
+    Integer(i128),
     Float(f64),
     String(String),
     Bytes(Vec<u8>),
@@ -20,8 +19,7 @@ enum Value {
 impl Value {
     fn write_sql(&self, mut output: impl Write) -> Result<(), Error> {
         match self {
-            Value::Signed(i) => write!(output, "{}", i),
-            Value::Unsigned(i) => write!(output, "{}", i),
+            Value::Integer(i) => write!(output, "{}", i),
             Value::Float(f) => write!(output, "{}", f),
             Value::String(s) => output.write_all(&Quote::Single.escape_bytes(s.as_bytes())),
             Value::Bytes(b) => write!(output, "x'{}'", HEXUPPER.encode(b)),
@@ -72,18 +70,36 @@ enum Compiled {
     RandU32(u32),
     RandU64(u32),
     RandRegex(crate::regex::Compiled),
+    RandURange(distr::Uniform<u64>),
+    RandIRange(distr::Uniform<i64>),
+    RandUniform(distr::Uniform<f64>),
 }
 
 trait ArgExtract {
-    fn extract_u64(&self) -> Option<u64>;
+    fn extract_u32(&self) -> Option<u32>;
+    fn extract_i128(&self) -> Option<i128>;
+    fn extract_f64(&self) -> Option<f64>;
     fn extract_str(&self) -> Option<&str>;
+    fn extract_value(&self) -> Option<&Value>;
 }
 
 impl ArgExtract for Value {
-    fn extract_u64(&self) -> Option<u64> {
+    fn extract_u32(&self) -> Option<u32> {
         match *self {
-            Value::Unsigned(u) => Some(u),
-            Value::Signed(i) if i >= 0 => Some(i as u64),
+            Value::Integer(i) if 0 <= i && i <= 0xffff_ffff => Some(i as u32),
+            _ => None,
+        }
+    }
+    fn extract_i128(&self) -> Option<i128> {
+        match *self {
+            Value::Integer(i) => Some(i),
+            _ => None,
+        }
+    }
+    fn extract_f64(&self) -> Option<f64> {
+        match *self {
+            Value::Integer(i) => Some(i as f64),
+            Value::Float(f) => Some(f),
             _ => None,
         }
     }
@@ -94,12 +110,27 @@ impl ArgExtract for Value {
             _ => None,
         }
     }
+    fn extract_value(&self) -> Option<&Value> {
+        Some(self)
+    }
 }
 
 impl ArgExtract for Compiled {
-    fn extract_u64(&self) -> Option<u64> {
+    fn extract_u32(&self) -> Option<u32> {
         match self {
-            Compiled::Constant(v) => v.extract_u64(),
+            Compiled::Constant(v) => v.extract_u32(),
+            _ => None,
+        }
+    }
+    fn extract_i128(&self) -> Option<i128> {
+        match self {
+            Compiled::Constant(v) => v.extract_i128(),
+            _ => None,
+        }
+    }
+    fn extract_f64(&self) -> Option<f64> {
+        match self {
+            Compiled::Constant(v) => v.extract_f64(),
             _ => None,
         }
     }
@@ -109,58 +140,113 @@ impl ArgExtract for Compiled {
             _ => None,
         }
     }
+    fn extract_value(&self) -> Option<&Value> {
+        match self {
+            Compiled::Constant(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 fn precompile_function<T: ArgExtract>(name: Function, args: &[T]) -> Result<Compiled, Error> {
-    let get_u64 = |name, index: usize| -> Result<u64, Error> {
-        let arg = args.get(index).ok_or(ErrorKind::NotEnoughArguments(name))?;
-        let arg = arg.extract_u64().ok_or(ErrorKind::InvalidArgumentType {
-            name,
-            index,
-            expected: "unsigned integer",
-        })?;
-        Ok(arg)
-    };
-    let get_str = |name, index: usize| -> Result<&str, Error> {
-        let arg: &T = args.get(index).ok_or(ErrorKind::NotEnoughArguments(name))?;
-        let arg = arg.extract_str().ok_or(ErrorKind::InvalidArgumentType {
-            name,
-            index,
-            expected: "string",
-        })?;
-        Ok(arg)
-    };
-    let get_u64_opt = |name, index: usize, mut value| -> Result<u64, Error> {
-        if let Some(arg) = args.get(index) {
-            value = arg.extract_u64().ok_or(ErrorKind::InvalidArgumentType {
-                name,
-                index,
-                expected: "unsigned integer",
-            })?;
-        }
-        Ok(value)
-    };
-    let get_str_opt = |name, index: usize, mut value| -> Result<&str, Error> {
-        if let Some(arg) = args.get(index) {
-            value = arg.extract_str().ok_or(ErrorKind::InvalidArgumentType {
-                name,
-                index,
-                expected: "string",
-            })?;
-        }
-        Ok(value)
-    };
+    macro_rules! define_getter {
+        ($get:ident, $get_opt:ident, $extract:ident, $name:expr) => {
+            let $get = |name, index: usize| -> Result<_, Error> {
+                let arg = args.get(index).ok_or(ErrorKind::NotEnoughArguments(name))?;
+                let arg = arg.$extract().ok_or(ErrorKind::InvalidArgumentType {
+                    name,
+                    index,
+                    expected: $name,
+                })?;
+                Ok(arg)
+            };
+            let $get_opt = |name, index: usize, mut value| -> Result<_, Error> {
+                if let Some(arg) = args.get(index) {
+                    value = arg.$extract().ok_or(ErrorKind::InvalidArgumentType {
+                        name,
+                        index,
+                        expected: $name,
+                    })?;
+                }
+                Ok(value)
+            };
+        };
+    }
+
+    define_getter!(get_u32, get_u32_opt, extract_u32, "unsigned integer");
+    define_getter!(get_i128, get_i128_opt, extract_i128, "integer");
+    define_getter!(get_f64, get_f64_opt, extract_f64, "number");
+    define_getter!(get_str, get_str_opt, extract_str, "string");
+    define_getter!(get_value, get_value_opt, extract_value, "constant");
 
     match name {
         Function::RandInt | Function::RandUInt => {
-            let bits = get_u64(name, 0)?;
+            let bits = get_u32(name, 0)?;
             compile_rand_int(name, bits)
         }
         Function::RandRegex => {
             let regex = get_str(name, 0)?;
             let flags = get_str_opt(name, 1, "")?;
-            let max_repeat = get_u64_opt(name, 2, 100)?;
-            crate::regex::Compiled::new(regex, flags, max_repeat as u32).map(Compiled::RandRegex)
+            let max_repeat = get_u32_opt(name, 2, 100)?;
+            crate::regex::Compiled::new(regex, flags, max_repeat).map(Compiled::RandRegex)
+        }
+        Function::RandRange | Function::RandRangeInclusive => {
+            let lower = get_i128(name, 0)?;
+            let upper = get_i128(name, 1)?;
+            let is_inclusive = name == Function::RandRangeInclusive;
+            if lower == upper && is_inclusive {
+                Ok(Compiled::Constant(Value::Integer(lower)))
+            } else if !(lower < upper) {
+                Err(ErrorKind::InvalidArguments {
+                    name,
+                    cause: format!("limits are wrongly ordered, expecting {} < {}", lower, upper),
+                }
+                .into())
+            } else if 0 <= lower && upper <= i128::from(u64::MAX) {
+                Ok(Compiled::RandURange(compile_uniform(
+                    lower as u64,
+                    upper as u64,
+                    is_inclusive,
+                )))
+            } else if i128::from(i64::MIN) <= lower && upper <= i128::from(i64::MAX) {
+                Ok(Compiled::RandIRange(compile_uniform(
+                    lower as i64,
+                    upper as i64,
+                    is_inclusive,
+                )))
+            } else {
+                Err(ErrorKind::IntegerOverflow(format!("{}({}, {})", name, lower, upper)).into())
+            }
+        }
+        Function::RandUniform | Function::RandUniformInclusive => {
+            let lower = get_f64(name, 0)?;
+            let upper = get_f64(name, 1)?;
+            let is_inclusive = name == Function::RandUniformInclusive;
+            if lower == upper && is_inclusive {
+                Ok(Compiled::Constant(Value::Float(lower)))
+            } else if !(lower < upper) {
+                Err(ErrorKind::InvalidArguments {
+                    name,
+                    cause: format!("limits are wrongly ordered, expecting {} < {}", lower, upper),
+                }
+                .into())
+            } else {
+                Ok(Compiled::RandUniform(compile_uniform(lower, upper, is_inclusive)))
+            }
+        }
+
+        Function::Neg => {
+            let value = get_value(name, 0)?;
+            match value {
+                Value::Integer(i) => Ok(Compiled::Constant(Value::Integer(-i))),
+                Value::Float(f) => Ok(Compiled::Constant(Value::Float(-f))),
+                _ => Err(ErrorKind::InvalidArgumentType {
+                    name,
+                    index: 0,
+                    expected: "number",
+                }
+                .into()),
+            }
         }
     }
 }
@@ -174,7 +260,7 @@ impl Compiled {
     fn compile(expr: Expr) -> Result<Self, Error> {
         Ok(match expr {
             Expr::RowNum => Compiled::RowNum,
-            Expr::Integer(u) => Compiled::Constant(Value::Unsigned(u)),
+            Expr::Integer(u) => Compiled::Constant(Value::Integer(u.into())),
             Expr::Float(f) => Compiled::Constant(Value::Float(f)),
             Expr::String(s) => Compiled::Constant(Value::String(s)),
             Expr::Function { name, args } => {
@@ -194,7 +280,7 @@ impl Compiled {
 
     fn eval(&self, state: &mut State) -> Result<Value, Error> {
         Ok(match self {
-            Compiled::RowNum => Value::Unsigned(state.row_num),
+            Compiled::RowNum => Value::Integer(state.row_num.into()),
             Compiled::Constant(v) => v.clone(),
             Compiled::RawFunction { name, args } => {
                 let args = args.iter().map(|c| c.eval(state)).collect::<Result<Vec<_>, _>>()?;
@@ -202,14 +288,14 @@ impl Compiled {
                 compiled.eval(state)?
             }
 
-            Compiled::RandI8(shift) => Value::Signed((state.rng.gen::<i8>() >> shift).into()),
-            Compiled::RandI16(shift) => Value::Signed((state.rng.gen::<i16>() >> shift).into()),
-            Compiled::RandI32(shift) => Value::Signed((state.rng.gen::<i32>() >> shift).into()),
-            Compiled::RandI64(shift) => Value::Signed((state.rng.gen::<i64>() >> shift).into()),
-            Compiled::RandU8(shift) => Value::Unsigned((state.rng.gen::<u8>() >> shift).into()),
-            Compiled::RandU16(shift) => Value::Unsigned((state.rng.gen::<u16>() >> shift).into()),
-            Compiled::RandU32(shift) => Value::Unsigned((state.rng.gen::<u32>() >> shift).into()),
-            Compiled::RandU64(shift) => Value::Unsigned((state.rng.gen::<u64>() >> shift).into()),
+            Compiled::RandI8(shift) => Value::Integer((state.rng.gen::<i8>() >> shift).into()),
+            Compiled::RandI16(shift) => Value::Integer((state.rng.gen::<i16>() >> shift).into()),
+            Compiled::RandI32(shift) => Value::Integer((state.rng.gen::<i32>() >> shift).into()),
+            Compiled::RandI64(shift) => Value::Integer((state.rng.gen::<i64>() >> shift).into()),
+            Compiled::RandU8(shift) => Value::Integer((state.rng.gen::<u8>() >> shift).into()),
+            Compiled::RandU16(shift) => Value::Integer((state.rng.gen::<u16>() >> shift).into()),
+            Compiled::RandU32(shift) => Value::Integer((state.rng.gen::<u32>() >> shift).into()),
+            Compiled::RandU64(shift) => Value::Integer((state.rng.gen::<u64>() >> shift).into()),
 
             Compiled::RandRegex(compiled) => {
                 let mut result = Vec::new();
@@ -219,13 +305,17 @@ impl Compiled {
                     Err(e) => Value::Bytes(e.into_bytes()),
                 }
             }
+
+            Compiled::RandIRange(d) => Value::Integer(state.rng.sample(d).into()),
+            Compiled::RandURange(d) => Value::Integer(state.rng.sample(d).into()),
+            Compiled::RandUniform(d) => Value::Float(state.rng.sample(d)),
         })
     }
 }
 
-fn compile_rand_int(name: Function, bits: u64) -> Result<Compiled, Error> {
+fn compile_rand_int(name: Function, bits: u32) -> Result<Compiled, Error> {
     let gen_bits = match bits {
-        0 => return Ok(Compiled::Constant(Value::Unsigned(0))),
+        0 => return Ok(Compiled::Constant(Value::Integer(0))),
         1..=8 => 8,
         9..=16 => 16,
         17..=32 => 32,
@@ -243,7 +333,18 @@ fn compile_rand_int(name: Function, bits: u64) -> Result<Compiled, Error> {
         (Function::RandUInt, 64) => Compiled::RandU64,
         _ => unreachable!(),
     };
-    Ok(f((gen_bits - bits) as u32))
+    Ok(f(gen_bits - bits))
+}
+
+fn compile_uniform<T>(lower: T, upper: T, inclusive: bool) -> distr::Uniform<T>
+where
+    T: distr::uniform::SampleUniform,
+{
+    if inclusive {
+        distr::Uniform::new_inclusive(lower, upper)
+    } else {
+        distr::Uniform::new(lower, upper)
+    }
 }
 
 pub struct CompiledGenerator {

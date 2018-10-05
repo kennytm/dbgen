@@ -49,6 +49,14 @@ generate a new row when writing them out.
 
     Examples: `'Hello'`, `'10 o''clock'`
 
+### Operators
+
+From highest to lowest precedence:
+
+* **-x**
+
+    Negative of *x*. The number *x* must be an integer or float.
+
 ### Symbols
 
 * **rownum**
@@ -85,3 +93,22 @@ generate a new row when writing them out.
 
     The flags `m` (multi-line) and `U` (ungreedy) does not affect string generation and are ignored.
 
+* **rand.range(7, 19)**
+
+    Generates a random integer uniformly distributed in the half-open interval 7 ≤ *x* < 19.
+    The length of the range must be less than 2<sup>64</sup>.
+
+* **rand.range_inclusive(8, 35)**
+
+    Generates a random integer uniformly distributed in the closed interval 8 ≤ *x* ≤ 35.
+    The length of the range must be less than 2<sup>64</sup>.
+
+* **rand.uniform(2.4, 7.5)**
+
+    Generates a random floating point number uniformly distributed in the half-open interval
+    2.4 ≤ *x* < 7.5.
+
+* **rand.uniform_inclusive(1.6, 8.4)**
+
+    Generates a random floating point number uniformly distributed in the closed interval
+    1.6 ≤ *x* ≤ 8.4.

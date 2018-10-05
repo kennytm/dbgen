@@ -74,6 +74,15 @@ impl Expr {
                 let number = pair.as_str().parse().expect("parse rule <expr_float>");
                 Ok(Expr::Float(number))
             }
+            Rule::expr_neg => {
+                let mut pairs = pair.into_inner();
+                let inner = pairs.next().expect("parse rule <expr>");
+                let inner = Expr::from_pair(inner)?;
+                Ok(Expr::Function {
+                    name: Function::Neg,
+                    args: vec![inner],
+                })
+            }
             r => panic!("unexpected rule <{:?}> while parsing an expression", r),
         }
     }
@@ -114,5 +123,11 @@ define_function! {
         RandInt = "rand.int",
         RandUInt = "rand.uint",
         RandRegex = "rand.regex",
+        RandRange = "rand.range",
+        RandRangeInclusive = "rand.range_inclusive",
+        RandUniform = "rand.uniform",
+        RandUniformInclusive = "rand.uniform_inclusive",
+
+        Neg = "-",
     }
 }

@@ -39,6 +39,9 @@ pub enum ErrorKind {
         expected: &'static str,
     },
 
+    #[fail(display = "invalid arguments: in function {}, {}", name, cause)]
+    InvalidArguments { name: Function, cause: String },
+
     #[fail(display = "failed to write SQL schema")]
     WriteSqlSchema,
 
