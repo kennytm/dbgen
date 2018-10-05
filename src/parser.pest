@@ -1,0 +1,70 @@
+WHITESPACE = _{
+    " "|"\t"|"\r"|"\n"|"\x0b"|"\x0c"
+}
+
+COMMENT = _{
+    "--" ~ (!NEWLINE ~ ANY)* ~ NEWLINE |
+    "/*" ~ (!"*/" ~ ANY)* ~ "*/"
+}
+
+back_quoted     = @{ "`" ~ (!("`"|"\\") ~ ANY | "``" | "\\" ~ ANY)* ~ "`" }
+single_quoted   = @{ "'" ~ (!("'"|"\\") ~ ANY | "''" | "\\" ~ ANY)* ~ "'" }
+double_quoted   = @{ "\"" ~ (!("\""|"\\") ~ ANY | "\"\"" | "\\" ~ ANY)* ~ "\"" }
+
+balanced = _{
+    "(" ~ balanced* ~ ")" |
+    "[" ~ balanced* ~ "]" |
+    "{" ~ balanced* ~ "}" |
+    back_quoted |
+    single_quoted |
+    double_quoted |
+    !("("|"["|"{"|"`"|"'"|"\""|")"|"]"|"}") ~ ANY
+}
+
+create_table_content = {
+    (!";" ~ balanced)*
+}
+
+create_table = _{
+    ^"create" ~ ^"table" ~ (^"if" ~ ^"not" ~ ^"exists")? ~ "_" ~ create_table_content ~ ";"
+}
+
+function_name = @{
+    (ASCII_ALPHA|"_") ~ (ASCII_ALPHANUMERIC|"_")* ~ ("." ~ (ASCII_ALPHANUMERIC|"_")+)*
+}
+
+expr_rownum = {
+    ^"rownum"
+}
+expr_function = {
+    function_name ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")"
+}
+expr_string = {
+    single_quoted
+}
+expr_integer = @{
+    ^"0x" ~ ASCII_HEX_DIGIT+ | ASCII_DIGIT+ ~ !("."|ASCII_ALPHA)
+}
+expr_float = @{
+    (
+        ASCII_DIGIT* ~ "." ~ ASCII_DIGIT+ |
+        ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT*
+    ) ~ (^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+)? |
+    ASCII_DIGIT+ ~ ^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+
+}
+
+expr = _{
+    expr_rownum |
+    expr_function |
+    expr_string |
+    expr_integer |
+    expr_float
+}
+
+insert_into = _{
+    ^"insert" ~ ^"into"? ~ "_" ~ ^"values" ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" ~ ";"
+}
+
+file = {
+    SOI ~ create_table ~ insert_into ~ &EOI
+}

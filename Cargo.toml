@@ -1,0 +1,17 @@
+[package]
+name = "dbgen"
+version = "0.1.0"
+authors = ["kennytm <kennytm@gmail.com>"]
+edition = "2018"
+
+description = "Generate random test cases for databases"
+
+[dependencies]
+structopt = "0.2"
+clap = "2.32"
+pest = "2.0"
+pest_derive = "2.0"
+failure = "0.1"
+rand = "0.5"
+data-encoding = "2.1"
+regex-syntax = "0.6"

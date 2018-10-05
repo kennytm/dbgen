@@ -1,0 +1,6 @@
+CREATE TABLE _ (
+    id  INTEGER NOT NULL,
+    k   INTEGER DEFAULT '0' NOT NULL,
+    PRIMARY KEY (id)
+);
+INSERT INTO _ VALUES (rownum, rownum);
