@@ -5,6 +5,8 @@ authors = ["kennytm <kennytm@gmail.com>"]
 edition = "2018"
 license = "MIT"
 description = "Generate random test cases for databases"
+repository = "https://github.com/kennytm/dbgen"
+
 
 [dependencies]
 structopt = "0.2"
