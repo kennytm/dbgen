@@ -4,11 +4,13 @@ use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, ResultExt};
 use rand::{EntropyRng, Rng};
 use structopt::StructOpt;
+use pbr::ProgressBar;
 
 use std::fs::{create_dir_all, read_to_string, File};
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::process::exit;
+use std::time::Duration;
 
 #[derive(StructOpt, Debug)]
 struct Args {
@@ -132,6 +134,9 @@ fn run() -> Result<(), Error> {
     eprintln!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&seed));
     let mut compiled = generator.compile(seed)?;
 
+    let mut pb = ProgressBar::new((args.files_count as u64) * (args.inserts_count as u64));
+    pb.set_max_refresh_rate(Some(Duration::from_millis(500)));
+
     let num_digits = args.files_count.to_string().len();
     for file_index in 1..=args.files_count {
         let data_path = args.out_dir.join(format!(
@@ -145,8 +150,11 @@ fn run() -> Result<(), Error> {
             compiled
                 .write_sql(&mut data_file, args.rows_count)
                 .with_context(|_| format!("failed to write to data file at {}", data_path.display()))?;
+            pb.inc();
         }
     }
+
+    pb.finish_println("Done!");
 
     Ok(())
 }
