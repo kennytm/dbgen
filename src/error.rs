@@ -1,7 +1,6 @@
+use crate::parser::Function;
 use failure::{Backtrace, Context, Fail};
 use std::fmt;
-
-use crate::parser::Function;
 
 #[derive(Fail, Debug, Clone, PartialEq, Eq)]
 //#[non_exhaustive]
@@ -39,7 +38,11 @@ pub enum ErrorKind {
         expected: &'static str,
     },
 
-    #[fail(display = "invalid arguments: in function {}, {}", name, cause)]
+    #[fail(
+        display = "invalid arguments: in function {}, assertion failed: {}",
+        name,
+        cause
+    )]
     InvalidArguments { name: Function, cause: String },
 
     #[fail(display = "failed to write SQL schema")]

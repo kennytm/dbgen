@@ -1,3 +1,4 @@
+use crate::error::{Error, ErrorKind};
 use failure::ResultExt;
 use rand::{
     distributions::{uniform::SampleUniform, Distribution, Uniform},
@@ -7,14 +8,17 @@ use regex_syntax::{
     hir::{self, Hir, HirKind},
     ParserBuilder,
 };
-use std::char;
-use std::collections::BTreeMap;
-use std::iter;
-use std::ops::{Add, AddAssign, Sub};
+use std::{
+    char,
+    collections::BTreeMap,
+    iter,
+    ops::{Add, AddAssign, Sub},
+};
 
-use crate::error::{Error, ErrorKind};
+/// A compiled regex generator
+pub struct Generator(Compiled);
 
-pub(crate) enum Compiled {
+enum Compiled {
     Empty,
     Sequence(Vec<Compiled>),
     Literal(Vec<u8>),
@@ -28,6 +32,41 @@ pub(crate) enum Compiled {
     },
     UnicodeClass(CompiledClass<u32>),
     ByteClass(CompiledClass<u8>),
+}
+
+impl Compiled {
+    fn eval_into(&self, rng: &mut impl Rng, output: &mut Vec<u8>) {
+        match self {
+            Compiled::Empty => {}
+            Compiled::Sequence(seq) => {
+                for elem in seq {
+                    elem.eval_into(rng, output);
+                }
+            }
+            Compiled::Literal(lit) => {
+                output.extend_from_slice(lit);
+            }
+            Compiled::Repeat { count, inner } => {
+                let count = count.sample(rng);
+                for _ in 0..count {
+                    inner.eval_into(rng, output);
+                }
+            }
+            Compiled::Any { index, choices } => {
+                let index = index.sample(rng);
+                choices[index].eval_into(rng, output);
+            }
+            Compiled::UnicodeClass(cls) => {
+                let c = char::from_u32(cls.sample(rng)).expect("valid char");
+                let mut buf = [0; 4];
+                output.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+            }
+            Compiled::ByteClass(cls) => {
+                let b = cls.sample(rng);
+                output.push(b);
+            }
+        }
+    }
 }
 
 fn simplify_sequence(mut seq: Vec<Compiled>) -> Compiled {
@@ -86,7 +125,7 @@ impl ClassRange for hir::ClassBytesRange {
     }
 }
 
-pub(crate) struct CompiledClass<T: SampleUniform> {
+struct CompiledClass<T: SampleUniform> {
     searcher: Uniform<T>,
     ranges: BTreeMap<T, T>,
 }
@@ -213,8 +252,9 @@ fn compile_hir(hir: Hir, max_repeat: u32) -> Result<Compiled, Error> {
     })
 }
 
-impl Compiled {
-    pub(crate) fn new(regex: &str, flags: &str, max_repeat: u32) -> Result<Self, Error> {
+impl Generator {
+    /// Compiles a regex pattern into a generator
+    pub fn new(regex: &str, flags: &str, max_repeat: u32) -> Result<Self, Error> {
         let mut parser = ParserBuilder::new();
         for flag in flags.chars() {
             match flag {
@@ -233,40 +273,14 @@ impl Compiled {
             .build()
             .parse(regex)
             .with_context(|_| ErrorKind::InvalidRegex(regex.to_owned()))?;
-        compile_hir(hir, max_repeat)
+        compile_hir(hir, max_repeat).map(Generator)
     }
 
-    pub(crate) fn eval_into(&self, rng: &mut impl Rng, output: &mut Vec<u8>) {
-        match self {
-            Compiled::Empty => {}
-            Compiled::Sequence(seq) => {
-                for elem in seq {
-                    elem.eval_into(rng, output);
-                }
-            }
-            Compiled::Literal(lit) => {
-                output.extend_from_slice(lit);
-            }
-            Compiled::Repeat { count, inner } => {
-                let count = count.sample(rng);
-                for _ in 0..count {
-                    inner.eval_into(rng, output);
-                }
-            }
-            Compiled::Any { index, choices } => {
-                let index = index.sample(rng);
-                choices[index].eval_into(rng, output);
-            }
-            Compiled::UnicodeClass(cls) => {
-                let c = char::from_u32(cls.sample(rng)).expect("valid char");
-                let mut buf = [0; 4];
-                output.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
-            }
-            Compiled::ByteClass(cls) => {
-                let b = cls.sample(rng);
-                output.push(b);
-            }
-        }
+    /// Generates a new byte string which satisfies the regex pattern.
+    pub fn eval(&self, rng: &mut impl Rng) -> Vec<u8> {
+        let mut res = Vec::new();
+        self.0.eval_into(rng, &mut res);
+        res
     }
 }
 
@@ -279,13 +293,11 @@ mod test {
 
     fn check(pattern: &str) {
         let r = Regex::new(pattern).unwrap();
-        let gen = Compiled::new(pattern, "", 100).unwrap();
+        let gen = Generator::new(pattern, "", 100).unwrap();
         let mut rng = SmallRng::from_entropy();
 
-        let mut res = Vec::with_capacity(100);
         for _ in 0..10000 {
-            res.clear();
-            gen.eval_into(&mut rng, &mut res);
+            let res = gen.eval(&mut rng);
             let s = from_utf8(&res).unwrap();
             assert!(r.is_match(s), "Wrong sample: {}", s);
         }
@@ -293,7 +305,7 @@ mod test {
 
     #[test]
     fn test_class() {
-        check("[0-9A-Z]{20}");
+        check("[0-9A-Z]{24}");
         check(r"\d\D\s\S\w\W");
         check(".");
     }

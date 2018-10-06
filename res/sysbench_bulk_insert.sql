@@ -1,6 +1,9 @@
-CREATE TABLE _ (
+CREATE TABLE sbtest1 (
     id  INTEGER NOT NULL,
     k   INTEGER DEFAULT '0' NOT NULL,
     PRIMARY KEY (id)
-);
-INSERT INTO _ VALUES (rownum, rownum);
+)
+AS SELECT
+    rownum,
+    rownum
+FROM rand;

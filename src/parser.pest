@@ -1,74 +1,72 @@
-WHITESPACE = _{
-    " "|"\t"|"\r"|"\n"|"\x0b"|"\x0c"
-}
-
-COMMENT = _{
+s = _{
+    " " |
+    "\t"|
+    "\r"|
+    "\n"|
+    "\x0b"|
+    "\x0c" |
     "--" ~ (!NEWLINE ~ ANY)* ~ NEWLINE |
     "/*" ~ (!"*/" ~ ANY)* ~ "*/"
 }
 
-back_quoted     = @{ "`" ~ (!("`"|"\\") ~ ANY | "``" | "\\" ~ ANY)* ~ "`" }
-single_quoted   = @{ "'" ~ (!("'"|"\\") ~ ANY | "''" | "\\" ~ ANY)* ~ "'" }
-double_quoted   = @{ "\"" ~ (!("\""|"\\") ~ ANY | "\"\"" | "\\" ~ ANY)* ~ "\"" }
+back_quoted     = _{ "`" ~ (!("`"|"\\") ~ ANY | "``" | "\\" ~ ANY)* ~ "`" }
+single_quoted   = _{ "'" ~ (!("'"|"\\") ~ ANY | "''" | "\\" ~ ANY)* ~ "'" }
+double_quoted   = _{ "\"" ~ (!("\""|"\\") ~ ANY | "\"\"" | "\\" ~ ANY)* ~ "\"" }
 
 balanced = _{
-    "(" ~ balanced* ~ ")" |
-    "[" ~ balanced* ~ "]" |
-    "{" ~ balanced* ~ "}" |
+    "(" ~ (balanced|s)* ~ ")" |
+    "[" ~ (balanced|s)* ~ "]" |
+    "{" ~ (balanced|s)* ~ "}" |
     back_quoted |
     single_quoted |
     double_quoted |
-    !("("|"["|"{"|"`"|"'"|"\""|")"|"]"|"}") ~ ANY
+    !("("|"["|"{"|"`"|"'"|"\""|")"|"]"|"}"|s) ~ ANY
+}
+
+ident = @{
+    back_quoted |
+    double_quoted |
+    "[" ~ (!"]" ~ ANY)* ~ "]" |
+    (ASCII_ALPHA|"_") ~ (ASCII_ALPHANUMERIC|"_")*
+}
+
+qname = {
+    ident ~ (s* ~ "." ~ s* ~ ident){0,2}
 }
 
 create_table_content = {
-    (!";" ~ balanced)*
+    "(" ~ (balanced|s)* ~ ")" ~ s* ~ (!^"as" ~ (balanced|s))*
 }
 
 create_table = _{
-    ^"create" ~ ^"table" ~ (^"if" ~ ^"not" ~ ^"exists")? ~ "_" ~ create_table_content ~ ";"
-}
-
-function_name = @{
-    (ASCII_ALPHA|"_") ~ (ASCII_ALPHANUMERIC|"_")* ~ ("." ~ (ASCII_ALPHANUMERIC|"_")+)*
-}
-
-expr_rownum = {
-    ^"rownum"
-}
-expr_function = {
-    function_name ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")"
-}
-expr_string = {
-    single_quoted
-}
-expr_integer = @{
-    ^"0x" ~ ASCII_HEX_DIGIT+ | ASCII_DIGIT+ ~ !("."|ASCII_ALPHA)
-}
-expr_float = @{
-    (
-        ASCII_DIGIT* ~ "." ~ ASCII_DIGIT+ |
-        ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT*
-    ) ~ (^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+)? |
-    ASCII_DIGIT+ ~ ^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+
-}
-expr_neg = {
-    "-" ~ expr
+    SOI ~ s* ~
+    ^"create" ~ s+ ~ ^"table" ~ s+ ~ qname ~ s* ~ create_table_content ~
+    ^"as" ~ s+ ~ ^"select" ~ s* ~ expr ~ s* ~ ("," ~ s* ~ expr ~ s*)* ~
+    ^"from" ~ s+ ~ (^"rand"|"`rand`"|"\"rand\""|"[rand]") ~
+    s* ~ (";" ~ s*)? ~ &EOI
 }
 
 expr = _{
     expr_rownum |
     expr_function |
     expr_string |
-    expr_integer |
-    expr_float |
+    expr_number |
     expr_neg
 }
 
-insert_into = _{
-    ^"insert" ~ ^"into"? ~ "_" ~ ^"values" ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" ~ ";"
+expr_rownum = {
+    ^"rownum"
 }
-
-file = {
-    SOI ~ create_table ~ insert_into ~ &EOI
+expr_function = {
+    qname ~ s* ~ "(" ~ s* ~ (expr ~ s* ~ ("," ~ s* ~ expr ~ s*)*)? ~ ")"
+}
+expr_string = {
+    single_quoted
+}
+expr_number = @{
+    ^"0x" ~ ASCII_HEX_DIGIT+ |
+    (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+) ~ (^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+)?
+}
+expr_neg = {
+    "-" ~ s* ~ expr
 }

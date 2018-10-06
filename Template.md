@@ -4,25 +4,29 @@ Template reference
 File syntax
 -----------
 
-The template file should consist of one CREATE TABLE statement and one INSERT statement, like this:
+The template file should consist of one CREATE TABLE AS statement, like this:
 
 ```sql
-CREATE TABLE _ (
+CREATE TABLE "database"."schema"."table" (
     column_1    COLUMN_TYPE_1,
+    column_2    COLUMN_TYPE_2,
     -- ...
     column_n    COLUMN_TYPE_N
-) OPTION_1 = 1, /*...*/ OPTION_N = N;
-
-INSERT INTO _ VALUES (1, 2, /*...*/ 'N');
+) OPTION_1 = 1, /*...*/ OPTION_N = N
+AS SELECT
+    rand.int(16),
+    rand.regex('[a-z]*'),
+    -- ...
+    rand.uniform(-4.0, 4.0)
+FROM rand;
 ```
 
-The table's name must be `_` (an unquoted underscore). This will be substituted with the real name
-when written as the real data. The INSERT statement should not list the column names.
+(The `FROM rand` at the end is part
 
 Expression syntax
 -----------------
 
-Each value in the INSERT statement can be an expression. `dbgen` will evaluate the expression to
+Each value in the SELECT clause can be an expression. `dbgen` will evaluate the expression to
 generate a new row when writing them out.
 
 ### Literals
