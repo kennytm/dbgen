@@ -7,6 +7,7 @@ extern crate data_encoding;
 extern crate failure;
 extern crate pbr;
 extern crate rand;
+extern crate rayon;
 extern crate structopt;
 
 use dbgen::{
@@ -19,6 +20,10 @@ use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
 use pbr::ProgressBar;
 use rand::{EntropyRng, Rng, SeedableRng, StdRng};
+use rayon::{
+    iter::{IntoParallelIterator, ParallelIterator},
+    ThreadPoolBuilder,
+};
 use std::{
     fs::{create_dir_all, read_to_string, File},
     io::{BufWriter, Write},
@@ -87,6 +92,14 @@ struct Args {
         parse(try_from_str = "seed_from_str")
     )]
     seed: Option<<StdRng as SeedableRng>::Seed>,
+
+    #[structopt(
+        short = "j",
+        long = "jobs",
+        help = "Number of jobs to run in parallel, default to number of CPUs",
+        default_value = "0"
+    )]
+    jobs: usize,
 }
 
 fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
@@ -135,6 +148,11 @@ fn run() -> Result<(), Error> {
     let input = read_to_string(&args.template).context("failed to read template")?;
     let template = Template::parse(&input)?;
 
+    ThreadPoolBuilder::new()
+        .num_threads(args.jobs)
+        .build_global()
+        .context("failed to configure thread pool")?;
+
     let table_name = match args.table_name {
         Some(n) => QName::parse(&n)?,
         None => template.name,
@@ -175,8 +193,10 @@ fn run() -> Result<(), Error> {
         pb.finish_println("Done!");
     });
 
-    let mut iv = (0..files_count).map(|i| (seeding_rng.gen(), i + 1, u64::from(i) * rows_per_file + 1));
-    let res = iv.try_for_each(|(seed, file_index, row_num)| {
+    let iv = (0..files_count)
+        .map(|i| (seeding_rng.gen(), i + 1, u64::from(i) * rows_per_file + 1))
+        .collect::<Vec<_>>();
+    let res = iv.into_par_iter().try_for_each(|(seed, file_index, row_num)| {
         let mut state = State::new(row_num, seed);
         env.write_data_file(file_index, &mut state)
     });
@@ -185,7 +205,6 @@ fn run() -> Result<(), Error> {
     progress_bar_thread.join().unwrap();
 
     res?;
-
     Ok(())
 }
 
