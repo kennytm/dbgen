@@ -19,6 +19,7 @@ pub struct State {
 
 impl State {
     /// Creates a new state from the seed.
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::needless_pass_by_value))] // false positive
     pub fn from_seed(seed: RngSeed) -> Self {
         Self {
             row_num: 1,
@@ -70,6 +71,7 @@ where
                 expected: T::NAME,
             })
     } else {
+        #[cfg_attr(feature = "cargo-clippy", allow(clippy::or_fun_call))] // false positive, this is cheap
         default.ok_or(ErrorKind::NotEnoughArguments(name))
     }
 }
@@ -80,7 +82,7 @@ impl Compiled {
             Expr::RowNum => C::RowNum,
             Expr::Value(v) => C::Constant(v),
             Expr::Function { name, args } => {
-                let args = args.into_iter().map(Compiled::compile).collect::<Result<Vec<_>, _>>()?;
+                let args = args.into_iter().map(Self::compile).collect::<Result<Vec<_>, _>>()?;
                 match compile_function(name, &args) {
                     Ok(c) => c.0,
                     Err(e) => match e.kind() {
@@ -113,8 +115,10 @@ impl Compiled {
 pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
     macro_rules! require {
         ($e:expr, $($fmt:tt)+) => {
-            if !$e {
-                return Err(ErrorKind::InvalidArguments { name, cause: format!($($fmt)+) }.into());
+            #[cfg_attr(feature = "cargo-clippy", allow(clippy::neg_cmp_op_on_partial_ord))] {
+                if !$e {
+                    return Err(ErrorKind::InvalidArguments { name, cause: format!($($fmt)+) }.into());
+                }
             }
         }
     }

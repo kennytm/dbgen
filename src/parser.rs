@@ -24,7 +24,7 @@ pub struct QName {
 
 impl QName {
     fn from_pairs(mut pairs: Pairs<'_, Rule>) -> Self {
-        let mut qname = QName {
+        let mut qname = Self {
             database: None,
             schema: None,
             table: pairs.next().expect("at least one name").as_str().to_owned(),
@@ -162,7 +162,7 @@ impl Template {
 
 impl Expr {
     fn from_pairs(pairs: Pairs<'_, Rule>) -> Result<Vec<Self>, Error> {
-        pairs.map(Expr::from_pair).collect()
+        pairs.map(Self::from_pair).collect()
     }
 
     fn from_pair(pair: Pair<'_, Rule>) -> Result<Self, Error> {
@@ -170,9 +170,9 @@ impl Expr {
             Rule::expr_rownum => Ok(Expr::RowNum),
             Rule::expr_function => {
                 let mut pairs = pair.into_inner();
-                let qname = QName::from_pairs(pairs.next().unwrap().into_inner());
-                let name = Function::from_name(qname.unique_name())?;
-                let args = Expr::from_pairs(pairs)?;
+                let q_name = QName::from_pairs(pairs.next().unwrap().into_inner());
+                let name = Function::from_name(q_name.unique_name())?;
+                let args = Self::from_pairs(pairs)?;
                 Ok(Expr::Function { name, args })
             }
             Rule::expr_string => {
@@ -183,7 +183,7 @@ impl Expr {
             Rule::expr_number => parse_number(pair.as_str()).map(Expr::Value),
             Rule::expr_neg => {
                 let mut pairs = pair.into_inner();
-                let inner = Expr::from_pair(pairs.next().unwrap())?;
+                let inner = Self::from_pair(pairs.next().unwrap())?;
                 Ok(Expr::Function {
                     name: Function::Neg,
                     args: vec![inner],

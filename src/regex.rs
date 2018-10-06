@@ -104,7 +104,7 @@ fn simplify_sequence(mut seq: Vec<Compiled>) -> Compiled {
 }
 
 trait ClassRange {
-    type Item: SampleUniform;
+    type Item: SampleUniform + Copy;
     const INVALID_RANGE: Option<(Self::Item, Self::Item)>;
     fn bounds(&self) -> (Self::Item, Self::Item);
 }

@@ -1,3 +1,14 @@
+// TODO remove all #[cfg_attr(feature = "cargo-clippy")] once tool_lints is stabilized.
+#![cfg_attr(feature = "cargo-clippy", feature(tool_lints))]
+#![cfg_attr(feature = "cargo-clippy", warn(clippy::pedantic))]
+
+// TODO remove these `extern crate` once RLS understands these are not needed.
+extern crate data_encoding;
+extern crate failure;
+extern crate pbr;
+extern crate rand;
+extern crate structopt;
+
 use dbgen::{
     eval::{RngSeed, State},
     gen::Row,
@@ -8,13 +19,14 @@ use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
 use pbr::ProgressBar;
 use rand::{EntropyRng, Rng};
+use std::{
+    fs::{create_dir_all, read_to_string, File},
+    io::{BufWriter, Stdout, Write},
+    path::{Path, PathBuf},
+    process::exit,
+    time::Duration,
+};
 use structopt::StructOpt;
-
-use std::fs::{create_dir_all, read_to_string, File};
-use std::io::{BufWriter, Stdout, Write};
-use std::path::{Path, PathBuf};
-use std::process::exit;
-use std::time::Duration;
 
 #[derive(StructOpt, Debug)]
 struct Args {
@@ -105,6 +117,7 @@ trait PathResultExt {
     fn with_path(self, path: &Path) -> Result<Self::Ok, Error>;
 }
 
+#[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // issue rust-clippy#1993
 impl<T, E: Fail> PathResultExt for Result<T, E> {
     type Ok = T;
     fn with_path(self, path: &Path) -> Result<Self::Ok, Error> {
@@ -144,7 +157,8 @@ fn run() -> Result<(), Error> {
     eprintln!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&seed));
     let mut state = State::from_seed(seed);
 
-    let mut pb = ProgressBar::new((args.files_count as u64) * (args.inserts_count as u64) * (args.rows_count as u64));
+    let total_count = u64::from(args.files_count) * u64::from(args.inserts_count) * u64::from(args.rows_count);
+    let mut pb = ProgressBar::new(total_count);
     pb.set_max_refresh_rate(Some(Duration::from_millis(500)));
 
     for file_index in 1..=args.files_count {
@@ -188,8 +202,8 @@ impl Env {
                     b",\n"
                 })
                 .with_path(&path)?;
-                pb.inc();
             }
+            pb.add(self.rows_count.into());
         }
         Ok(())
     }

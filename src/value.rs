@@ -1,4 +1,4 @@
-use num_traits::FromPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use std::{
     cmp::Ordering,
     fmt,
@@ -55,7 +55,16 @@ impl From<f64> for Number {
 }
 
 impl ops::Neg for Number {
-    type Output = Number;
+    type Output = Self;
+    #[cfg_attr(
+        feature = "cargo-clippy",
+        allow(
+            clippy::cast_possible_wrap,
+            clippy::cast_precision_loss,
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss
+        )
+    )] // by design
     fn neg(self) -> Self {
         match self.0 {
             N::U(u) if u <= 0x8000_0000_0000_0000 => Number(N::I((u as i64).wrapping_neg())),
@@ -68,26 +77,15 @@ impl ops::Neg for Number {
 }
 
 impl PartialEq for Number {
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))] // by design
     fn eq(&self, other: &Self) -> bool {
         match (self.0, other.0) {
             (N::U(a), N::U(b)) => a == b,
             (N::I(a), N::I(b)) => a == b,
             (N::F(a), N::F(b)) => a == b,
 
-            (N::U(a), N::I(b)) => {
-                if b < 0 {
-                    false
-                } else {
-                    a == (b as u64)
-                }
-            }
-            (N::I(a), N::U(b)) => {
-                if a < 0 {
-                    false
-                } else {
-                    (a as u64) == b
-                }
-            }
+            (N::U(a), N::I(b)) => Some(a) == b.to_u64(),
+            (N::I(a), N::U(b)) => a.to_u64() == Some(b),
 
             (N::F(a), N::U(b)) => a == (b as f64),
             (N::F(a), N::I(b)) => a == (b as f64),
@@ -98,45 +96,20 @@ impl PartialEq for Number {
 }
 
 impl PartialOrd for Number {
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))] // by design
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self.0, other.0) {
             (N::U(a), N::U(b)) => a.partial_cmp(&b),
             (N::I(a), N::I(b)) => a.partial_cmp(&b),
             (N::F(a), N::F(b)) => a.partial_cmp(&b),
 
-            (N::U(a), N::I(b)) => {
-                if b < 0 {
-                    Some(Ordering::Greater)
-                } else {
-                    let b = b as u64;
-                    a.partial_cmp(&b)
-                }
-            }
-            (N::I(a), N::U(b)) => {
-                if a < 0 {
-                    Some(Ordering::Less)
-                } else {
-                    let a = a as u64;
-                    a.partial_cmp(&b)
-                }
-            }
+            (N::U(a), N::I(b)) => Some(a).partial_cmp(&b.to_u64()),
+            (N::I(a), N::U(b)) => a.to_u64().partial_cmp(&Some(b)),
 
-            (N::F(a), N::U(b)) => {
-                let b = b as f64;
-                a.partial_cmp(&b)
-            }
-            (N::F(a), N::I(b)) => {
-                let b = b as f64;
-                a.partial_cmp(&b)
-            }
-            (N::U(a), N::F(b)) => {
-                let a = a as f64;
-                a.partial_cmp(&b)
-            }
-            (N::I(a), N::F(b)) => {
-                let a = a as f64;
-                a.partial_cmp(&b)
-            }
+            (N::F(a), N::U(b)) => a.partial_cmp(&(b as f64)),
+            (N::F(a), N::I(b)) => a.partial_cmp(&(b as f64)),
+            (N::U(a), N::F(b)) => (a as f64).partial_cmp(&b),
+            (N::I(a), N::F(b)) => (a as f64).partial_cmp(&b),
         }
     }
 }
