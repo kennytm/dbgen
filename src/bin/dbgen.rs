@@ -10,7 +10,7 @@ extern crate rand;
 extern crate structopt;
 
 use dbgen::{
-    eval::{RngSeed, State},
+    eval::State,
     gen::Row,
     parser::{QName, Template},
 };
@@ -18,12 +18,14 @@ use dbgen::{
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
 use pbr::ProgressBar;
-use rand::{EntropyRng, Rng};
+use rand::{EntropyRng, Rng, SeedableRng, StdRng};
 use std::{
     fs::{create_dir_all, read_to_string, File},
-    io::{BufWriter, Stdout, Write},
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
     process::exit,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    thread::{sleep, spawn},
     time::Duration,
 };
 use structopt::StructOpt;
@@ -84,11 +86,11 @@ struct Args {
         help = "Random number generator seed (should have 64 hex digits)",
         parse(try_from_str = "seed_from_str")
     )]
-    seed: Option<RngSeed>,
+    seed: Option<<StdRng as SeedableRng>::Seed>,
 }
 
-fn seed_from_str(s: &str) -> Result<RngSeed, DecodeError> {
-    let mut seed = RngSeed::default();
+fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
+    let mut seed = <StdRng as SeedableRng>::Seed::default();
 
     if HEXLOWER_PERMISSIVE.decode_len(s.len())? != seed.len() {
         return Err(DecodeError {
@@ -125,6 +127,9 @@ impl<T, E: Fail> PathResultExt for Result<T, E> {
     }
 }
 
+static WRITE_FINISHED: AtomicBool = AtomicBool::new(false);
+static WRITE_PROGRESS: AtomicUsize = AtomicUsize::new(0);
+
 fn run() -> Result<(), Error> {
     let args = Args::from_args();
     let input = read_to_string(&args.template).context("failed to read template")?;
@@ -153,19 +158,34 @@ fn run() -> Result<(), Error> {
 
     env.write_schema(&template.content)?;
 
-    let seed = args.seed.unwrap_or_else(|| EntropyRng::new().gen::<RngSeed>());
-    eprintln!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&seed));
-    let mut state = State::from_seed(seed);
+    let meta_seed = args.seed.unwrap_or_else(|| EntropyRng::new().gen());
+    eprintln!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&meta_seed));
+    let mut seeding_rng = StdRng::from_seed(meta_seed);
 
-    let total_count = u64::from(args.files_count) * u64::from(args.inserts_count) * u64::from(args.rows_count);
-    let mut pb = ProgressBar::new(total_count);
-    pb.set_max_refresh_rate(Some(Duration::from_millis(500)));
+    let files_count = args.files_count;
+    let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
 
-    for file_index in 1..=args.files_count {
-        env.write_data_file(file_index, &mut pb, &mut state)?;
-    }
+    let progress_bar_thread = spawn(move || {
+        let total_rows = u64::from(files_count) * rows_per_file;
+        let mut pb = ProgressBar::new(total_rows);
+        while !WRITE_FINISHED.load(Ordering::Relaxed) {
+            sleep(Duration::from_millis(500));
+            pb.set(WRITE_PROGRESS.load(Ordering::Relaxed) as u64);
+        }
+        pb.finish_println("Done!");
+    });
 
-    pb.finish_println("Done!");
+    let mut iv = (0..files_count).map(|i| (seeding_rng.gen(), i + 1, u64::from(i) * rows_per_file + 1));
+    let res = iv.try_for_each(|(seed, file_index, row_num)| {
+        let mut state = State::new(row_num, seed);
+        env.write_data_file(file_index, &mut state)
+    });
+
+    WRITE_FINISHED.store(true, Ordering::Relaxed);
+    progress_bar_thread.join().unwrap();
+
+    res?;
+
     Ok(())
 }
 
@@ -186,7 +206,7 @@ impl Env {
         writeln!(file, "CREATE TABLE {} {}", self.qualified_name, content).with_path(&path)
     }
 
-    fn write_data_file(&self, file_index: u32, pb: &mut ProgressBar<Stdout>, state: &mut State) -> Result<(), Error> {
+    fn write_data_file(&self, file_index: u32, state: &mut State) -> Result<(), Error> {
         let path = self.out_dir.join(format!(
             "{0}.{1:02$}.sql",
             self.unique_name, file_index, self.file_num_digits
@@ -203,7 +223,7 @@ impl Env {
                 })
                 .with_path(&path)?;
             }
-            pb.add(self.rows_count.into());
+            WRITE_PROGRESS.fetch_add(self.rows_count as usize, Ordering::Relaxed);
         }
         Ok(())
     }

@@ -4,26 +4,23 @@ use crate::{
     regex,
     value::{AsValue, Number, TryFromValue, Value},
 };
-use rand::{distributions::Uniform, prng::Hc128Rng, Rng, SeedableRng};
+use rand::{distributions::Uniform, Rng, SeedableRng, StdRng};
 
-type DefaultRng = Hc128Rng;
-
-/// The type of the default RNG seed
-pub type RngSeed = <DefaultRng as SeedableRng>::Seed;
+pub type Seed = <StdRng as SeedableRng>::Seed;
 
 /// The external state used during evaluation.
 pub struct State {
     pub(crate) row_num: u64,
-    rng: DefaultRng,
+    rng: StdRng,
 }
 
 impl State {
-    /// Creates a new state from the seed.
+    /// Creates a new state from the seed and starting row number.
     #[cfg_attr(feature = "cargo-clippy", allow(clippy::needless_pass_by_value))] // false positive
-    pub fn from_seed(seed: RngSeed) -> Self {
+    pub fn new(row_num: u64, seed: Seed) -> Self {
         Self {
-            row_num: 1,
-            rng: DefaultRng::from_seed(seed),
+            row_num,
+            rng: StdRng::from_seed(seed),
         }
     }
 }
