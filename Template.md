@@ -73,6 +73,14 @@ From highest to lowest precedence:
 
     > To simplify reasoning, we consider `NULL = NULL` to be true, unlike the SQL definition.
 
+* **TRUE**
+
+    Equals to 1.
+
+* **FALSE**
+
+    Equals to 0.
+
 ### Random functions
 
 * **rand.regex('[0-9a-z]+', 'i', 100)**
@@ -112,6 +120,11 @@ From highest to lowest precedence:
 
     Generates a random floating point number uniformly distributed in the closed interval
     1.6 ≤ *x* ≤ 8.4.
+
+* **rand.bool(0.3)**
+
+    Generates a random boolean (0 or 1) with probability 0.3 of getting "1". Also known as the
+    Bernoulli distribution.
 
 * **rand.zipf(26, 0.8)**
 

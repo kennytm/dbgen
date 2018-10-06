@@ -47,6 +47,7 @@ enum C {
     RandUniformF64(Uniform<f64>),
     RandZipf(ZipfDistribution),
     RandLogNormal(distributions::LogNormal),
+    RandBool(distributions::Bernoulli),
 }
 
 /// A compiled expression
@@ -118,6 +119,7 @@ impl Compiled {
             C::RandUniformF64(uniform) => state.rng.sample(uniform).into(),
             C::RandZipf(zipf) => (state.rng.sample(zipf) as u64).into(),
             C::RandLogNormal(log_normal) => state.rng.sample(log_normal).into(),
+            C::RandBool(bern) => u64::from(state.rng.sample(bern)).into(),
         })
     }
 }
@@ -199,8 +201,8 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
         Function::RandZipf => {
             let count = arg(name, args, 0, None)?;
             let exponent = arg(name, args, 1, None)?;
-            require!(count > 0, "a positive count (but we have {})", count);
-            require!(exponent > 0.0, "a positive exponent (but we have {})", exponent);
+            require!(count > 0, "count being position (but we have {})", count);
+            require!(exponent > 0.0, "exponent being positive (but we have {})", exponent);
             Ok(Compiled(C::RandZipf(ZipfDistribution::new(count, exponent).unwrap())))
         }
 
@@ -208,6 +210,12 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             let mean = arg(name, args, 0, None)?;
             let std_dev = arg::<f64, _>(name, args, 1, None)?.abs();
             Ok(Compiled(C::RandLogNormal(distributions::LogNormal::new(mean, std_dev))))
+        }
+
+        Function::RandBool => {
+            let p = arg(name, args, 0, None)?;
+            require!(0.0 <= p && p <= 1.0, "{} between 0 and 1", p);
+            Ok(Compiled(C::RandBool(distributions::Bernoulli::new(p))))
         }
 
         Function::Neg => {

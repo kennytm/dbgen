@@ -170,6 +170,8 @@ impl Expr {
         match rule {
             Rule::expr_rownum => Ok(Expr::RowNum),
             Rule::expr_null => Ok(Expr::Value(Value::null())),
+            Rule::expr_true => Ok(Expr::Value(1_u64.into())),
+            Rule::expr_false => Ok(Expr::Value(0_u64.into())),
             Rule::expr_function => {
                 let mut pairs = pair.into_inner();
                 let q_name = QName::from_pairs(pairs.next().unwrap().into_inner());
@@ -252,6 +254,7 @@ define_function! {
         RandUniformInclusive = "rand.uniform_inclusive",
         RandZipf = "rand.zipf",
         RandLogNormal = "rand.log_normal",
+        RandBool = "rand.bool",
 
         Neg = "-",
         CaseValueWhen = "CASE ... WHEN",

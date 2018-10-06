@@ -47,8 +47,7 @@ create_table = _{
 }
 
 expr = _{
-    expr_rownum |
-    expr_null |
+    expr_rownum | expr_null | expr_true | expr_false |
     expr_function |
     expr_string |
     expr_number |
@@ -56,12 +55,10 @@ expr = _{
     expr_case_value_when
 }
 
-expr_rownum = {
-    ^"rownum"
-}
-expr_null = {
-    ^"null"
-}
+expr_rownum = { ^"rownum" }
+expr_null = { ^"null" }
+expr_true = { ^"true" }
+expr_false = { ^"false" }
 expr_function = {
     qname ~ s* ~ "(" ~ s* ~ (expr ~ s* ~ ("," ~ s* ~ expr ~ s*)*)? ~ ")"
 }
