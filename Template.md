@@ -115,3 +115,13 @@ From highest to lowest precedence:
     With Zipfian distribution, the smallest values will appear more often.
 
     [Zipfian distribution]: https://en.wikipedia.org/wiki/Zipf's_law
+
+* **rand.log_normal(2.0, 3.0)**
+
+    Generates a random positive number using the [log-normal distribution]
+    (log *N*(*µ*, *σ*<sup>2</sup>)) with *μ* = 2.0 and *σ* = 3.0.
+
+    The median of this distribution is exp(*µ*).
+
+    [log-normal distribution]: https://en.wikipedia.org/wiki/Log-normal_distribution
+

@@ -4,7 +4,7 @@ use crate::{
     regex,
     value::{AsValue, Number, TryFromValue, Value},
 };
-use rand::{distributions::Uniform, Rng, SeedableRng, StdRng};
+use rand::{distributions::{self, Uniform}, Rng, SeedableRng, StdRng};
 use zipf::ZipfDistribution;
 
 pub type Seed = <StdRng as SeedableRng>::Seed;
@@ -42,6 +42,7 @@ enum C {
     RandUniformI64(Uniform<i64>),
     RandUniformF64(Uniform<f64>),
     RandZipf(ZipfDistribution),
+    RandLogNormal(distributions::LogNormal),
 }
 
 /// A compiled expression
@@ -108,6 +109,7 @@ impl Compiled {
             C::RandUniformI64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformF64(uniform) => state.rng.sample(uniform).into(),
             C::RandZipf(zipf) => (state.rng.sample(zipf) as u64).into(),
+            C::RandLogNormal(log_normal) => state.rng.sample(log_normal).into(),
         })
     }
 }
@@ -178,6 +180,12 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             require!(count > 0, "a positive count (but we have {})", count);
             require!(exponent > 0.0, "a positive exponent (but we have {})", exponent);
             Ok(Compiled(C::RandZipf(ZipfDistribution::new(count, exponent).unwrap())))
+        }
+
+        Function::RandLogNormal => {
+            let mean = arg(name, args, 0, None)?;
+            let std_dev = arg::<f64, _>(name, args, 1, None)?.abs();
+            Ok(Compiled(C::RandLogNormal(distributions::LogNormal::new(mean, std_dev))))
         }
 
         Function::Neg => {
