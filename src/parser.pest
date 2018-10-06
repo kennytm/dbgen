@@ -48,6 +48,7 @@ create_table = _{
 
 expr = _{
     expr_rownum |
+    expr_null |
     expr_function |
     expr_string |
     expr_number |
@@ -56,6 +57,9 @@ expr = _{
 
 expr_rownum = {
     ^"rownum"
+}
+expr_null = {
+    ^"null"
 }
 expr_function = {
     qname ~ s* ~ "(" ~ s* ~ (expr ~ s* ~ ("," ~ s* ~ expr ~ s*)*)? ~ ")"

@@ -67,6 +67,12 @@ From highest to lowest precedence:
 
     The current row number. The first row has value 1.
 
+* **NULL**
+
+    The null value.
+
+    > To simplify reasoning, we consider `NULL = NULL` to be true, unlike the SQL definition.
+
 ### Random functions
 
 * **rand.regex('[0-9a-z]+', 'i', 100)**

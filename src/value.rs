@@ -114,8 +114,10 @@ impl PartialOrd for Number {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum V {
+    /// Null.
+    Null,
     /// A number.
     Number(Number),
     /// A string.
@@ -125,13 +127,16 @@ enum V {
 }
 
 /// A scalar value.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Value(V);
 
 impl Value {
     /// Writes the SQL representation of this value into a write stream.
     pub fn write_sql(&self, mut output: impl Write) -> Result<(), io::Error> {
         match &self.0 {
+            V::Null => {
+                output.write_all(b"NULL")?;
+            }
             V::Number(number) => {
                 write!(output, "{}", number)?;
             }
@@ -151,6 +156,10 @@ impl Value {
             }
         }
         Ok(())
+    }
+
+    pub fn null() -> Self {
+        Value(V::Null)
     }
 }
 

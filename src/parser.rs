@@ -168,6 +168,7 @@ impl Expr {
     fn from_pair(pair: Pair<'_, Rule>) -> Result<Self, Error> {
         match pair.as_rule() {
             Rule::expr_rownum => Ok(Expr::RowNum),
+            Rule::expr_null => Ok(Expr::Value(Value::null())),
             Rule::expr_function => {
                 let mut pairs = pair.into_inner();
                 let q_name = QName::from_pairs(pairs.next().unwrap().into_inner());
