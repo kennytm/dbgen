@@ -131,3 +131,8 @@ From highest to lowest precedence:
 
     [log-normal distribution]: https://en.wikipedia.org/wiki/Log-normal_distribution
 
+### Miscellaneous
+
+* **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *r3* END**
+
+    If *value* equals to *p1*, then the expression's value is *r1*, etc.

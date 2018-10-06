@@ -2,9 +2,12 @@ use crate::{
     error::{Error, ErrorKind},
     parser::{Expr, Function},
     regex,
-    value::{AsValue, Number, TryFromValue, Value},
+    value::{Number, TryFromValue, Value},
 };
-use rand::{distributions::{self, Uniform}, Rng, SeedableRng, StdRng};
+use rand::{
+    distributions::{self, Uniform},
+    Rng, SeedableRng, StdRng,
+};
 use zipf::ZipfDistribution;
 
 pub type Seed = <StdRng as SeedableRng>::Seed;
@@ -26,6 +29,7 @@ impl State {
     }
 }
 
+#[derive(Clone)]
 enum C {
     /// The row number.
     RowNum,
@@ -46,6 +50,7 @@ enum C {
 }
 
 /// A compiled expression
+#[derive(Clone)]
 pub struct Compiled(C);
 
 impl AsValue for Compiled {
@@ -54,6 +59,9 @@ impl AsValue for Compiled {
             C::Constant(value) => Some(value),
             _ => None,
         }
+    }
+    fn to_compiled(&self) -> Compiled {
+        self.clone()
     }
 }
 
@@ -111,6 +119,20 @@ impl Compiled {
             C::RandZipf(zipf) => (state.rng.sample(zipf) as u64).into(),
             C::RandLogNormal(log_normal) => state.rng.sample(log_normal).into(),
         })
+    }
+}
+
+pub trait AsValue {
+    fn as_value(&self) -> Option<&Value>;
+    fn to_compiled(&self) -> Compiled;
+}
+
+impl AsValue for Value {
+    fn as_value(&self) -> Option<&Value> {
+        Some(self)
+    }
+    fn to_compiled(&self) -> Compiled {
+        Compiled(C::Constant(self.clone()))
     }
 }
 
@@ -191,6 +213,24 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
         Function::Neg => {
             let inner = arg::<Number, _>(name, args, 0, None)?;
             Ok(Compiled(C::Constant((-inner).into())))
+        }
+
+        Function::CaseValueWhen => {
+            let check = arg::<&Value, _>(name, args, 0, None)?;
+            let args_count = args.len();
+
+            for i in (1..args_count).step_by(2) {
+                let compare = arg::<&Value, _>(name, args, i, None)?;
+                if check == compare {
+                    return Ok(args[i + 1].to_compiled());
+                }
+            }
+            Ok(if args_count % 2 == 0 {
+                // contains an "else" clause
+                args[args_count - 1].to_compiled()
+            } else {
+                Compiled(C::Constant(Value::null()))
+            })
         }
     }
 }

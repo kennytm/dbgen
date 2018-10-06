@@ -163,16 +163,6 @@ impl Value {
     }
 }
 
-pub trait AsValue {
-    fn as_value(&self) -> Option<&Value>;
-}
-
-impl AsValue for Value {
-    fn as_value(&self) -> Option<&Value> {
-        Some(self)
-    }
-}
-
 pub trait TryFromValue<'s>: Sized {
     const NAME: &'static str;
     fn try_from_value(value: &'s Value) -> Option<Self>;
@@ -217,11 +207,19 @@ impl<'s> TryFromValue<'s> for Number {
 impl<'s> TryFromValue<'s> for &'s str {
     const NAME: &'static str = "string";
 
-    fn try_from_value(value: &'s Value) -> Option<&'s str> {
+    fn try_from_value(value: &'s Value) -> Option<Self> {
         match &value.0 {
             V::String(s) => Some(s),
             _ => None,
         }
+    }
+}
+
+impl<'s> TryFromValue<'s> for &'s Value {
+    const NAME: &'static str = "string";
+
+    fn try_from_value(value: &'s Value) -> Option<Self> {
+        Some(value)
     }
 }
 

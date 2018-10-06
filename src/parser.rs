@@ -166,7 +166,8 @@ impl Expr {
     }
 
     fn from_pair(pair: Pair<'_, Rule>) -> Result<Self, Error> {
-        match pair.as_rule() {
+        let rule = pair.as_rule();
+        match rule {
             Rule::expr_rownum => Ok(Expr::RowNum),
             Rule::expr_null => Ok(Expr::Value(Value::null())),
             Rule::expr_function => {
@@ -182,13 +183,14 @@ impl Expr {
                 Ok(Expr::Value(string.into()))
             }
             Rule::expr_number => parse_number(pair.as_str()).map(Expr::Value),
-            Rule::expr_neg => {
-                let mut pairs = pair.into_inner();
-                let inner = Self::from_pair(pairs.next().unwrap())?;
-                Ok(Expr::Function {
-                    name: Function::Neg,
-                    args: vec![inner],
-                })
+            Rule::expr_neg | Rule::expr_case_value_when => {
+                let name = match rule {
+                    Rule::expr_neg => Function::Neg,
+                    Rule::expr_case_value_when => Function::CaseValueWhen,
+                    _ => unreachable!(),
+                };
+                let args = Self::from_pairs(pair.into_inner())?;
+                Ok(Expr::Function { name, args })
             }
             r => panic!("unexpected rule <{:?}> while parsing an expression", r),
         }
@@ -252,5 +254,6 @@ define_function! {
         RandLogNormal = "rand.log_normal",
 
         Neg = "-",
+        CaseValueWhen = "CASE ... WHEN",
     }
 }
