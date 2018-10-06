@@ -149,3 +149,24 @@ From highest to lowest precedence:
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *r3* END**
 
     If *value* equals to *p1*, then the expression's value is *r1*, etc.
+
+* **@local := f()**
+
+    Assigns the evaluated value of the expression `f()` into the local variable `@local`. The same
+    value can later be extracted using `@local`. This can be used to generate correlated columns,
+    for instance:
+
+    ```sql
+    SELECT
+        rand.bool(0.5),
+        @a := rand.bool(0.5),
+        @a
+    FROM rand;
+    ```
+
+    The first and second columns are entirely independent, but the second and third column will
+    always have the same value.
+
+* **@local**
+
+    Gets the previous assigned local variable. If the variable was undefined, this will return NULL.

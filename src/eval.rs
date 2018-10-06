@@ -16,15 +16,17 @@ pub type Seed = <StdRng as SeedableRng>::Seed;
 pub struct State {
     pub(crate) row_num: u64,
     rng: StdRng,
+    variables: Vec<Value>,
 }
 
 impl State {
     /// Creates a new state from the seed and starting row number.
     #[cfg_attr(feature = "cargo-clippy", allow(clippy::needless_pass_by_value))] // false positive
-    pub fn new(row_num: u64, seed: Seed) -> Self {
+    pub fn new(row_num: u64, seed: Seed, variables_count: usize) -> Self {
         Self {
             row_num,
             rng: StdRng::from_seed(seed),
+            variables: vec![Value::null(); variables_count],
         }
     }
 }
@@ -40,6 +42,8 @@ enum C {
         name: Function,
         args: Vec<Compiled>,
     },
+    GetVariable(usize),
+    SetVariable(usize, Box<Compiled>),
 
     RandRegex(regex::Generator),
     RandUniformU64(Uniform<u64>),
@@ -90,6 +94,8 @@ impl Compiled {
         Ok(Compiled(match expr {
             Expr::RowNum => C::RowNum,
             Expr::Value(v) => C::Constant(v),
+            Expr::GetVariable(index) => C::GetVariable(index),
+            Expr::SetVariable(index, e) => C::SetVariable(index, Box::new(Self::compile(*e)?)),
             Expr::Function { name, args } => {
                 let args = args.into_iter().map(Self::compile).collect::<Result<Vec<_>, _>>()?;
                 match compile_function(name, &args) {
@@ -111,6 +117,13 @@ impl Compiled {
                 let args = args.iter().map(|c| c.eval(state)).collect::<Result<Vec<_>, _>>()?;
                 let compiled = compile_function(*name, &args)?;
                 compiled.eval(state)?
+            }
+
+            C::GetVariable(index) => state.variables[*index].clone(),
+            C::SetVariable(index, c) => {
+                let value = c.eval(state)?;
+                state.variables[*index] = value.clone();
+                value
             }
 
             C::RandRegex(generator) => generator.eval(&mut state.rng).into(),

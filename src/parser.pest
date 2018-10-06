@@ -52,7 +52,8 @@ expr = _{
     expr_string |
     expr_number |
     expr_neg |
-    expr_case_value_when
+    expr_case_value_when |
+    expr_variable
 }
 
 expr_rownum = { ^"rownum" }
@@ -77,4 +78,7 @@ expr_case_value_when = {
     (^"when" ~ s* ~ expr ~ s* ~ ^"then" ~ s* ~ expr ~ s*)+ ~
     (^"else" ~ s* ~ expr ~ s*)? ~
     ^"end"
+}
+expr_variable = {
+    "@" ~ ident ~ (s* ~ ":=" ~ s* ~ expr)?
 }

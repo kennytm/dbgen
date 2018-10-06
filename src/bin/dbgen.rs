@@ -181,6 +181,7 @@ fn run() -> Result<(), Error> {
     let mut seeding_rng = StdRng::from_seed(meta_seed);
 
     let files_count = args.files_count;
+    let variables_count = template.variables_count;
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
 
     let progress_bar_thread = spawn(move || {
@@ -197,7 +198,7 @@ fn run() -> Result<(), Error> {
         .map(|i| (seeding_rng.gen(), i + 1, u64::from(i) * rows_per_file + 1))
         .collect::<Vec<_>>();
     let res = iv.into_par_iter().try_for_each(|(seed, file_index, row_num)| {
-        let mut state = State::new(row_num, seed);
+        let mut state = State::new(row_num, seed, variables_count);
         env.write_data_file(file_index, &mut state)
     });
 

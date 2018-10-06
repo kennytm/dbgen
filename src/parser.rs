@@ -8,7 +8,7 @@ use pest::{
     Parser,
 };
 use pest_derive::Parser;
-use std::fmt;
+use std::{fmt, collections::HashMap};
 
 #[derive(Parser)]
 #[grammar = "parser.pest"]
@@ -139,12 +139,17 @@ pub struct Template {
 
     /// The expressions to populate the table.
     pub exprs: Vec<Expr>,
+
+    /// Number of variables involved in the expressions.
+    pub variables_count: usize,
 }
 
 #[derive(Debug, Clone)]
 pub enum Expr {
     RowNum,
     Value(Value),
+    GetVariable(usize),
+    SetVariable(usize, Box<Expr>),
     Function { name: Function, args: Vec<Expr> },
 }
 
@@ -154,18 +159,35 @@ impl Template {
 
         let name = QName::from_pairs(pairs.next().unwrap().into_inner());
         let content = pairs.next().unwrap().as_str().to_owned();
-        let exprs = Expr::from_pairs(pairs)?;
 
-        Ok(Self { name, content, exprs })
+        let mut alloc = Allocator::default();
+        let exprs = alloc.expr_from_pairs(pairs)?;
+
+        Ok(Self { name, content, exprs, variables_count: alloc.count })
     }
 }
 
-impl Expr {
-    fn from_pairs(pairs: Pairs<'_, Rule>) -> Result<Vec<Self>, Error> {
-        pairs.map(Self::from_pair).collect()
+#[derive(Default)]
+struct Allocator {
+    count: usize,
+    map: HashMap<String, usize>,
+}
+
+impl Allocator {
+    fn allocate(&mut self, var_name: String) -> usize {
+        let count = &mut self.count;
+        *self.map.entry(var_name).or_insert_with(|| {
+            let last = *count;
+            *count += 1;
+            last
+        })
     }
 
-    fn from_pair(pair: Pair<'_, Rule>) -> Result<Self, Error> {
+    fn expr_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Vec<Expr>, Error> {
+        pairs.map(|p| self.expr_from_pair(p)).collect()
+    }
+
+    fn expr_from_pair(&mut self, pair: Pair<'_, Rule>) -> Result<Expr, Error> {
         let rule = pair.as_rule();
         match rule {
             Rule::expr_rownum => Ok(Expr::RowNum),
@@ -176,7 +198,7 @@ impl Expr {
                 let mut pairs = pair.into_inner();
                 let q_name = QName::from_pairs(pairs.next().unwrap().into_inner());
                 let name = Function::from_name(q_name.unique_name())?;
-                let args = Self::from_pairs(pairs)?;
+                let args = self.expr_from_pairs(pairs)?;
                 Ok(Expr::Function { name, args })
             }
             Rule::expr_string => {
@@ -185,13 +207,26 @@ impl Expr {
                 Ok(Expr::Value(string.into()))
             }
             Rule::expr_number => parse_number(pair.as_str()).map(Expr::Value),
+            Rule::expr_variable => {
+                let mut pairs = pair.into_inner();
+                let ident_str = pairs.next().unwrap().as_str();
+                let mut ident = String::with_capacity(ident_str.len());
+                unescape_into(&mut ident, ident_str, false);
+                let var_index = self.allocate(ident);
+                if let Some(expr_pair) = pairs.next() {
+                    let expr = self.expr_from_pair(expr_pair)?;
+                    Ok(Expr::SetVariable(var_index, Box::new(expr)))
+                } else {
+                    Ok(Expr::GetVariable(var_index))
+                }
+            }
             Rule::expr_neg | Rule::expr_case_value_when => {
                 let name = match rule {
                     Rule::expr_neg => Function::Neg,
                     Rule::expr_case_value_when => Function::CaseValueWhen,
                     _ => unreachable!(),
                 };
-                let args = Self::from_pairs(pair.into_inner())?;
+                let args = self.expr_from_pairs(pair.into_inner())?;
                 Ok(Expr::Function { name, args })
             }
             r => panic!("unexpected rule <{:?}> while parsing an expression", r),
