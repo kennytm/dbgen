@@ -247,6 +247,7 @@ define_function! {
         RandRangeInclusive = "rand.range_inclusive",
         RandUniform = "rand.uniform",
         RandUniformInclusive = "rand.uniform_inclusive",
+        RandZipf = "rand.zipf",
 
         Neg = "-",
     }

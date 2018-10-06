@@ -21,7 +21,7 @@ AS SELECT
 FROM rand;
 ```
 
-(The `FROM rand` at the end is part
+(The `FROM rand` at the end is part of the syntax and cannot be changed.)
 
 Expression syntax
 -----------------
@@ -31,7 +31,7 @@ generate a new row when writing them out.
 
 ### Literals
 
-`dbgen` supports integer, float and string literals.
+`dbgen` supports numbers and string literals.
 
 * **Integers**
 
@@ -59,7 +59,7 @@ From highest to lowest precedence:
 
 * **-x**
 
-    Negative of *x*. The number *x* must be an integer or float.
+    Negative of the number *x*.
 
 ### Symbols
 
@@ -68,16 +68,6 @@ From highest to lowest precedence:
     The current row number. The first row has value 1.
 
 ### Random functions
-
-* **rand.int(32)**
-
-    Generates a uniform random signed integer with the given number of bits (must be between 1 and
-    64).
-
-* **rand.uint(32)**
-
-    Generates a uniform random unsigned integer with the given number of bits (must be between 1 and
-    64).
 
 * **rand.regex('[0-9a-z]+', 'i', 100)**
 
@@ -116,3 +106,12 @@ From highest to lowest precedence:
 
     Generates a random floating point number uniformly distributed in the closed interval
     1.6 ≤ *x* ≤ 8.4.
+
+* **rand.zipf(26, 0.8)**
+
+    Generates a random integer in the closed interval 1 ≤ *x* ≤ 26 using [Zipfian distribution]
+    with an exponent of 0.8.
+
+    With Zipfian distribution, the smallest values will appear more often.
+
+    [Zipfian distribution]: https://en.wikipedia.org/wiki/Zipf's_law

@@ -185,10 +185,12 @@ impl_try_from_value!(u8, "8-bit unsigned integer");
 impl_try_from_value!(u16, "16-bit unsigned integer");
 impl_try_from_value!(u32, "32-bit unsigned integer");
 impl_try_from_value!(u64, "64-bit unsigned integer");
+impl_try_from_value!(usize, "unsigned integer");
 impl_try_from_value!(i8, "8-bit signed integer");
 impl_try_from_value!(i16, "16-bit signed integer");
 impl_try_from_value!(i32, "32-bit signed integer");
 impl_try_from_value!(i64, "64-bit signed integer");
+impl_try_from_value!(isize, "signed integer");
 impl_try_from_value!(f32, "floating point number");
 impl_try_from_value!(f64, "floating point number");
 

@@ -11,6 +11,7 @@ extern crate pest;
 extern crate rand;
 extern crate regex_syntax;
 extern crate structopt;
+extern crate zipf;
 
 pub mod error;
 pub mod eval;

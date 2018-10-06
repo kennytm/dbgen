@@ -5,6 +5,7 @@ use crate::{
     value::{AsValue, Number, TryFromValue, Value},
 };
 use rand::{distributions::Uniform, Rng, SeedableRng, StdRng};
+use zipf::ZipfDistribution;
 
 pub type Seed = <StdRng as SeedableRng>::Seed;
 
@@ -40,6 +41,7 @@ enum C {
     RandUniformU64(Uniform<u64>),
     RandUniformI64(Uniform<i64>),
     RandUniformF64(Uniform<f64>),
+    RandZipf(ZipfDistribution),
 }
 
 /// A compiled expression
@@ -105,6 +107,7 @@ impl Compiled {
             C::RandUniformU64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformI64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformF64(uniform) => state.rng.sample(uniform).into(),
+            C::RandZipf(zipf) => (state.rng.sample(zipf) as u64).into(),
         })
     }
 }
@@ -167,6 +170,14 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             let upper = arg(name, args, 1, None)?;
             require!(lower <= upper, "{} <= {}", lower, upper);
             Ok(Compiled(C::RandUniformF64(Uniform::new_inclusive(lower, upper))))
+        }
+
+        Function::RandZipf => {
+            let count = arg(name, args, 0, None)?;
+            let exponent = arg(name, args, 1, None)?;
+            require!(count > 0, "a positive count (but we have {})", count);
+            require!(exponent > 0.0, "a positive exponent (but we have {})", exponent);
+            Ok(Compiled(C::RandZipf(ZipfDistribution::new(count, exponent).unwrap())))
         }
 
         Function::Neg => {
