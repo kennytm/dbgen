@@ -251,11 +251,17 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant(answer)))
         }
 
+        Function::Is | Function::IsNot => {
+            let lhs = arg::<&Value, _>(name, args, 0, None)?;
+            let rhs = arg::<&Value, _>(name, args, 1, None)?;
+            let is_eq = lhs == rhs;
+            let should_eq = name == Function::Is;
+            Ok(Compiled(C::Constant((is_eq == should_eq).into())))
+        }
+
         Function::And => unimplemented!(),
         Function::Or => unimplemented!(),
         Function::Not => unimplemented!(),
-        Function::Is => unimplemented!(),
-        Function::IsNot => unimplemented!(),
         Function::Add => unimplemented!(),
         Function::Sub => unimplemented!(),
         Function::Mul => unimplemented!(),
