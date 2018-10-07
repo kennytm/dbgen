@@ -11,11 +11,37 @@ use crate::{
     parser::Function,
 };
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+struct I65 {
+    lsbit: bool,
+    msb: i64,
+}
+
+impl From<I65> for i128 {
+    fn from(value: I65) -> Self {
+        Self::from(value.msb) << 1 | Self::from(value.lsbit)
+    }
+}
+impl From<I65> for f64 {
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))]
+    fn from(value: I65) -> Self {
+        (value.msb as Self) * 2.0 + Self::from(u8::from(value.lsbit))
+    }
+}
+
+impl I65 {
+    fn wrapping_neg(self) -> Self {
+        Self {
+            lsbit: self.lsbit,
+            msb: i64::from(self.lsbit).wrapping_add(self.msb).wrapping_neg(),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 enum N {
-    U(u64),
-    I(i64),
-    F(f64),
+    Int(I65),
+    Float(f64),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -24,9 +50,8 @@ pub struct Number(N);
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
-            N::U(v) => v.fmt(f),
-            N::I(v) => v.fmt(f),
-            N::F(v) => v.fmt(f),
+            N::Int(v) => i128::from(v).fmt(f),
+            N::Float(v) => v.fmt(f),
         }
     }
 }
@@ -34,92 +59,86 @@ impl fmt::Display for Number {
 impl Number {
     pub fn to<P: FromPrimitive>(&self) -> Option<P> {
         match self.0 {
-            N::U(v) => P::from_u64(v),
-            N::I(v) => P::from_i64(v),
-            N::F(v) => P::from_f64(v),
+            N::Int(v) => P::from_i128(v.into()),
+            N::Float(v) => P::from_f64(v),
         }
     }
 
     pub fn to_sql_bool(&self) -> Option<bool> {
         match self.0 {
-            N::U(v) => Some(v != 0),
-            N::I(v) => Some(v != 0),
-            N::F(v) if v.is_nan() => None,
-            N::F(v) => Some(v != 0.0),
+            N::Int(v) => Some(v != I65::default()),
+            N::Float(v) if v.is_nan() => None,
+            N::Float(v) => Some(v != 0.0),
         }
     }
 }
 
-macro_rules! impl_from_number {
-    ($variant:ident: $($ty:ty),*) => {
+macro_rules! impl_from_int_for_number {
+    ($($ty:ty),*) => {
         $(impl From<$ty> for Number {
+            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_possible_wrap))] // u63 to i64 won't wrap.
             fn from(value: $ty) -> Self {
-                Number(N::$variant(value.into()))
+                Number(N::Int(I65 {
+                    lsbit: (value & 1) != 0,
+                    msb: (value >> 1) as i64,
+                }))
             }
         })*
     }
 }
+impl_from_int_for_number!(u8, u16, u32, u64, i8, i16, i32, i64);
 
-impl_from_number!(U: u8, u16, u32, u64, bool);
-impl_from_number!(I: i8, i16, i32, i64);
-impl_from_number!(F: f32, f64);
-
-impl ops::Neg for Number {
-    type Output = Self;
-    #[cfg_attr(
-        feature = "cargo-clippy",
-        allow(
-            clippy::cast_possible_wrap,
-            clippy::cast_precision_loss,
-            clippy::cast_precision_loss,
-            clippy::cast_sign_loss
-        )
-    )] // by design
-    fn neg(self) -> Self {
-        match self.0 {
-            N::U(u) if u <= 0x8000_0000_0000_0000 => Number(N::I((u as i64).wrapping_neg())),
-            N::U(u) => Number(N::F(-(u as f64))),
-            N::I(i) if i < 0 => Number(N::U(i.wrapping_neg() as u64)),
-            N::I(i) => Number(N::I(-i)),
-            N::F(f) => Number(N::F(-f)),
+impl From<bool> for Number {
+    fn from(value: bool) -> Self {
+        Number(N::Int(I65 {
+            lsbit: value,
+            msb: 0,
+        }))
+    }
+}
+impl From<f32> for Number {
+    fn from(value: f32) -> Self {
+        Number(N::Float(value.into()))
+    }
+}
+impl From<f64> for Number {
+    fn from(value: f64) -> Self {
+        Number(N::Float(value))
+    }
+}
+impl From<N> for f64 {
+    fn from(n: N) -> Self {
+        match n {
+            N::Int(i) => i.into(),
+            N::Float(f) => f,
         }
     }
 }
 
+impl ops::Neg for Number {
+    type Output = Self;
+    fn neg(self) -> Self {
+        Number(match self.0 {
+            N::Int(i) => N::Int(i.wrapping_neg()),
+            N::Float(f) => N::Float(-f),
+        })
+    }
+}
+
 impl PartialEq for Number {
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))] // by design
     fn eq(&self, other: &Self) -> bool {
         match (self.0, other.0) {
-            (N::U(a), N::U(b)) => a == b,
-            (N::I(a), N::I(b)) => a == b,
-            (N::F(a), N::F(b)) => a == b,
-
-            (N::U(a), N::I(b)) => Some(a) == b.to_u64(),
-            (N::I(a), N::U(b)) => a.to_u64() == Some(b),
-
-            (N::F(a), N::U(b)) => a == (b as f64),
-            (N::F(a), N::I(b)) => a == (b as f64),
-            (N::U(a), N::F(b)) => (a as f64) == b,
-            (N::I(a), N::F(b)) => (a as f64) == b,
+            (N::Int(a), N::Int(b)) => a == b,
+            (a, b) => f64::from(a) == f64::from(b),
         }
     }
 }
 
 impl PartialOrd for Number {
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))] // by design
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self.0, other.0) {
-            (N::U(a), N::U(b)) => a.partial_cmp(&b),
-            (N::I(a), N::I(b)) => a.partial_cmp(&b),
-            (N::F(a), N::F(b)) => a.partial_cmp(&b),
-
-            (N::U(a), N::I(b)) => Some(a).partial_cmp(&b.to_u64()),
-            (N::I(a), N::U(b)) => a.to_u64().partial_cmp(&Some(b)),
-
-            (N::F(a), N::U(b)) => a.partial_cmp(&(b as f64)),
-            (N::F(a), N::I(b)) => a.partial_cmp(&(b as f64)),
-            (N::U(a), N::F(b)) => (a as f64).partial_cmp(&b),
-            (N::I(a), N::F(b)) => (a as f64).partial_cmp(&b),
+            (N::Int(a), N::Int(b)) => a.partial_cmp(&b),
+            (a, b) => f64::from(a).partial_cmp(&f64::from(b)),
         }
     }
 }
@@ -321,6 +340,6 @@ impl From<Vec<u8>> for Value {
 
 impl<T: Into<Value>> From<Option<T>> for Value {
     fn from(value: Option<T>) -> Self {
-        value.map_or(Value::null(), T::into)
+        value.map_or(Self::null(), T::into)
     }
 }
