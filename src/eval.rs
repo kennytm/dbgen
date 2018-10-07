@@ -27,7 +27,7 @@ impl State {
         Self {
             row_num,
             rng: StdRng::from_seed(seed),
-            variables: vec![Value::null(); variables_count],
+            variables: vec![Value::Null; variables_count],
         }
     }
 }
@@ -258,7 +258,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             let lhs = arg::<&Value, _>(name, args, 0, None)?;
             let rhs = arg::<&Value, _>(name, args, 1, None)?;
             let answer = match lhs.sql_cmp(rhs, name)? {
-                None => Value::null(),
+                None => Value::Null,
                 Some(Ordering::Less) => (name == Function::Ne || name == Function::Lt || name == Function::Le).into(),
                 Some(Ordering::Equal) => (name == Function::Le || name == Function::Eq || name == Function::Ge).into(),
                 Some(Ordering::Greater) => {
@@ -325,7 +325,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant(if rhs.to_sql_bool() == Some(true) {
                 (lhs / rhs).into()
             } else {
-                Value::null()
+                Value::Null
             })))
         }
 
@@ -343,7 +343,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
                 // contains an "else" clause
                 args[args_count - 1].to_compiled()
             } else {
-                Compiled(C::Constant(Value::null()))
+                Compiled(C::Constant(Value::Null))
             })
         }
     }

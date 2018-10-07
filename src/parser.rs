@@ -210,7 +210,7 @@ impl Allocator {
     fn expr_from_pair(&mut self, pair: Pair<'_, Rule>) -> Result<Expr, Error> {
         match pair.as_rule() {
             Rule::expr_rownum => Ok(Expr::RowNum),
-            Rule::expr_null => Ok(Expr::Value(Value::null())),
+            Rule::expr_null => Ok(Expr::Value(Value::Null)),
             Rule::expr_true => Ok(Expr::Value(1_u64.into())),
             Rule::expr_false => Ok(Expr::Value(0_u64.into())),
             Rule::expr_function => {

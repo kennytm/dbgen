@@ -4,6 +4,7 @@ use std::{
     fmt,
     io::{self, Write},
     ops, slice,
+    str::{from_utf8, from_utf8_unchecked},
 };
 
 use crate::{
@@ -174,53 +175,60 @@ impl PartialOrd for Number {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-enum V {
-    /// Null.
-    Null,
-    /// A number.
-    Number(Number),
-    /// A string.
-    String(String),
-    /// A byte string, guaranteed to be *not* containing UTF-8.
-    Bytes(Vec<u8>),
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct Bytes {
+    bytes: Vec<u8>,
+    is_binary: bool,
+}
+
+impl Bytes {
+    pub fn write_sql(&self, mut output: impl Write) -> Result<(), io::Error> {
+        if self.is_binary {
+            output.write_all(b"X'")?;
+            for b in &self.bytes {
+                write!(output, "{:02X}", b)?;
+            }
+        } else {
+            output.write_all(b"'")?;
+            for b in &self.bytes {
+                output.write_all(if *b == b'\'' { b"''" } else { slice::from_ref(b) })?;
+            }
+        }
+        output.write_all(b"'")?;
+        Ok(())
+    }
 }
 
 /// A scalar value.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Value(V);
+pub enum Value {
+    /// Null.
+    Null,
+    /// A number.
+    Number(Number),
+    /// A string or byte string.
+    Bytes(Bytes),
+
+    #[doc(hidden)]
+    __NonExhaustive,
+}
 
 impl Value {
     /// Writes the SQL representation of this value into a write stream.
     pub fn write_sql(&self, mut output: impl Write) -> Result<(), io::Error> {
-        match &self.0 {
-            V::Null => {
+        match self {
+            Value::Null => {
                 output.write_all(b"NULL")?;
             }
-            V::Number(number) => {
+            Value::Number(number) => {
                 write!(output, "{}", number)?;
             }
-            V::String(s) => {
-                output.write_all(b"'")?;
-                for b in s.as_bytes() {
-                    output.write_all(if *b == b'\'' { b"''" } else { slice::from_ref(b) })?;
-                }
-                output.write_all(b"'")?;
+            Value::Bytes(bytes) => {
+                bytes.write_sql(output)?;
             }
-            V::Bytes(bytes) => {
-                output.write_all(b"x'")?;
-                for b in bytes {
-                    write!(output, "{:02X}", b)?;
-                }
-                output.write_all(b"'")?;
-            }
+            Value::__NonExhaustive => {}
         }
         Ok(())
-    }
-
-    /// Obtains the null value.
-    pub fn null() -> Self {
-        Value(V::Null)
     }
 
     /// Compares two values using the rules common among SQL implementations.
@@ -231,13 +239,10 @@ impl Value {
     /// * Comparing between different types are inconsistent among database
     ///     engines, thus this function will just error with `InvalidArguments`.
     pub fn sql_cmp(&self, other: &Self, name: Function) -> Result<Option<Ordering>, Error> {
-        Ok(match (&self.0, &other.0) {
-            (V::Null, _) | (_, V::Null) => None,
-            (V::Number(a), V::Number(b)) => a.partial_cmp(b),
-            (V::String(a), V::String(b)) => a.partial_cmp(b),
-            (V::String(a), V::Bytes(b)) => a.as_bytes().partial_cmp(b),
-            (V::Bytes(a), V::String(b)) => (&**a).partial_cmp(b.as_bytes()),
-            (V::Bytes(a), V::Bytes(b)) => a.partial_cmp(b),
+        Ok(match (self, other) {
+            (Value::Null, _) | (_, Value::Null) => None,
+            (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
+            (Value::Bytes(a), Value::Bytes(b)) => a.bytes.partial_cmp(&b.bytes),
             _ => {
                 return Err(ErrorKind::InvalidArguments {
                     name,
@@ -249,30 +254,34 @@ impl Value {
     }
 
     pub fn try_sql_concat(values: impl Iterator<Item = Result<Self, Error>>) -> Result<Self, Error> {
-        let mut res = Vec::new();
-        let mut is_utf8 = false;
+        let mut res = Bytes::default();
+        let mut should_check_binary = false;
         for item in values {
-            match item?.0 {
-                V::Null => {
-                    return Ok(Self::null());
+            match item? {
+                Value::Null => {
+                    return Ok(Value::Null);
                 }
-                V::Number(n) => {
-                    write!(&mut res, "{}", n);
+                Value::Number(n) => {
+                    write!(&mut res.bytes, "{}", n);
                 }
-                V::String(s) => {
-                    res.append(&mut s.into_bytes());
+                Value::Bytes(mut b) => {
+                    res.bytes.append(&mut b.bytes);
+                    if b.is_binary {
+                        if res.is_binary {
+                            should_check_binary = true;
+                        } else {
+                            res.is_binary = true;
+                        }
+                    }
                 }
-                V::Bytes(mut b) => {
-                    is_utf8 = false;
-                    res.append(&mut b);
-                }
+                Value::__NonExhaustive => {}
             }
         }
-        Ok(if is_utf8 {
-            unsafe { String::from_utf8_unchecked(res) }.into()
-        } else {
-            res.into()
-        })
+
+        if should_check_binary {
+            res.is_binary = from_utf8(&res.bytes).is_err();
+        }
+        Ok(Value::Bytes(res))
     }
 }
 
@@ -310,8 +319,8 @@ impl<'s> TryFromValue<'s> for Number {
     const NAME: &'static str = "number";
 
     fn try_from_value(value: &'s Value) -> Option<Self> {
-        match value.0 {
-            V::Number(n) => Some(n),
+        match value {
+            Value::Number(n) => Some(*n),
             _ => None,
         }
     }
@@ -321,8 +330,11 @@ impl<'s> TryFromValue<'s> for &'s str {
     const NAME: &'static str = "string";
 
     fn try_from_value(value: &'s Value) -> Option<Self> {
-        match &value.0 {
-            V::String(s) => Some(s),
+        match value {
+            Value::Bytes(Bytes {
+                is_binary: false,
+                bytes,
+            }) => Some(unsafe { from_utf8_unchecked(bytes) }),
             _ => None,
         }
     }
@@ -341,9 +353,9 @@ impl<'s> TryFromValue<'s> for Option<bool> {
 
     #[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
     fn try_from_value(value: &'s Value) -> Option<Self> {
-        match value.0 {
-            V::Null => Some(None),
-            V::Number(n) => Some(n.to_sql_bool()),
+        match value {
+            Value::Null => Some(None),
+            Value::Number(n) => Some(n.to_sql_bool()),
             _ => None,
         }
     }
@@ -351,27 +363,36 @@ impl<'s> TryFromValue<'s> for Option<bool> {
 
 impl<T: Into<Number>> From<T> for Value {
     fn from(value: T) -> Self {
-        Value(V::Number(value.into()))
+        Value::Number(value.into())
     }
 }
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Value(V::String(value))
+        Value::Bytes(Bytes {
+            is_binary: false,
+            bytes: value.into_bytes(),
+        })
     }
 }
 
 impl From<Vec<u8>> for Value {
-    fn from(value: Vec<u8>) -> Self {
-        match String::from_utf8(value) {
-            Ok(s) => Value(V::String(s)),
-            Err(e) => Value(V::Bytes(e.into_bytes())),
-        }
+    fn from(bytes: Vec<u8>) -> Self {
+        Value::Bytes(Bytes {
+            is_binary: from_utf8(&bytes).is_err(),
+            bytes,
+        })
+    }
+}
+
+impl From<Bytes> for Value {
+    fn from(b: Bytes) -> Self {
+        Value::Bytes(b)
     }
 }
 
 impl<T: Into<Value>> From<Option<T>> for Value {
     fn from(value: Option<T>) -> Self {
-        value.map_or(Self::null(), T::into)
+        value.map_or(Value::Null, T::into)
     }
 }
