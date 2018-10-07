@@ -1,3 +1,4 @@
+use chrono::{Duration, NaiveDateTime};
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::{
     cmp::Ordering,
@@ -11,6 +12,8 @@ use crate::{
     error::{Error, ErrorKind},
     parser::Function,
 };
+
+pub const TIMESTAMP_FORMAT: &'static str = "%Y-%m-%d %H:%M:%S%.f";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct I65 {
@@ -208,6 +211,10 @@ pub enum Value {
     Number(Number),
     /// A string or byte string.
     Bytes(Bytes),
+    /// A timestamp without timezone.
+    Timestamp(NaiveDateTime),
+    /// A time interval, as multiple of microseconds.
+    Interval(i64),
 
     #[doc(hidden)]
     __NonExhaustive,
@@ -225,6 +232,12 @@ impl Value {
             }
             Value::Bytes(bytes) => {
                 bytes.write_sql(output)?;
+            }
+            Value::Timestamp(timestamp) => {
+                write!(output, "'{}'", timestamp.format(TIMESTAMP_FORMAT))?;
+            }
+            Value::Interval(interval) => {
+                write!(output, "INTERVAL {} MICROSECOND", interval)?;
             }
             Value::__NonExhaustive => {}
         }
@@ -273,6 +286,12 @@ impl Value {
                             res.is_binary = true;
                         }
                     }
+                }
+                Value::Timestamp(timestamp) => {
+                    write!(&mut res.bytes, "{}", timestamp.format(TIMESTAMP_FORMAT));
+                }
+                Value::Interval(interval) => {
+                    write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval);
                 }
                 Value::__NonExhaustive => {}
             }

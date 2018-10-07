@@ -205,6 +205,28 @@ From highest to lowest precedence:
 
     [log-normal distribution]: https://en.wikipedia.org/wiki/Log-normal_distribution
 
+### Date and Time
+
+* **TIMESTAMP '2016-01-02 15:04:05.999'**
+
+    Converts an ISO-8601-formatted string into a timestamp without timezone.
+
+* **INTERVAL 30 MINUTE**
+
+    Creates a time interval. The inner expression should be a number (can be negative). Valid units
+    are:
+
+    - MICROSECOND
+    - MILLISECOND
+    - SECOND
+    - MINUTE
+    - HOUR
+    - DAY
+    - WEEK
+
+    Intervals can be added to or subtracted from timestamps, and can therefore be used to generate
+    a random timestamp.
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *r3* END**

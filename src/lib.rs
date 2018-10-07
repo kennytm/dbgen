@@ -4,6 +4,7 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::stutter))]
 
 // TODO remove these `extern crate` once RLS understands these are not needed.
+extern crate chrono;
 extern crate data_encoding;
 extern crate failure;
 extern crate num_traits;

@@ -45,6 +45,9 @@ pub enum ErrorKind {
     )]
     InvalidArguments { name: Function, cause: String },
 
+    #[fail(display = "timestamp '{}' does not follow the ISO-8601 format", 0)]
+    InvalidTimestampString(String),
+
     #[fail(display = "failed to write SQL schema")]
     WriteSqlSchema,
 

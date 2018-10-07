@@ -1,9 +1,11 @@
+use chrono::{Duration, NaiveDateTime};
 use crate::{
     error::{Error, ErrorKind},
     parser::{Expr, Function},
     regex,
-    value::{Number, TryFromValue, Value},
+    value::{Number, TryFromValue, Value, TIMESTAMP_FORMAT},
 };
+use failure::ResultExt;
 use rand::{
     distributions::{self, Uniform},
     Rng, SeedableRng, StdRng,
@@ -171,11 +173,23 @@ impl AsValue for Value {
 
 pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
     macro_rules! require {
+        (false, $($fmt:tt)+) => {
+            return Err(ErrorKind::InvalidArguments { name, cause: format!($($fmt)+) }.into());
+        };
         ($e:expr, $($fmt:tt)+) => {
             #[cfg_attr(feature = "cargo-clippy", allow(clippy::neg_cmp_op_on_partial_ord))] {
                 if !$e {
-                    return Err(ErrorKind::InvalidArguments { name, cause: format!($($fmt)+) }.into());
+                    require!(false, $($fmt)+);
                 }
+            }
+        };
+    }
+    macro_rules! try_or_overflow {
+        ($e:expr, $($fmt:tt)+) => {
+            if let Some(e) = $e {
+                e
+            } else {
+                return Err(ErrorKind::IntegerOverflow(format!($($fmt)+)).into());
             }
         }
     }
@@ -305,19 +319,57 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
         }
 
         Function::Add => {
-            let lhs = arg::<Number, _>(name, args, 0, None)?;
-            let rhs = arg::<Number, _>(name, args, 1, None)?;
-            Ok(Compiled(C::Constant((lhs + rhs).into())))
+            let lhs = arg::<&Value, _>(name, args, 0, None)?;
+            let rhs = arg::<&Value, _>(name, args, 1, None)?;
+            Ok(Compiled(C::Constant(match (lhs, rhs) {
+                (Value::Number(lhs), Value::Number(rhs)) => (*lhs + *rhs).into(),
+                (Value::Timestamp(ts), Value::Interval(dur)) | (Value::Interval(dur), Value::Timestamp(ts)) => {
+                    Value::Timestamp(try_or_overflow!(
+                        ts.checked_add_signed(Duration::microseconds(*dur)),
+                        "{} + {}us",
+                        ts,
+                        dur
+                    ))
+                }
+                (Value::Interval(a), Value::Interval(b)) => {
+                    Value::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
+                }
+                _ => require!(false, "unsupport argument types"),
+            })))
         }
         Function::Sub => {
-            let lhs = arg::<Number, _>(name, args, 0, None)?;
-            let rhs = arg::<Number, _>(name, args, 1, None)?;
-            Ok(Compiled(C::Constant((lhs - rhs).into())))
+            let lhs = arg::<&Value, _>(name, args, 0, None)?;
+            let rhs = arg::<&Value, _>(name, args, 1, None)?;
+            Ok(Compiled(C::Constant(match (lhs, rhs) {
+                (Value::Number(lhs), Value::Number(rhs)) => (*lhs - *rhs).into(),
+                (Value::Timestamp(ts), Value::Interval(dur)) => Value::Timestamp(try_or_overflow!(
+                    ts.checked_sub_signed(Duration::microseconds(*dur)),
+                    "{} - {}us",
+                    ts,
+                    dur
+                )),
+                (Value::Interval(a), Value::Interval(b)) => {
+                    Value::Interval(try_or_overflow!(a.checked_sub(*b), "{} - {}", a, b))
+                }
+                _ => require!(false, "unsupport argument types"),
+            })))
         }
         Function::Mul => {
-            let lhs = arg::<Number, _>(name, args, 0, None)?;
-            let rhs = arg::<Number, _>(name, args, 1, None)?;
-            Ok(Compiled(C::Constant((lhs * rhs).into())))
+            let lhs = arg::<&Value, _>(name, args, 0, None)?;
+            let rhs = arg::<&Value, _>(name, args, 1, None)?;
+            Ok(Compiled(C::Constant(match (lhs, rhs) {
+                (Value::Number(lhs), Value::Number(rhs)) => (*lhs * *rhs).into(),
+                (Value::Number(multiple), Value::Interval(duration))
+                | (Value::Interval(duration), Value::Number(multiple)) => {
+                    let mult_res = *multiple * Number::from(*duration);
+                    if let Some(res) = mult_res.to::<i64>() {
+                        Value::Interval(res)
+                    } else {
+                        return Err(ErrorKind::IntegerOverflow(format!("{} microseconds", mult_res)).into());
+                    }
+                }
+                _ => require!(false, "unsupport argument types"),
+            })))
         }
         Function::FloatDiv => {
             let lhs = arg::<Number, _>(name, args, 0, None)?;
@@ -327,6 +379,13 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             } else {
                 Value::Null
             })))
+        }
+
+        Function::Timestamp => {
+            let input = arg(name, args, 0, None)?;
+            let timestamp = NaiveDateTime::parse_from_str(input, TIMESTAMP_FORMAT)
+                .with_context(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?;
+            Ok(Compiled(C::Constant(Value::Timestamp(timestamp))))
         }
 
         Function::CaseValueWhen => {

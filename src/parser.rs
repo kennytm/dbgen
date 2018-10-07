@@ -1,3 +1,4 @@
+use chrono::Duration;
 use crate::{
     error::{Error, ErrorKind},
     value::Value,
@@ -286,12 +287,31 @@ impl Allocator {
                     _ => unreachable!(),
                 })
             }
+            Rule::expr_interval => {
+                let mut pairs = pair.into_inner();
+                let multiple = self.expr_from_pair(pairs.next().unwrap())?;
+                let interval_unit = match pairs.next().unwrap().as_rule() {
+                    Rule::interval_unit_week => 604_800_000_000,
+                    Rule::interval_unit_day => 86_400_000_000,
+                    Rule::interval_unit_hour => 3_600_000_000,
+                    Rule::interval_unit_minute => 60_000_000,
+                    Rule::interval_unit_second => 1_000_000,
+                    Rule::interval_unit_ms => 1_000,
+                    Rule::interval_unit_us => 1,
+                    _ => unreachable!(),
+                };
+                Ok(Expr::Function {
+                    name: Function::Mul,
+                    args: vec![multiple, Expr::Value(Value::Interval(interval_unit))],
+                })
+            }
             rule => {
                 let name = match rule {
                     Rule::expr_case_value_when => Function::CaseValueWhen,
                     Rule::expr_and => Function::And,
                     Rule::expr_or => Function::Or,
                     Rule::expr_not => Function::Not,
+                    Rule::expr_timestamp => Function::Timestamp,
                     r => panic!("unexpected rule <{:?}> while parsing an expression", r),
                 };
                 let args = self.expr_from_pairs(pair.into_inner())?;
@@ -407,5 +427,6 @@ define_function! {
     'else:
         Neg = "unary -",
         CaseValueWhen = "case ... when",
+        Timestamp = "timestamp",
     }
 }

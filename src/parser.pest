@@ -67,6 +67,8 @@ prec_expr_primary = _{
     expr_number |
     expr_unary |
     expr_case_value_when |
+    expr_timestamp |
+    expr_interval |
     expr_get_variable
 }
 
@@ -130,3 +132,20 @@ expr_case_value_when = {
     (^"else" ~ s* ~ expr ~ s*)? ~
     ^"end"
 }
+
+expr_timestamp = {
+    ^"timestamp" ~ s* ~ prec_expr_primary
+}
+expr_interval = {
+    ^"interval" ~ bs ~ expr ~ bs ~ (
+        interval_unit_week | interval_unit_day | interval_unit_hour | interval_unit_minute |
+        interval_unit_second | interval_unit_ms | interval_unit_us
+    )
+}
+interval_unit_week = @{ ^"week" }
+interval_unit_day = @{ ^"day" }
+interval_unit_hour = @{ ^"hour" }
+interval_unit_minute = @{ ^"minute" }
+interval_unit_second = @{ ^"second" }
+interval_unit_ms = @{ ^"millisecond" }
+interval_unit_us = @{ ^"microsecond" }
