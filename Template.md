@@ -233,8 +233,14 @@ From highest to lowest precedence:
 
     If *value* equals to *p1*, then the expression's value is *r1*, etc.
 
-* **@local := f()**
-
 * **@local**
 
     Gets the previous assigned local variable. If the variable was undefined, this will return NULL.
+
+* **greatest(*x*, *y*, *z*)**
+
+    Returns the largest of all given values. NULL values are ignored.
+
+* **least(*x*, *y*, *z*)**
+
+    Returns the smallest of all given values. NULL values are ignored.

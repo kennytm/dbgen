@@ -403,6 +403,9 @@ define_function! {
         RandLogNormal = "rand.log_normal",
         RandBool = "rand.bool",
 
+        Greatest = "greatest",
+        Least = "least",
+
     'sym_op:
         Eq = "=",
         Lt = "<",

@@ -405,5 +405,22 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
                 Compiled(C::Constant(Value::Null))
             })
         }
+
+        Function::Greatest | Function::Least => {
+            let mut res = &Value::Null;
+            for value in iter_args::<&Value, _>(name, args) {
+                let value = value?;
+                let should_replace = match value.sql_cmp(res, name)? {
+                    Some(Ordering::Greater) => name == Function::Greatest,
+                    Some(Ordering::Less) => name == Function::Least,
+                    None => res == &Value::Null,
+                    _ => false
+                };
+                if should_replace {
+                    res = value;
+                }
+            }
+            Ok(Compiled(C::Constant(res.clone())))
+        }
     }
 }
