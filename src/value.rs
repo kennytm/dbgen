@@ -197,6 +197,33 @@ impl Value {
             }
         })
     }
+
+    pub fn try_sql_concat(values: impl Iterator<Item = Result<Self, Error>>) -> Result<Self, Error> {
+        let mut res = Vec::new();
+        let mut is_utf8 = false;
+        for item in values {
+            match item?.0 {
+                V::Null => {
+                    return Ok(Self::null());
+                }
+                V::Number(n) => {
+                    write!(&mut res, "{}", n);
+                }
+                V::String(s) => {
+                    res.append(&mut s.into_bytes());
+                }
+                V::Bytes(mut b) => {
+                    is_utf8 = false;
+                    res.append(&mut b);
+                }
+            }
+        }
+        Ok(if is_utf8 {
+            unsafe { String::from_utf8_unchecked(res) }.into()
+        } else {
+            res.into()
+        })
+    }
 }
 
 pub trait TryFromValue<'s>: Sized {

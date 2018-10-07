@@ -298,13 +298,16 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             }
             Ok(Compiled(C::Constant(result.into())))
         }
+
+        Function::Concat => {
+            let result = Value::try_sql_concat(iter_args::<&Value, _>(name, args).map(|item| item.map(Value::clone)))?;
+            Ok(Compiled(C::Constant(result)))
         }
 
         Function::Add => unimplemented!(),
         Function::Sub => unimplemented!(),
         Function::Mul => unimplemented!(),
         Function::FloatDiv => unimplemented!(),
-        Function::Concat => unimplemented!(),
 
         Function::CaseValueWhen => {
             let check = arg::<&Value, _>(name, args, 0, None)?;
