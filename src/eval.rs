@@ -173,13 +173,13 @@ impl AsValue for Value {
 
 pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
     macro_rules! require {
-        (false, $($fmt:tt)+) => {
+        (@false, $($fmt:tt)+) => {
             return Err(ErrorKind::InvalidArguments { name, cause: format!($($fmt)+) }.into());
         };
         ($e:expr, $($fmt:tt)+) => {
             #[cfg_attr(feature = "cargo-clippy", allow(clippy::neg_cmp_op_on_partial_ord))] {
                 if !$e {
-                    require!(false, $($fmt)+);
+                    require!(@false, $($fmt)+);
                 }
             }
         };
@@ -334,7 +334,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
                 (Value::Interval(a), Value::Interval(b)) => {
                     Value::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
                 }
-                _ => require!(false, "unsupport argument types"),
+                _ => require!(@false, "unsupport argument types"),
             })))
         }
         Function::Sub => {
@@ -351,7 +351,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
                 (Value::Interval(a), Value::Interval(b)) => {
                     Value::Interval(try_or_overflow!(a.checked_sub(*b), "{} - {}", a, b))
                 }
-                _ => require!(false, "unsupport argument types"),
+                _ => require!(@false, "unsupport argument types"),
             })))
         }
         Function::Mul => {
@@ -368,7 +368,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
                         return Err(ErrorKind::IntegerOverflow(format!("{} microseconds", mult_res)).into());
                     }
                 }
-                _ => require!(false, "unsupport argument types"),
+                _ => require!(@false, "unsupport argument types"),
             })))
         }
         Function::FloatDiv => {

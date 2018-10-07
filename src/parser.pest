@@ -62,14 +62,14 @@ prec_expr_mul = _{ expr_mul | prec_expr_primary }
 prec_expr_primary = _{
     expr_rownum | expr_null | expr_true | expr_false |
     expr_group |
-    expr_function |
     expr_string |
     expr_number |
     expr_unary |
     expr_case_value_when |
     expr_timestamp |
     expr_interval |
-    expr_get_variable
+    expr_get_variable |
+    expr_function
 }
 
 expr_set_variable = {
@@ -127,14 +127,14 @@ expr_unary = {
     plus_op ~ s* ~ prec_expr_primary
 }
 expr_case_value_when = {
-    ^"case" ~ s* ~ expr ~ s* ~
-    (^"when" ~ s* ~ expr ~ s* ~ ^"then" ~ s* ~ expr ~ s*)+ ~
-    (^"else" ~ s* ~ expr ~ s*)? ~
+    ^"case" ~ bs ~ expr ~ bs ~
+    (^"when" ~ bs ~ expr ~ bs ~ ^"then" ~ bs ~ expr ~ bs)+ ~
+    (^"else" ~ bs ~ expr ~ bs)? ~
     ^"end"
 }
 
 expr_timestamp = {
-    ^"timestamp" ~ s* ~ prec_expr_primary
+    ^"timestamp" ~ bs ~ prec_expr_primary
 }
 expr_interval = {
     ^"interval" ~ bs ~ expr ~ bs ~ (

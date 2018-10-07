@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime};
+use chrono::NaiveDateTime;
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::{
     cmp::Ordering,
@@ -17,8 +17,8 @@ pub const TIMESTAMP_FORMAT: &'static str = "%Y-%m-%d %H:%M:%S%.f";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct I65 {
-    lsbit: bool,
     msb: i64,
+    lsbit: bool,
 }
 
 impl From<I65> for i128 {
