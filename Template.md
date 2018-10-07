@@ -57,7 +57,7 @@ generate a new row when writing them out.
 
 From highest to lowest precedence:
 
-1. unary `-`, function call
+1. unary `-`, unary `+`, function call
 2. `*`, `/`
 3. `+`, `-`, `||`
 4. `=`, `<>`, `<`, `>`, `<=`, `>=`, `IS`, `IS NOT`

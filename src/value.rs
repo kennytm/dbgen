@@ -97,10 +97,7 @@ impl_from_int_for_number!(u8, u16, u32, u64, i8, i16, i32, i64);
 
 impl From<bool> for Number {
     fn from(value: bool) -> Self {
-        Number(N::Int(I65 {
-            lsbit: value,
-            msb: 0,
-        }))
+        Number(N::Int(I65 { lsbit: value, msb: 0 }))
     }
 }
 impl From<f32> for Number {
@@ -145,7 +142,7 @@ macro_rules! impl_number_bin_op {
                 Number(N::Float(f64::from(self.0).$fname(f64::from(other.0))))
             }
         }
-    }
+    };
 }
 
 impl_number_bin_op!(Add, add, checked_add);

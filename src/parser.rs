@@ -273,9 +273,21 @@ impl Allocator {
                     Ok(Expr::GetVariable(var_index))
                 }
             }
+            Rule::expr_unary => {
+                let mut pairs = pair.into_inner();
+                let op = pairs.next().unwrap().as_str();
+                let inner = self.expr_from_pair(pairs.next().unwrap())?;
+                Ok(match op {
+                    "+" => inner,
+                    "-" => Expr::Function {
+                        name: Function::Neg,
+                        args: vec![inner],
+                    },
+                    _ => unreachable!(),
+                })
+            }
             rule => {
                 let name = match rule {
-                    Rule::expr_neg => Function::Neg,
                     Rule::expr_case_value_when => Function::CaseValueWhen,
                     Rule::expr_and => Function::And,
                     Rule::expr_or => Function::Or,
