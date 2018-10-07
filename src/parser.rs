@@ -203,8 +203,7 @@ impl Allocator {
     }
 
     fn expr_from_pair(&mut self, pair: Pair<'_, Rule>) -> Result<Expr, Error> {
-        let rule = pair.as_rule();
-        match rule {
+        match pair.as_rule() {
             Rule::expr_rownum => Ok(Expr::RowNum),
             Rule::expr_null => Ok(Expr::Value(Value::null())),
             Rule::expr_true => Ok(Expr::Value(1_u64.into())),
@@ -222,7 +221,41 @@ impl Allocator {
                 Ok(Expr::Value(string.into()))
             }
             Rule::expr_number => parse_number(pair.as_str()).map(Expr::Value),
-            Rule::expr_variable => {
+            Rule::expr_cmp => {
+                let mut pairs = pair.into_inner();
+                let left = self.expr_from_pair(pairs.next().unwrap())?;
+                let op = pairs.next().unwrap().as_str();
+                let right = self.expr_from_pair(pairs.next().unwrap())?;
+                Ok(Expr::Function {
+                    name: Function::from_op(op).unwrap_or(Function::IsNot),
+                    args: vec![left, right],
+                })
+            }
+            Rule::expr_plus | Rule::expr_mul => {
+                let mut pairs = pair.into_inner();
+                let mut args = Vec::with_capacity(2);
+                args.push(self.expr_from_pair(pairs.next().unwrap())?);
+                let mut name = Function::from_op(pairs.next().unwrap().as_str()).unwrap();
+                args.push(self.expr_from_pair(pairs.next().unwrap())?);
+                for pair in pairs {
+                    match pair.as_rule() {
+                        Rule::plus_op | Rule::mul_op => {
+                            let cur_name = Function::from_op(pair.as_str()).unwrap();
+                            if cur_name != name {
+                                let collapsed = Expr::Function { name, args };
+                                name = cur_name;
+                                args = Vec::with_capacity(2);
+                                args.push(collapsed);
+                            }
+                        }
+                        _ => {
+                            args.push(self.expr_from_pair(pair)?);
+                        }
+                    }
+                }
+                Ok(Expr::Function { name, args })
+            }
+            Rule::expr_set_variable | Rule::expr_get_variable => {
                 let mut pairs = pair.into_inner();
                 let ident_str = pairs.next().unwrap().as_str();
                 let mut ident = String::with_capacity(ident_str.len());
@@ -235,16 +268,18 @@ impl Allocator {
                     Ok(Expr::GetVariable(var_index))
                 }
             }
-            Rule::expr_neg | Rule::expr_case_value_when => {
+            rule => {
                 let name = match rule {
                     Rule::expr_neg => Function::Neg,
                     Rule::expr_case_value_when => Function::CaseValueWhen,
-                    _ => unreachable!(),
+                    Rule::expr_and => Function::And,
+                    Rule::expr_or => Function::Or,
+                    Rule::expr_not => Function::Not,
+                    r => panic!("unexpected rule <{:?}> while parsing an expression", r),
                 };
                 let args = self.expr_from_pairs(pair.into_inner())?;
                 Ok(Expr::Function { name, args })
             }
-            r => panic!("unexpected rule <{:?}> while parsing an expression", r),
         }
     }
 }
@@ -268,18 +303,31 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 macro_rules! define_function {
     (
         pub enum $F:ident {
-            $($ident:ident = $s:tt,)+
+        'function:
+            $($fi:ident = $fs:tt,)*
+        'sym_op:
+            $($si:ident = $ss:tt,)*
+        'named_op:
+            $($ni:ident = $ns:tt,)*
+        'else:
+            $($ei:ident = $es:tt,)*
         }
     ) => {
         #[derive(Debug, Copy, Clone, PartialEq, Eq)]
         pub enum $F {
-            $($ident,)+
+            $($fi,)+
+            $($si,)+
+            $($ni,)+
+            $($ei,)+
         }
 
         impl fmt::Display for $F {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str(match self {
-                    $($F::$ident => $s,)+
+                    $($F::$fi => $fs,)*
+                    $($F::$si => $ss,)*
+                    $($F::$ni => $ns,)*
+                    $($F::$ei => $es,)*
                 })
             }
         }
@@ -287,9 +335,21 @@ macro_rules! define_function {
         impl $F {
             fn from_name(name: String) -> Result<Self, Error> {
                 Ok(match &*name {
-                    $($s => $F::$ident,)+
+                    $($fs => $F::$fi,)*
                     _ => return Err(ErrorKind::UnknownFunction(name).into()),
                 })
+            }
+
+            fn from_op(name: &str) -> Option<Self> {
+                match name {
+                    $($ss => Some($F::$si),)*
+                    _ => {
+                        $(if name.eq_ignore_ascii_case($ns) {
+                            return Some($F::$ni);
+                        })*
+                        None
+                    }
+                }
             }
         }
     }
@@ -297,6 +357,7 @@ macro_rules! define_function {
 
 define_function! {
     pub enum Function {
+    'function:
         RandRegex = "rand.regex",
         RandRange = "rand.range",
         RandRangeInclusive = "rand.range_inclusive",
@@ -306,7 +367,28 @@ define_function! {
         RandLogNormal = "rand.log_normal",
         RandBool = "rand.bool",
 
-        Neg = "-",
-        CaseValueWhen = "CASE ... WHEN",
+    'sym_op:
+        Eq = "=",
+        Lt = "<",
+        Gt = ">",
+        Le = "<=",
+        Ge = ">=",
+        Ne = "<>",
+        Add = "+",
+        Sub = "-",
+        Mul = "*",
+        FloatDiv = "/",
+        Concat = "||",
+
+    'named_op:
+        Is = "is",
+        IsNot = "is not",
+        Or = "or",
+        And = "and",
+        Not = "not",
+
+    'else:
+        Neg = "unary -",
+        CaseValueWhen = "case ... when",
     }
 }

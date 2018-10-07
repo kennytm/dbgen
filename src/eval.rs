@@ -236,6 +236,24 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant((-inner).into())))
         }
 
+        // TODO
+        Function::And => unimplemented!(),
+        Function::Or => unimplemented!(),
+        Function::Not => unimplemented!(),
+        Function::Eq => unimplemented!(),
+        Function::Ne => unimplemented!(),
+        Function::Is => unimplemented!(),
+        Function::IsNot => unimplemented!(),
+        Function::Lt => unimplemented!(),
+        Function::Le => unimplemented!(),
+        Function::Gt => unimplemented!(),
+        Function::Ge => unimplemented!(),
+        Function::Add => unimplemented!(),
+        Function::Sub => unimplemented!(),
+        Function::Mul => unimplemented!(),
+        Function::FloatDiv => unimplemented!(),
+        Function::Concat => unimplemented!(),
+
         Function::CaseValueWhen => {
             let check = arg::<&Value, _>(name, args, 0, None)?;
             let args_count = args.len();

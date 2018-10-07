@@ -57,29 +57,31 @@ generate a new row when writing them out.
 
 From highest to lowest precedence:
 
-* **-x**
-
-    Negative of the number *x*.
+1. `-` (unary negation)
+2. `*` (multiplication) \
+    `/` (floating-point division)
+3. `+` (addition) \
+    `-` (subtraction) \
+    `||` (string concatenation)
+4. `=` (equals) \
+    `<>` (not equals) \
+    `<` (less than) \
+    `>` (greater than) \
+    `<=` (less than or equals) \
+    `>=` (greater than or equals) \
+    `IS` (identical) \
+    `IS NOT` (not identical)
+5. `NOT` (unary logical NOT)
+6. `AND` (logical AND)
+7. `OR` (logical OR)
+8. `:=` (assignment)
 
 ### Symbols
 
-* **rownum**
-
-    The current row number. The first row has value 1.
-
-* **NULL**
-
-    The null value.
-
-    > To simplify reasoning, we consider `NULL = NULL` to be true, unlike the SQL definition.
-
-* **TRUE**
-
-    Equals to 1.
-
-* **FALSE**
-
-    Equals to 0.
+* **rownum**: The current row number. The first row has value 1.
+* **NULL**: The null value.
+* **TRUE**: Equals to 1.
+* **FALSE**: Equals to 0.
 
 ### Random functions
 

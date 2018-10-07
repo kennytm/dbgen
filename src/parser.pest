@@ -8,6 +8,8 @@ s = _{
     "--" ~ (!NEWLINE ~ ANY)* ~ NEWLINE |
     "/*" ~ (!"*/" ~ ANY)* ~ "*/"
 }
+b = _{ !(ASCII_ALPHANUMERIC|"_") }
+bs = _{ b ~ s* }
 
 back_quoted     = _{ "`" ~ (!("`"|"\\") ~ ANY | "``" | "\\" ~ ANY)* ~ "`" }
 single_quoted   = _{ "'" ~ (!("'"|"\\") ~ ANY | "''" | "\\" ~ ANY)* ~ "'" }
@@ -37,7 +39,6 @@ qname = {
 column_definition = {
     (!"{{" ~ (balanced|s))+
 }
-
 table_options = {
     ANY*
 }
@@ -47,23 +48,69 @@ create_table_content = {
 }
 
 create_table = _{
-    SOI ~ s* ~ ^"create" ~ s+ ~ ^"table" ~ s* ~ qname ~ s* ~ create_table_content
+    SOI ~ s* ~ ^"create" ~ s+ ~ ^"table" ~ bs ~ qname ~ s* ~ create_table_content
 }
 
-expr = _{
+expr = _{ expr_set_variable | prec_expr_or }
+prec_expr_or = _{ expr_or | prec_expr_and }
+prec_expr_and = _{ expr_and | prec_expr_not }
+prec_expr_not = _{ expr_not | prec_expr_cmp }
+prec_expr_cmp = _{ expr_cmp | prec_expr_plus }
+prec_expr_plus = _{ expr_plus | prec_expr_mul }
+prec_expr_mul = _{ expr_mul | prec_expr_primary }
+
+prec_expr_primary = _{
     expr_rownum | expr_null | expr_true | expr_false |
+    expr_group |
     expr_function |
     expr_string |
     expr_number |
     expr_neg |
     expr_case_value_when |
-    expr_variable
+    expr_get_variable
+}
+
+expr_set_variable = {
+    "@" ~ ident ~ s* ~ ":=" ~ s* ~ expr
+}
+
+expr_or = {
+    prec_expr_and ~ (bs ~ ^"or" ~ bs ~ prec_expr_and)+
+}
+expr_and = {
+    prec_expr_not ~ (bs ~ ^"and" ~ bs ~ prec_expr_not)+
+}
+expr_not = {
+    ^"not" ~ bs ~ prec_expr_not
+}
+
+expr_cmp = {
+    prec_expr_plus ~ bs ~ cmp_op ~ s* ~ prec_expr_plus
+}
+cmp_op = @{
+    ^"is" ~ (bs ~ ^"not")? ~ b | "<=" | ">=" | "<>" | "<" | ">" | "="
+}
+
+expr_plus = {
+    prec_expr_mul ~ (s* ~ plus_op ~ s* ~ prec_expr_mul)+
+}
+plus_op = @{
+    "+" | "-" | "||"
+}
+
+expr_mul = {
+    prec_expr_primary ~ (s* ~ mul_op ~ s* ~ prec_expr_primary)+
+}
+mul_op = @{
+    "*" | "/"
 }
 
 expr_rownum = { ^"rownum" }
 expr_null = { ^"null" }
 expr_true = { ^"true" }
 expr_false = { ^"false" }
+expr_group = _{ "(" ~ s* ~ expr ~ s* ~ ")" }
+expr_get_variable = { "@" ~ ident ~ !(s* ~ ":=") }
 expr_function = {
     qname ~ s* ~ "(" ~ s* ~ (expr ~ s* ~ ("," ~ s* ~ expr ~ s*)*)? ~ ")"
 }
@@ -75,14 +122,11 @@ expr_number = @{
     (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+) ~ (^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+)?
 }
 expr_neg = {
-    "-" ~ s* ~ expr
+    "-" ~ s* ~ prec_expr_primary
 }
 expr_case_value_when = {
     ^"case" ~ s* ~ expr ~ s* ~
     (^"when" ~ s* ~ expr ~ s* ~ ^"then" ~ s* ~ expr ~ s*)+ ~
     (^"else" ~ s* ~ expr ~ s*)? ~
     ^"end"
-}
-expr_variable = {
-    "@" ~ ident ~ (s* ~ ":=" ~ s* ~ expr)?
 }
