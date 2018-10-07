@@ -34,16 +34,20 @@ qname = {
     ident ~ (s* ~ "." ~ s* ~ ident){0,2}
 }
 
+column_definition = {
+    (!"{{" ~ (balanced|s))+
+}
+
+table_options = {
+    ANY*
+}
+
 create_table_content = {
-    "(" ~ (balanced|s)* ~ ")" ~ s* ~ (!^"as" ~ (balanced|s))*
+    "(" ~ (column_definition | "{{" ~ s* ~ expr ~ s* ~ "}}")* ~ ")" ~ table_options
 }
 
 create_table = _{
-    SOI ~ s* ~
-    ^"create" ~ s+ ~ ^"table" ~ s+ ~ qname ~ s* ~ create_table_content ~
-    ^"as" ~ s+ ~ ^"select" ~ s* ~ expr ~ s* ~ ("," ~ s* ~ expr ~ s*)* ~
-    ^"from" ~ s+ ~ (^"rand"|"`rand`"|"\"rand\""|"[rand]") ~
-    s* ~ (";" ~ s*)? ~ &EOI
+    SOI ~ s* ~ ^"create" ~ s+ ~ ^"table" ~ s* ~ qname ~ s* ~ create_table_content
 }
 
 expr = _{

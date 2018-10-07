@@ -158,10 +158,25 @@ impl Template {
         let mut pairs = TemplateParser::parse(Rule::create_table, input).context(ErrorKind::ParseTemplate)?;
 
         let name = QName::from_pairs(pairs.next().unwrap().into_inner());
-        let content = pairs.next().unwrap().as_str().to_owned();
 
         let mut alloc = Allocator::default();
-        let exprs = alloc.expr_from_pairs(pairs)?;
+        let mut exprs = Vec::new();
+        let mut content = String::from("(");
+
+        for pair in pairs.next().unwrap().into_inner() {
+            match pair.as_rule() {
+                Rule::column_definition => {
+                    content.push_str(pair.as_str());
+                }
+                Rule::table_options => {
+                    content.push(')');
+                    content.push_str(pair.as_str());
+                }
+                _ => {
+                    exprs.push(alloc.expr_from_pair(pair)?);
+                }
+            }
+        }
 
         Ok(Self { name, content, exprs, variables_count: alloc.count })
     }
