@@ -8,7 +8,7 @@ use pest::{
     Parser,
 };
 use pest_derive::Parser;
-use std::{fmt, collections::HashMap};
+use std::{collections::HashMap, fmt};
 
 #[derive(Parser)]
 #[grammar = "parser.pest"]
@@ -178,7 +178,12 @@ impl Template {
             }
         }
 
-        Ok(Self { name, content, exprs, variables_count: alloc.count })
+        Ok(Self {
+            name,
+            content,
+            exprs,
+            variables_count: alloc.count,
+        })
     }
 }
 

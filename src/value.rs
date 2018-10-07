@@ -6,6 +6,11 @@ use std::{
     ops, slice,
 };
 
+use crate::{
+    error::{Error, ErrorKind},
+    parser::Function,
+};
+
 #[derive(Copy, Clone, Debug)]
 enum N {
     U(u64),
@@ -36,23 +41,19 @@ impl Number {
     }
 }
 
-impl From<u64> for Number {
-    fn from(value: u64) -> Self {
-        Number(N::U(value))
+macro_rules! impl_from_number {
+    ($variant:ident: $($ty:ty),*) => {
+        $(impl From<$ty> for Number {
+            fn from(value: $ty) -> Self {
+                Number(N::$variant(value.into()))
+            }
+        })*
     }
 }
 
-impl From<i64> for Number {
-    fn from(value: i64) -> Self {
-        Number(N::I(value))
-    }
-}
-
-impl From<f64> for Number {
-    fn from(value: f64) -> Self {
-        Number(N::F(value))
-    }
-}
+impl_from_number!(U: u8, u16, u32, u64, bool);
+impl_from_number!(I: i8, i16, i32, i64);
+impl_from_number!(F: f32, f64);
 
 impl ops::Neg for Number {
     type Output = Self;
@@ -158,8 +159,34 @@ impl Value {
         Ok(())
     }
 
+    /// Obtains the null value.
     pub fn null() -> Self {
         Value(V::Null)
+    }
+
+    /// Compares two values using the rules common among SQL implementations.
+    ///
+    /// * Comparing with NULL always return `None`.
+    /// * Numbers are ordered by value.
+    /// * Strings are ordered by UTF-8 binary collation.
+    /// * Comparing between different types are inconsistent among database
+    ///     engines, thus this function will just error with `InvalidArguments`.
+    pub fn sql_cmp(&self, other: &Self, name: Function) -> Result<Option<Ordering>, Error> {
+        Ok(match (&self.0, &other.0) {
+            (V::Null, _) | (_, V::Null) => None,
+            (V::Number(a), V::Number(b)) => a.partial_cmp(b),
+            (V::String(a), V::String(b)) => a.partial_cmp(b),
+            (V::String(a), V::Bytes(b)) => a.as_bytes().partial_cmp(b),
+            (V::Bytes(a), V::String(b)) => (&**a).partial_cmp(b.as_bytes()),
+            (V::Bytes(a), V::Bytes(b)) => a.partial_cmp(b),
+            _ => {
+                return Err(ErrorKind::InvalidArguments {
+                    name,
+                    cause: format!("comparing values of different types"),
+                }
+                .into())
+            }
+        })
     }
 }
 
@@ -223,26 +250,8 @@ impl<'s> TryFromValue<'s> for &'s Value {
     }
 }
 
-impl From<Number> for Value {
-    fn from(number: Number) -> Self {
-        Value(V::Number(number))
-    }
-}
-
-impl From<u64> for Value {
-    fn from(value: u64) -> Self {
-        Value(V::Number(value.into()))
-    }
-}
-
-impl From<i64> for Value {
-    fn from(value: i64) -> Self {
-        Value(V::Number(value.into()))
-    }
-}
-
-impl From<f64> for Value {
-    fn from(value: f64) -> Self {
+impl<T: Into<Number>> From<T> for Value {
+    fn from(value: T) -> Self {
         Value(V::Number(value.into()))
     }
 }

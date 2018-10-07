@@ -57,24 +57,54 @@ generate a new row when writing them out.
 
 From highest to lowest precedence:
 
-1. `-` (unary negation)
-2. `*` (multiplication) \
-    `/` (floating-point division)
-3. `+` (addition) \
-    `-` (subtraction) \
-    `||` (string concatenation)
-4. `=` (equals) \
-    `<>` (not equals) \
-    `<` (less than) \
-    `>` (greater than) \
-    `<=` (less than or equals) \
-    `>=` (greater than or equals) \
-    `IS` (identical) \
-    `IS NOT` (not identical)
-5. `NOT` (unary logical NOT)
-6. `AND` (logical AND)
-7. `OR` (logical OR)
-8. `:=` (assignment)
+1. unary `-`, function call
+2. `*`, `/`
+3. `+`, `-`, `||`
+4. `=`, `<>`, `<`, `>`, `<=`, `>=`, `IS`, `IS NOT`
+5. unary `NOT`
+6. `AND`
+7. `OR`
+8. `:=`
+
+* **Concatenation `||`**
+
+    The `||` will concatenate two strings together. If either side is a number, it will first be
+    converted into a string.
+
+* **Comparison `=`, `<>`, `<`, `>`, `<=`, `>=`**
+
+    These operators will return TRUE, FALSE or NULL. When comparing two values, `dbgen` follows
+    these rules:
+
+    - Comparing with NULL always return NULL.
+    - Numbers are ordered by values.
+    - Strings are ordered lexicographically in the UTF-8 binary collation.
+    - Comparing two values with different types (e.g. `'4' < 5`) will abort the program.
+
+* **Identity `IS`, `IS NOT`**
+
+    These operators will return TRUE or FALSE. `dbgen` follows these rules:
+
+    - `NULL IS NULL` is TRUE.
+    - Values having different types are not identical (`'4' IS 5` is FALSE).
+    - Values having the same types compare like the `=` and `<>` operators.
+
+* **Assignment `:=`**
+
+    The assignment expression `@ident := f()` would evaluate the RHS `f()` and save into the local
+    variable `@local`. The same value can later be extracted using `@local`. This can be used to
+    generate correlated columns, for instance:
+
+    ```sql
+    CREATE TABLE _ (
+        "first"  BOOLEAN NOT NULL {{ rand.bool(0.5) }},
+        "second" BOOLEAN NOT NULL {{ @a := rand.bool(0.5) }},
+        "third"  BOOLEAN NOT NULL {{ @a }}
+    );
+    ```
+
+    The first and second columns are entirely independent, but the second and third column will
+    always have the same value.
 
 ### Symbols
 
@@ -153,21 +183,6 @@ From highest to lowest precedence:
     If *value* equals to *p1*, then the expression's value is *r1*, etc.
 
 * **@local := f()**
-
-    Assigns the evaluated value of the expression `f()` into the local variable `@local`. The same
-    value can later be extracted using `@local`. This can be used to generate correlated columns,
-    for instance:
-
-    ```sql
-    SELECT
-        rand.bool(0.5),
-        @a := rand.bool(0.5),
-        @a
-    FROM rand;
-    ```
-
-    The first and second columns are entirely independent, but the second and third column will
-    always have the same value.
 
 * **@local**
 

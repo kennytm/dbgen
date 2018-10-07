@@ -8,6 +8,7 @@ use rand::{
     distributions::{self, Uniform},
     Rng, SeedableRng, StdRng,
 };
+use std::cmp::Ordering;
 use zipf::ZipfDistribution;
 
 pub type Seed = <StdRng as SeedableRng>::Seed;
@@ -236,18 +237,25 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant((-inner).into())))
         }
 
-        // TODO
+        Function::Eq | Function::Ne | Function::Lt | Function::Le | Function::Gt | Function::Ge => {
+            let lhs = arg::<&Value, _>(name, args, 0, None)?;
+            let rhs = arg::<&Value, _>(name, args, 1, None)?;
+            let answer = match lhs.sql_cmp(rhs, name)? {
+                None => Value::null(),
+                Some(Ordering::Less) => (name == Function::Ne || name == Function::Lt || name == Function::Le).into(),
+                Some(Ordering::Equal) => (name == Function::Le || name == Function::Eq || name == Function::Ge).into(),
+                Some(Ordering::Greater) => {
+                    (name == Function::Ge || name == Function::Gt || name == Function::Ne).into()
+                }
+            };
+            Ok(Compiled(C::Constant(answer)))
+        }
+
         Function::And => unimplemented!(),
         Function::Or => unimplemented!(),
         Function::Not => unimplemented!(),
-        Function::Eq => unimplemented!(),
-        Function::Ne => unimplemented!(),
         Function::Is => unimplemented!(),
         Function::IsNot => unimplemented!(),
-        Function::Lt => unimplemented!(),
-        Function::Le => unimplemented!(),
-        Function::Gt => unimplemented!(),
-        Function::Ge => unimplemented!(),
         Function::Add => unimplemented!(),
         Function::Sub => unimplemented!(),
         Function::Mul => unimplemented!(),
@@ -260,7 +268,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
 
             for i in (1..args_count).step_by(2) {
                 let compare = arg::<&Value, _>(name, args, i, None)?;
-                if check == compare {
+                if check.sql_cmp(compare, name)? == Some(Ordering::Equal) {
                     return Ok(args[i + 1].to_compiled());
                 }
             }
