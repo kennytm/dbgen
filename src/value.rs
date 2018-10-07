@@ -36,6 +36,13 @@ impl I65 {
             msb: i64::from(self.lsbit).wrapping_add(self.msb).wrapping_neg(),
         }
     }
+
+    fn try_from_i128(v: i128) -> Option<Self> {
+        Some(Self {
+            lsbit: (v & 1) != 0,
+            msb: (v >> 1).to_i64()?,
+        })
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -122,6 +129,33 @@ impl ops::Neg for Number {
             N::Int(i) => N::Int(i.wrapping_neg()),
             N::Float(f) => N::Float(-f),
         })
+    }
+}
+
+macro_rules! impl_number_bin_op {
+    ($trait:ident, $fname:ident, $checked:ident) => {
+        impl ops::$trait for Number {
+            type Output = Self;
+            fn $fname(self, other: Self) -> Self {
+                if let (N::Int(a), N::Int(b)) = (self.0, other.0) {
+                    if let Some(c) = i128::from(a).$checked(i128::from(b)).and_then(I65::try_from_i128) {
+                        return Number(N::Int(c));
+                    }
+                }
+                Number(N::Float(f64::from(self.0).$fname(f64::from(other.0))))
+            }
+        }
+    }
+}
+
+impl_number_bin_op!(Add, add, checked_add);
+impl_number_bin_op!(Sub, sub, checked_sub);
+impl_number_bin_op!(Mul, mul, checked_mul);
+
+impl ops::Div for Number {
+    type Output = Self;
+    fn div(self, other: Self) -> Self {
+        Number(N::Float(f64::from(self.0) / f64::from(other.0)))
     }
 }
 
@@ -308,6 +342,7 @@ impl<'s> TryFromValue<'s> for &'s Value {
 impl<'s> TryFromValue<'s> for Option<bool> {
     const NAME: &'static str = "nullable boolean";
 
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
     fn try_from_value(value: &'s Value) -> Option<Self> {
         match value.0 {
             V::Null => Some(None),

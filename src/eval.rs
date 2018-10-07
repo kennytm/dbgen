@@ -304,10 +304,30 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant(result)))
         }
 
-        Function::Add => unimplemented!(),
-        Function::Sub => unimplemented!(),
-        Function::Mul => unimplemented!(),
-        Function::FloatDiv => unimplemented!(),
+        Function::Add => {
+            let lhs = arg::<Number, _>(name, args, 0, None)?;
+            let rhs = arg::<Number, _>(name, args, 1, None)?;
+            Ok(Compiled(C::Constant((lhs + rhs).into())))
+        }
+        Function::Sub => {
+            let lhs = arg::<Number, _>(name, args, 0, None)?;
+            let rhs = arg::<Number, _>(name, args, 1, None)?;
+            Ok(Compiled(C::Constant((lhs - rhs).into())))
+        }
+        Function::Mul => {
+            let lhs = arg::<Number, _>(name, args, 0, None)?;
+            let rhs = arg::<Number, _>(name, args, 1, None)?;
+            Ok(Compiled(C::Constant((lhs * rhs).into())))
+        }
+        Function::FloatDiv => {
+            let lhs = arg::<Number, _>(name, args, 0, None)?;
+            let rhs = arg::<Number, _>(name, args, 1, None)?;
+            Ok(Compiled(C::Constant(if rhs.to_sql_bool() == Some(true) {
+                (lhs / rhs).into()
+            } else {
+                Value::null()
+            })))
+        }
 
         Function::CaseValueWhen => {
             let check = arg::<&Value, _>(name, args, 0, None)?;
