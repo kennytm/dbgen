@@ -39,6 +39,15 @@ impl Number {
             N::F(v) => P::from_f64(v),
         }
     }
+
+    pub fn to_sql_bool(&self) -> Option<bool> {
+        match self.0 {
+            N::U(v) => Some(v != 0),
+            N::I(v) => Some(v != 0),
+            N::F(v) if v.is_nan() => None,
+            N::F(v) => Some(v != 0.0),
+        }
+    }
 }
 
 macro_rules! impl_from_number {
@@ -243,10 +252,22 @@ impl<'s> TryFromValue<'s> for &'s str {
 }
 
 impl<'s> TryFromValue<'s> for &'s Value {
-    const NAME: &'static str = "string";
+    const NAME: &'static str = "value";
 
     fn try_from_value(value: &'s Value) -> Option<Self> {
         Some(value)
+    }
+}
+
+impl<'s> TryFromValue<'s> for Option<bool> {
+    const NAME: &'static str = "nullable boolean";
+
+    fn try_from_value(value: &'s Value) -> Option<Self> {
+        match value.0 {
+            V::Null => Some(None),
+            V::Number(n) => Some(n.to_sql_bool()),
+            _ => None,
+        }
     }
 }
 
@@ -268,5 +289,11 @@ impl From<Vec<u8>> for Value {
             Ok(s) => Value(V::String(s)),
             Err(e) => Value(V::Bytes(e.into_bytes())),
         }
+    }
+}
+
+impl<T: Into<Value>> From<Option<T>> for Value {
+    fn from(value: Option<T>) -> Self {
+        value.map_or(Value::null(), T::into)
     }
 }

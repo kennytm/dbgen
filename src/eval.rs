@@ -90,6 +90,23 @@ where
     }
 }
 
+fn iter_args<'a, T, E>(name: Function, args: &'a [E]) -> impl Iterator<Item = Result<T, Error>> + 'a
+where
+    T: TryFromValue<'a>,
+    E: AsValue,
+{
+    args.iter().enumerate().map(move |(index, arg)| {
+        arg.as_value().and_then(T::try_from_value).ok_or_else(|| {
+            ErrorKind::InvalidArgumentType {
+                name,
+                index,
+                expected: T::NAME,
+            }
+            .into()
+        })
+    })
+}
+
 impl Compiled {
     pub fn compile(expr: Expr) -> Result<Self, Error> {
         Ok(Compiled(match expr {
@@ -259,9 +276,30 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant((is_eq == should_eq).into())))
         }
 
-        Function::And => unimplemented!(),
-        Function::Or => unimplemented!(),
-        Function::Not => unimplemented!(),
+        Function::Not => {
+            let inner = arg::<Option<bool>, _>(name, args, 0, None)?;
+            Ok(Compiled(C::Constant(inner.map(|b| !b).into())))
+        }
+
+        Function::And | Function::Or => {
+            let identity_value = name == Function::And;
+            let mut result = Some(identity_value);
+
+            for arg in iter_args(name, args) {
+                if let Some(v) = arg? {
+                    if v == identity_value {
+                        continue;
+                    } else {
+                        return Ok(Compiled(C::Constant(v.into())));
+                    }
+                } else {
+                    result = None;
+                }
+            }
+            Ok(Compiled(C::Constant(result.into())))
+        }
+        }
+
         Function::Add => unimplemented!(),
         Function::Sub => unimplemented!(),
         Function::Mul => unimplemented!(),

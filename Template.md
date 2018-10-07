@@ -89,6 +89,35 @@ From highest to lowest precedence:
     - Values having different types are not identical (`'4' IS 5` is FALSE).
     - Values having the same types compare like the `=` and `<>` operators.
 
+* **Logical operators `NOT`, `AND`, `OR`**
+
+    These operators will first convert the input into a nullable boolean value
+    (TRUE, FALSE or NULL):
+
+    - NULL remains NULL.
+    - Nonzero numbers become TRUE, `0` and `0.0` becomes FALSE, and `NaN` becomes NULL.
+    - All other types cannot be converted to a boolean and will abort the program.
+
+    The trinary logic operates like this:
+
+    |   AND |  TRUE |  NULL | FALSE |
+    |------:|:-----:|:-----:|:-----:|
+    |  TRUE |  TRUE |  NULL | FALSE |
+    |  NULL |  NULL |  NULL | FALSE |
+    | FALSE | FALSE | FALSE | FALSE |
+
+    |    OR |  TRUE |  NULL | FALSE |
+    |------:|:-----:|:-----:|:-----:|
+    |  TRUE |  TRUE |  TRUE |  TRUE |
+    |  NULL |  TRUE |  NULL |  NULL |
+    | FALSE |  TRUE |  NULL | FALSE |
+
+    |   NOT | value |
+    |------:|:-----:|
+    |  TRUE | FALSE |
+    |  NULL |  NULL |
+    | FALSE |  TRUE |
+
 * **Assignment `:=`**
 
     The assignment expression `@ident := f()` would evaluate the RHS `f()` and save into the local
