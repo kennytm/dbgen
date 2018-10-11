@@ -18,7 +18,10 @@ use std::{
 
 /// A compiled regex generator
 #[derive(Clone, Debug)]
-pub struct Generator(Compiled);
+pub struct Generator {
+    compiled: Compiled,
+    capacity: usize,
+}
 
 #[derive(Clone, Debug)]
 enum Compiled {
@@ -28,13 +31,19 @@ enum Compiled {
     Repeat {
         count: Uniform<u32>,
         inner: Box<Compiled>,
+        max_count: u32,
     },
     Any {
         index: Uniform<usize>,
         choices: Vec<Compiled>,
     },
-    UnicodeClass(CompiledClass<u32>),
-    ByteClass(CompiledClass<u8>),
+    UnicodeClass {
+        class: CompiledClass<u32>,
+        max_char_len: usize,
+    },
+    ByteClass {
+        class: CompiledClass<u8>,
+    },
 }
 
 impl Compiled {
@@ -49,7 +58,7 @@ impl Compiled {
             Compiled::Literal(lit) => {
                 output.extend_from_slice(lit);
             }
-            Compiled::Repeat { count, inner } => {
+            Compiled::Repeat { count, inner, .. } => {
                 let count = count.sample(rng);
                 for _ in 0..count {
                     inner.eval_into(rng, output);
@@ -59,15 +68,27 @@ impl Compiled {
                 let index = index.sample(rng);
                 choices[index].eval_into(rng, output);
             }
-            Compiled::UnicodeClass(cls) => {
-                let c = char::from_u32(cls.sample(rng)).expect("valid char");
+            Compiled::UnicodeClass { class, .. } => {
+                let c = char::from_u32(class.sample(rng)).expect("valid char");
                 let mut buf = [0; 4];
                 output.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
             }
-            Compiled::ByteClass(cls) => {
-                let b = cls.sample(rng);
+            Compiled::ByteClass { class } => {
+                let b = class.sample(rng);
                 output.push(b);
             }
+        }
+    }
+
+    fn capacity(&self) -> usize {
+        match self {
+            Compiled::Empty => 0,
+            Compiled::Sequence(seq) => seq.iter().map(Self::capacity).sum(),
+            Compiled::Literal(lit) => lit.len(),
+            Compiled::Repeat { inner, max_count, .. } => inner.capacity() * (*max_count as usize),
+            Compiled::Any { choices, .. } => choices.iter().map(Self::capacity).max().unwrap_or(0),
+            Compiled::UnicodeClass { max_char_len, .. } => *max_char_len,
+            Compiled::ByteClass { .. } => 1,
         }
     }
 }
@@ -199,8 +220,13 @@ fn compile_hir(hir: Hir, max_repeat: u32) -> Result<Compiled, Error> {
         }
         HirKind::Literal(hir::Literal::Unicode(c)) => Compiled::Literal(c.to_string().into_bytes()),
         HirKind::Literal(hir::Literal::Byte(b)) => Compiled::Literal(vec![b]),
-        HirKind::Class(hir::Class::Unicode(class)) => Compiled::UnicodeClass(compile_class(class.ranges())),
-        HirKind::Class(hir::Class::Bytes(class)) => Compiled::ByteClass(compile_class(class.ranges())),
+        HirKind::Class(hir::Class::Unicode(class)) => Compiled::UnicodeClass {
+            class: compile_class(class.ranges()),
+            max_char_len: class.iter().last().expect("at least 1 interval").end().len_utf8(),
+        },
+        HirKind::Class(hir::Class::Bytes(class)) => Compiled::ByteClass {
+            class: compile_class(class.ranges()),
+        },
         HirKind::Repetition(rep) => {
             let (lower, upper) = match rep.kind {
                 hir::RepetitionKind::ZeroOrOne => (0, 1),
@@ -235,6 +261,7 @@ fn compile_hir(hir: Hir, max_repeat: u32) -> Result<Compiled, Error> {
             Compiled::Repeat {
                 count: Uniform::new_inclusive(lower, upper),
                 inner: Box::new(inner),
+                max_count: upper,
             }
         }
         HirKind::Group(hir::Group { hir, .. }) => compile_hir(*hir, max_repeat)?,
@@ -282,13 +309,15 @@ impl Generator {
             .build()
             .parse(regex)
             .with_context(|_| ErrorKind::InvalidRegex(regex.to_owned()))?;
-        compile_hir(hir, max_repeat).map(Generator)
+        let compiled = compile_hir(hir, max_repeat)?;
+        let capacity = compiled.capacity();
+        Ok(Self { compiled, capacity })
     }
 
     /// Generates a new byte string which satisfies the regex pattern.
     pub fn eval(&self, rng: &mut impl Rng) -> Vec<u8> {
-        let mut res = Vec::new();
-        self.0.eval_into(rng, &mut res);
+        let mut res = Vec::with_capacity(self.capacity);
+        self.compiled.eval_into(rng, &mut res);
         res
     }
 }
