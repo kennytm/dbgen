@@ -22,6 +22,7 @@ num-traits = "0.2"
 rayon = "1.0"
 zipf = "4.0.1"
 chrono = "0.4"
+ryu = "0.2"
 
 [dev-dependencies]
 regex = "1.0"

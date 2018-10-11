@@ -11,6 +11,7 @@ extern crate num_traits;
 extern crate pest;
 extern crate rand;
 extern crate regex_syntax;
+extern crate ryu;
 extern crate structopt;
 extern crate zipf;
 

@@ -13,7 +13,7 @@ use crate::{
     parser::Function,
 };
 
-pub const TIMESTAMP_FORMAT: &'static str = "%Y-%m-%d %H:%M:%S%.f";
+pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct I65 {
@@ -62,7 +62,10 @@ impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
             N::Int(v) => i128::from(v).fmt(f),
-            N::Float(v) => v.fmt(f),
+            N::Float(v) => {
+                let mut output = ryu::Buffer::new();
+                f.write_str(output.format(v))
+            }
         }
     }
 }
