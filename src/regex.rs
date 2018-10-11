@@ -127,14 +127,16 @@ fn simplify_sequence(mut seq: Vec<Compiled>) -> Compiled {
 }
 
 trait ClassRange {
-    type Item: SampleUniform + Copy;
-    const INVALID_RANGE: Option<(Self::Item, Self::Item)>;
+    type Item: SampleUniform;
+    fn invalid_range() -> Option<(Self::Item, Self::Item)>;
     fn bounds(&self) -> (Self::Item, Self::Item);
 }
 
 impl ClassRange for hir::ClassUnicodeRange {
     type Item = u32;
-    const INVALID_RANGE: Option<(Self::Item, Self::Item)> = Some((0xd7ff, 0xe000));
+    fn invalid_range() -> Option<(Self::Item, Self::Item)> {
+        Some((0xd7ff, 0xe000))
+    }
     fn bounds(&self) -> (Self::Item, Self::Item) {
         (self.start().into(), self.end().into())
     }
@@ -142,9 +144,21 @@ impl ClassRange for hir::ClassUnicodeRange {
 
 impl ClassRange for hir::ClassBytesRange {
     type Item = u8;
-    const INVALID_RANGE: Option<(Self::Item, Self::Item)> = None;
+    fn invalid_range() -> Option<(Self::Item, Self::Item)> {
+        None
+    }
     fn bounds(&self) -> (Self::Item, Self::Item) {
         (self.start(), self.end())
+    }
+}
+
+impl<'a, C: ClassRange + ?Sized + 'a> ClassRange for &'a C {
+    type Item = C::Item;
+    fn invalid_range() -> Option<(Self::Item, Self::Item)> {
+        C::invalid_range()
+    }
+    fn bounds(&self) -> (Self::Item, Self::Item) {
+        (**self).bounds()
     }
 }
 
@@ -172,7 +186,7 @@ where
     }
 }
 
-fn compile_class<C>(ranges: &[C]) -> CompiledClass<C::Item>
+fn compile_class<C>(ranges: impl Iterator<Item = C>) -> CompiledClass<C::Item>
 where
     C: ClassRange,
     C::Item: From<u8> + Add<Output = C::Item> + Sub<Output = C::Item> + AddAssign + Copy + Ord,
@@ -181,7 +195,7 @@ where
     let zero = C::Item::from(0);
     let one = C::Item::from(1);
 
-    let mut normalized_ranges = Vec::with_capacity(ranges.len());
+    let mut normalized_ranges = Vec::new();
     let mut normalized_len = zero;
 
     {
@@ -192,7 +206,7 @@ where
 
         for r in ranges {
             let (start, end) = r.bounds();
-            if let Some((invalid_start, invalid_end)) = C::INVALID_RANGE {
+            if let Some((invalid_start, invalid_end)) = C::invalid_range() {
                 if start <= invalid_start && invalid_end <= end {
                     push(start, invalid_start);
                     push(invalid_end, end);
@@ -222,12 +236,25 @@ fn compile_hir(hir: Hir, max_repeat: u32) -> Result<Compiled, Error> {
         }
         HirKind::Literal(hir::Literal::Unicode(c)) => Compiled::Literal(c.to_string().into_bytes()),
         HirKind::Literal(hir::Literal::Byte(b)) => Compiled::Literal(vec![b]),
-        HirKind::Class(hir::Class::Unicode(class)) => Compiled::UnicodeClass {
-            class: compile_class(class.ranges()),
-            max_char_len: class.iter().last().expect("at least 1 interval").end().len_utf8(),
-        },
+        HirKind::Class(hir::Class::Unicode(class)) => {
+            let max_char_len = class.iter().last().expect("at least 1 interval").end().len_utf8();
+            if max_char_len == 1 {
+                Compiled::ByteClass {
+                    class: compile_class(
+                        class
+                            .iter()
+                            .map(|uc| hir::ClassBytesRange::new(uc.start() as u8, uc.end() as u8)),
+                    ),
+                }
+            } else {
+                Compiled::UnicodeClass {
+                    class: compile_class(class.iter()),
+                    max_char_len,
+                }
+            }
+        }
         HirKind::Class(hir::Class::Bytes(class)) => Compiled::ByteClass {
-            class: compile_class(class.ranges()),
+            class: compile_class(class.iter()),
         },
         HirKind::Repetition(rep) => {
             let (lower, upper) = match rep.kind {
