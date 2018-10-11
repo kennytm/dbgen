@@ -302,7 +302,8 @@ impl Env {
             writeln!(file, "INSERT INTO {} VALUES", self.qualified_name).with_path(&path)?;
 
             for row_index in 0..self.rows_count {
-                self.row_gen.write_sql(state, &mut file).with_path(&path)?;
+                let values = self.row_gen.eval(state).with_path(&path)?;
+                Row::write_sql(values, &mut file).with_path(&path)?;
                 file.write_all(if row_index == self.rows_count - 1 {
                     b";\n"
                 } else {

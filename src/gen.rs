@@ -1,10 +1,10 @@
 use crate::{
-    error::{Error, ErrorKind},
+    error::Error,
     eval::{Compiled, State},
     parser::Expr,
+    value::Value,
 };
-use failure::ResultExt;
-use std::io::Write;
+use std::io::{self, Write};
 
 pub struct Row(Vec<Compiled>);
 
@@ -16,18 +16,21 @@ impl Row {
             .collect::<Result<Vec<_>, Error>>()?))
     }
 
-    pub fn write_sql(&self, state: &mut State, mut output: impl Write) -> Result<(), Error> {
-        for (i, compiled) in self.0.iter().enumerate() {
-            output
-                .write_all(if i == 0 { &b"("[..] } else { &b", "[..] })
-                .context(ErrorKind::WriteSqlData)?;
-            compiled
-                .eval(state)?
-                .write_sql(&mut output)
-                .context(ErrorKind::WriteSqlData)?;
-        }
-        output.write_all(b")").context(ErrorKind::WriteSqlData)?;
+    pub fn eval(&self, state: &mut State) -> Result<Vec<Value>, Error> {
+        let result = self
+            .0
+            .iter()
+            .map(|compiled| compiled.eval(state))
+            .collect::<Result<_, _>>()?;
         state.row_num += 1;
-        Ok(())
+        Ok(result)
+    }
+
+    pub fn write_sql(values: Vec<Value>, mut output: impl Write) -> Result<(), io::Error> {
+        for (i, value) in values.into_iter().enumerate() {
+            output.write_all(if i == 0 { &b"("[..] } else { &b", "[..] })?;
+            value.write_sql(&mut output)?;
+        }
+        output.write_all(b")")
     }
 }
