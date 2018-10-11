@@ -26,3 +26,6 @@ ryu = "0.2"
 
 [dev-dependencies]
 regex = "1.0"
+tempfile = "3.0"
+serde_json = "1.0"
+diff = "0.1"
