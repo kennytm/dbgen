@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{Duration, NaiveDateTime};
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::{
     cmp::Ordering,
@@ -15,7 +15,7 @@ use crate::{
 
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct I65 {
     msb: i64,
     lsbit: bool,
@@ -46,6 +46,12 @@ impl I65 {
             lsbit: (v & 1) != 0,
             msb: (v >> 1).to_i64()?,
         })
+    }
+}
+
+impl fmt::Debug for I65 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}_i65", i128::from(*self))
     }
 }
 
@@ -90,7 +96,7 @@ impl Number {
 macro_rules! impl_from_int_for_number {
     ($($ty:ty),*) => {
         $(impl From<$ty> for Number {
-            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_possible_wrap))] // u63 to i64 won't wrap.
+            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_possible_wrap, clippy::cast_lossless))] // u63 to i64 won't wrap.
             fn from(value: $ty) -> Self {
                 Number(N::Int(I65 {
                     lsbit: (value & 1) != 0,
@@ -223,6 +229,25 @@ pub enum Value {
     __NonExhaustive,
 }
 
+macro_rules! try_or_overflow {
+    ($e:expr, $($fmt:tt)+) => {
+        if let Some(e) = $e {
+            e
+        } else {
+            return Err(ErrorKind::IntegerOverflow(format!($($fmt)+)).into());
+        }
+    }
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut output = Vec::new();
+        self.write_sql(&mut output).map_err(|_| fmt::Error)?;
+        let s = String::from_utf8(output).map_err(|_| fmt::Error)?;
+        f.write_str(&s)
+    }
+}
+
 impl Value {
     /// Writes the SQL representation of this value into a write stream.
     pub fn write_sql(&self, mut output: impl Write) -> Result<(), io::Error> {
@@ -250,7 +275,7 @@ impl Value {
     /// Compares two values using the rules common among SQL implementations.
     ///
     /// * Comparing with NULL always return `None`.
-    /// * Numbers are ordered by value.
+    /// * Numbers, timestamps and intervals are ordered by value.
     /// * Strings are ordered by UTF-8 binary collation.
     /// * Comparing between different types are inconsistent among database
     ///     engines, thus this function will just error with `InvalidArguments`.
@@ -259,10 +284,98 @@ impl Value {
             (Value::Null, _) | (_, Value::Null) => None,
             (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
             (Value::Bytes(a), Value::Bytes(b)) => a.bytes.partial_cmp(&b.bytes),
+            (Value::Timestamp(a), Value::Timestamp(b)) => a.partial_cmp(b),
+            (Value::Interval(a), Value::Interval(b)) => a.partial_cmp(b),
             _ => {
                 return Err(ErrorKind::InvalidArguments {
                     name,
-                    cause: format!("comparing values of different types"),
+                    cause: format!("cannot compare {} with {}", self, other),
+                }
+                .into())
+            }
+        })
+    }
+
+    /// Adds two values using the rules common among SQL implementations.
+    pub fn sql_add(&self, other: &Self) -> Result<Self, Error> {
+        Ok(match (self, other) {
+            (Value::Number(lhs), Value::Number(rhs)) => (*lhs + *rhs).into(),
+            (Value::Timestamp(ts), Value::Interval(dur)) | (Value::Interval(dur), Value::Timestamp(ts)) => {
+                Value::Timestamp(try_or_overflow!(
+                    ts.checked_add_signed(Duration::microseconds(*dur)),
+                    "{} + {}us",
+                    ts,
+                    dur
+                ))
+            }
+            (Value::Interval(a), Value::Interval(b)) => {
+                Value::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
+            }
+            _ => {
+                return Err(ErrorKind::InvalidArguments {
+                    name: Function::Add,
+                    cause: format!("cannot add {} to {}", self, other),
+                }
+                .into())
+            }
+        })
+    }
+
+    pub fn sql_sub(&self, other: &Self) -> Result<Self, Error> {
+        Ok(match (self, other) {
+            (Value::Number(lhs), Value::Number(rhs)) => (*lhs - *rhs).into(),
+            (Value::Timestamp(ts), Value::Interval(dur)) => Value::Timestamp(try_or_overflow!(
+                ts.checked_sub_signed(Duration::microseconds(*dur)),
+                "{} - {}us",
+                ts,
+                dur
+            )),
+            (Value::Interval(a), Value::Interval(b)) => {
+                Value::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
+            }
+            _ => {
+                return Err(ErrorKind::InvalidArguments {
+                    name: Function::Sub,
+                    cause: format!("cannot subtract {} from {}", self, other),
+                }
+                .into())
+            }
+        })
+    }
+
+    pub fn sql_mul(&self, other: &Self) -> Result<Self, Error> {
+        Ok(match (self, other) {
+            (Value::Number(lhs), Value::Number(rhs)) => (*lhs * *rhs).into(),
+            (Value::Number(m), Value::Interval(dur)) | (Value::Interval(dur), Value::Number(m)) => {
+                let mult_res = *m * Number::from(*dur);
+                Value::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
+            }
+            _ => {
+                return Err(ErrorKind::InvalidArguments {
+                    name: Function::Mul,
+                    cause: format!("cannot multiply {} with {}", self, other),
+                }
+                .into())
+            }
+        })
+    }
+
+    pub fn sql_float_div(&self, other: &Self) -> Result<Self, Error> {
+        Ok(match (self, other) {
+            (Value::Number(_), Value::Number(rhs)) | (Value::Interval(_), Value::Number(rhs))
+                if rhs.to_sql_bool() == Some(false) =>
+            {
+                Value::Null
+            }
+            (Value::Number(lhs), Value::Number(rhs)) => (*lhs / *rhs).into(),
+            (Value::Interval(dur), Value::Number(d)) => {
+                let mult_res = Number::from(*dur) / *d;
+                Value::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
+            }
+            _ => {
+                return Err(ErrorKind::InvalidArguments {
+                    name: Function::FloatDiv,
+                    cause: format!("cannot divide {} by {}", self, other),
                 }
                 .into())
             }

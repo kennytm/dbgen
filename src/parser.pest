@@ -1,29 +1,12 @@
-s = _{
-    " " |
-    "\t"|
-    "\r"|
-    "\n"|
-    "\x0b"|
-    "\x0c" |
+WHITESPACE = _{ " "|"\t"|"\r"|"\n"|"\x0b"|"\x0c" }
+COMMENT = _{
     "--" ~ (!NEWLINE ~ ANY)* ~ NEWLINE |
     "/*" ~ (!"*/" ~ ANY)* ~ "*/"
 }
-b = _{ !(ASCII_ALPHANUMERIC|"_") }
-bs = _{ b ~ s* }
 
-back_quoted     = _{ "`" ~ (!("`"|"\\") ~ ANY | "``" | "\\" ~ ANY)* ~ "`" }
-single_quoted   = _{ "'" ~ (!("'"|"\\") ~ ANY | "''" | "\\" ~ ANY)* ~ "'" }
-double_quoted   = _{ "\"" ~ (!("\""|"\\") ~ ANY | "\"\"" | "\\" ~ ANY)* ~ "\"" }
-
-balanced = _{
-    "(" ~ (balanced|s)* ~ ")" |
-    "[" ~ (balanced|s)* ~ "]" |
-    "{" ~ (balanced|s)* ~ "}" |
-    back_quoted |
-    single_quoted |
-    double_quoted |
-    !("("|"["|"{"|"`"|"'"|"\""|")"|"]"|"}"|s) ~ ANY
-}
+back_quoted     = @{ "`" ~ (!("`"|"\\") ~ ANY | "``" | "\\" ~ ANY)* ~ "`" }
+single_quoted   = @{ "'" ~ (!("'"|"\\") ~ ANY | "''" | "\\" ~ ANY)* ~ "'" }
+double_quoted   = @{ "\"" ~ (!("\""|"\\") ~ ANY | "\"\"" | "\\" ~ ANY)* ~ "\"" }
 
 ident = @{
     back_quoted |
@@ -31,39 +14,105 @@ ident = @{
     "[" ~ (!"]" ~ ANY)* ~ "]" |
     (ASCII_ALPHA|"_") ~ (ASCII_ALPHANUMERIC|"_")*
 }
+number = @{
+    ^"0x" ~ ASCII_HEX_DIGIT+ |
+    (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+) ~ (^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+)?
+}
+
+b = _{ !(ASCII_ALPHANUMERIC|"_") }
+kw_create   = @{ ^"create" ~ b }
+kw_table    = @{ ^"table" ~ b }
+kw_or       = @{ ^"or" ~ b }
+kw_and      = @{ ^"and" ~ b }
+kw_not      = @{ ^"not" ~ b }
+kw_is       = @{ ^"is" ~ b }
+kw_rownum   = @{ ^"rownum" ~ b }
+kw_null     = @{ ^"null" ~ b }
+kw_true     = @{ ^"true" ~ b }
+kw_false    = @{ ^"false" ~ b }
+kw_case     = @{ ^"case" ~ b }
+kw_when     = @{ ^"when" ~ b }
+kw_then     = @{ ^"then" ~ b }
+kw_else     = @{ ^"else" ~ b }
+kw_end      = @{ ^"end" ~ b }
+kw_timestamp = @{ ^"timestamp" ~ b }
+kw_interval = @{ ^"interval" ~ b }
+kw_week     = @{ ^"week" ~ b }
+kw_day      = @{ ^"day" ~ b }
+kw_hour     = @{ ^"hour" ~ b }
+kw_minute   = @{ ^"minute" ~ b }
+kw_second   = @{ ^"second" ~ b }
+kw_millisecond = @{ ^"millisecond" ~ b }
+kw_microsecond = @{ ^"microsecond" ~ b }
+
+op_le       = @{ "<=" }
+op_lt       = @{ "<" }
+op_ge       = @{ ">=" }
+op_gt       = @{ ">" }
+op_eq       = @{ "=" }
+op_ne       = @{ "<>" }
+op_add      = @{ "+" }
+op_sub      = @{ "-" }
+op_concat   = @{ "||" }
+op_mul      = @{ "*" }
+op_float_div = @{ "/" }
+
+balanced = _{
+    "(" ~ balanced* ~ ")" |
+    "[" ~ balanced* ~ "]" |
+    "{" ~ balanced* ~ "}" |
+    back_quoted |
+    single_quoted |
+    double_quoted |
+    !("("|"["|"{"|"`"|"'"|"\""|")"|"]"|"}") ~ ANY
+}
 
 qname = {
-    ident ~ (s* ~ "." ~ s* ~ ident){0,2}
+    ident ~ ("." ~ ident){0,2}
 }
 
 column_definition = {
-    (!"{{" ~ (balanced|s))+
+    (!"{{" ~ balanced)+
 }
 table_options = {
-    ANY*
+    ")" ~ ANY*
 }
-
-create_table_content = {
-    "(" ~ (column_definition | "{{" ~ s* ~ expr ~ s* ~ "}}")* ~ ")" ~ table_options
+create_table_content = _{
+    "(" ~ (column_definition | "{{" ~ expr ~ "}}")* ~ table_options
 }
 
 create_table = _{
-    SOI ~ s* ~ ^"create" ~ s+ ~ ^"table" ~ bs ~ qname ~ s* ~ create_table_content
+    SOI ~ kw_create ~ kw_table ~ qname ~ create_table_content
 }
 
-expr = _{ expr_set_variable | prec_expr_or }
-prec_expr_or = _{ expr_or | prec_expr_and }
-prec_expr_and = _{ expr_and | prec_expr_not }
-prec_expr_not = _{ expr_not | prec_expr_cmp }
-prec_expr_cmp = _{ expr_cmp | prec_expr_plus }
-prec_expr_plus = _{ expr_plus | prec_expr_mul }
-prec_expr_mul = _{ expr_mul | prec_expr_primary }
+expr = {
+    ("@" ~ ident ~ ":=")* ~ expr_or
+}
+expr_or = {
+    expr_and ~ (kw_or ~ expr_and)*
+}
+expr_and = {
+    expr_not ~ (kw_and ~ expr_not)*
+}
+expr_not = {
+    kw_not* ~ expr_cmp
+}
+is_not = { kw_is ~ kw_not }
+expr_cmp = {
+    expr_add ~ ((is_not | kw_is | op_le | op_ge | op_ne | op_lt | op_gt | op_eq) ~ expr_add)?
+}
+expr_add = {
+    expr_mul ~ ((op_add | op_sub | op_concat) ~ expr_mul)*
+}
+expr_mul = {
+    expr_primary ~ ((op_mul | op_float_div) ~ expr_primary)*
+}
 
-prec_expr_primary = _{
-    expr_rownum | expr_null | expr_true | expr_false |
+expr_primary = {
+    kw_rownum | kw_null | kw_true | kw_false |
     expr_group |
-    expr_string |
-    expr_number |
+    single_quoted |     // string
+    number |
     expr_unary |
     expr_case_value_when |
     expr_timestamp |
@@ -72,80 +121,35 @@ prec_expr_primary = _{
     expr_function
 }
 
-expr_set_variable = {
-    "@" ~ ident ~ s* ~ ":=" ~ s* ~ expr
-}
-
-expr_or = {
-    prec_expr_and ~ (bs ~ ^"or" ~ bs ~ prec_expr_and)+
-}
-expr_and = {
-    prec_expr_not ~ (bs ~ ^"and" ~ bs ~ prec_expr_not)+
-}
-expr_not = {
-    ^"not" ~ bs ~ prec_expr_not
-}
-
-expr_cmp = {
-    prec_expr_plus ~ bs ~ cmp_op ~ s* ~ prec_expr_plus
-}
-cmp_op = @{
-    ^"is" ~ (bs ~ ^"not")? ~ b | "<=" | ">=" | "<>" | "<" | ">" | "="
-}
-
-expr_plus = {
-    prec_expr_mul ~ (s* ~ plus_op ~ s* ~ prec_expr_mul)+
-}
-plus_op = @{
-    "+" | "-" | "||"
-}
-
-expr_mul = {
-    prec_expr_primary ~ (s* ~ mul_op ~ s* ~ prec_expr_primary)+
-}
-mul_op = @{
-    "*" | "/"
-}
-
-expr_rownum = { ^"rownum" }
-expr_null = { ^"null" }
-expr_true = { ^"true" }
-expr_false = { ^"false" }
-expr_group = _{ "(" ~ s* ~ expr ~ s* ~ ")" }
-expr_get_variable = { "@" ~ ident ~ !(s* ~ ":=") }
-expr_function = {
-    qname ~ s* ~ "(" ~ s* ~ (expr ~ s* ~ ("," ~ s* ~ expr ~ s*)*)? ~ ")"
-}
-expr_string = {
-    single_quoted
-}
-expr_number = @{
-    ^"0x" ~ ASCII_HEX_DIGIT+ |
-    (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+) ~ (^"e" ~ ("+"|"-")? ~ ASCII_DIGIT+)?
+expr_group = {
+    "(" ~ expr ~ ")"
 }
 expr_unary = {
-    plus_op ~ s* ~ prec_expr_primary
-}
-expr_case_value_when = {
-    ^"case" ~ bs ~ expr ~ bs ~
-    (^"when" ~ bs ~ expr ~ bs ~ ^"then" ~ bs ~ expr ~ bs)+ ~
-    (^"else" ~ bs ~ expr ~ bs)? ~
-    ^"end"
+    (op_add | op_sub)+ ~ expr_primary
 }
 
+expr_case_value_when = {
+    kw_case ~ case_value_when_value ~
+    (kw_when ~ case_value_when_pattern ~ kw_then ~ case_value_when_result)+ ~
+    (kw_else ~ case_value_when_else)? ~
+    kw_end
+}
+case_value_when_value = { expr }
+case_value_when_pattern = { expr }
+case_value_when_result = { expr }
+case_value_when_else = { expr }
+
 expr_timestamp = {
-    ^"timestamp" ~ bs ~ prec_expr_primary
+    kw_timestamp ~ expr_primary
 }
 expr_interval = {
-    ^"interval" ~ bs ~ expr ~ bs ~ (
-        interval_unit_week | interval_unit_day | interval_unit_hour | interval_unit_minute |
-        interval_unit_second | interval_unit_ms | interval_unit_us
-    )
+    kw_interval ~ expr ~ (kw_week | kw_day | kw_hour | kw_minute | kw_second | kw_millisecond | kw_microsecond)
 }
-interval_unit_week = @{ ^"week" }
-interval_unit_day = @{ ^"day" }
-interval_unit_hour = @{ ^"hour" }
-interval_unit_minute = @{ ^"minute" }
-interval_unit_second = @{ ^"second" }
-interval_unit_ms = @{ ^"millisecond" }
-interval_unit_us = @{ ^"microsecond" }
+
+expr_get_variable = {
+    "@" ~ ident ~ !":="
+}
+
+expr_function = {
+    qname ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")"
+}

@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime};
+use chrono::NaiveDateTime;
 use crate::{
     error::{Error, ErrorKind},
     parser::{Expr, Function},
@@ -10,7 +10,7 @@ use rand::{
     distributions::{self, Uniform},
     Rng, SeedableRng, StdRng,
 };
-use std::cmp::Ordering;
+use std::{borrow::Cow, cmp::Ordering};
 use zipf::ZipfDistribution;
 
 pub type Seed = <StdRng as SeedableRng>::Seed;
@@ -34,7 +34,7 @@ impl State {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum C {
     /// The row number.
     RowNum,
@@ -47,6 +47,11 @@ enum C {
     },
     GetVariable(usize),
     SetVariable(usize, Box<Compiled>),
+    CaseValueWhen {
+        value: Box<Compiled>,
+        conditions: Vec<(Compiled, Compiled)>,
+        otherwise: Box<Compiled>,
+    },
 
     RandRegex(regex::Generator),
     RandUniformU64(Uniform<u64>),
@@ -58,7 +63,7 @@ enum C {
 }
 
 /// A compiled expression
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Compiled(C);
 
 impl AsValue for Compiled {
@@ -126,6 +131,27 @@ impl Compiled {
                     },
                 }
             }
+            Expr::CaseValueWhen {
+                value,
+                conditions,
+                otherwise,
+            } => {
+                let value = Box::new(Self::compile(*value)?);
+                let conditions = conditions
+                    .into_iter()
+                    .map(|(p, r)| Ok((Self::compile(p)?, Self::compile(r)?)))
+                    .collect::<Result<_, Error>>()?;
+                let otherwise = Box::new(if let Some(o) = otherwise {
+                    Self::compile(*o)?
+                } else {
+                    Compiled(C::Constant(Value::Null))
+                });
+                C::CaseValueWhen {
+                    value,
+                    conditions,
+                    otherwise,
+                }
+            }
         }))
     }
 
@@ -144,6 +170,20 @@ impl Compiled {
                 let value = c.eval(state)?;
                 state.variables[*index] = value.clone();
                 value
+            }
+            C::CaseValueWhen {
+                value,
+                conditions,
+                otherwise,
+            } => {
+                let value = value.eval(state)?;
+                for (p, r) in conditions {
+                    let p = p.eval(state)?;
+                    if value.sql_cmp(&p, Function::Eq)? == Some(Ordering::Equal) {
+                        return r.eval(state);
+                    }
+                }
+                otherwise.eval(state)?
             }
 
             C::RandRegex(generator) => generator.eval(&mut state.rng).into(),
@@ -183,15 +223,6 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
                 }
             }
         };
-    }
-    macro_rules! try_or_overflow {
-        ($e:expr, $($fmt:tt)+) => {
-            if let Some(e) = $e {
-                e
-            } else {
-                return Err(ErrorKind::IntegerOverflow(format!($($fmt)+)).into());
-            }
-        }
     }
 
     match name {
@@ -318,67 +349,27 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant(result)))
         }
 
-        Function::Add => {
-            let lhs = arg::<&Value, _>(name, args, 0, None)?;
-            let rhs = arg::<&Value, _>(name, args, 1, None)?;
-            Ok(Compiled(C::Constant(match (lhs, rhs) {
-                (Value::Number(lhs), Value::Number(rhs)) => (*lhs + *rhs).into(),
-                (Value::Timestamp(ts), Value::Interval(dur)) | (Value::Interval(dur), Value::Timestamp(ts)) => {
-                    Value::Timestamp(try_or_overflow!(
-                        ts.checked_add_signed(Duration::microseconds(*dur)),
-                        "{} + {}us",
-                        ts,
-                        dur
-                    ))
-                }
-                (Value::Interval(a), Value::Interval(b)) => {
-                    Value::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
-                }
-                _ => require!(@false, "unsupport argument types"),
-            })))
-        }
-        Function::Sub => {
-            let lhs = arg::<&Value, _>(name, args, 0, None)?;
-            let rhs = arg::<&Value, _>(name, args, 1, None)?;
-            Ok(Compiled(C::Constant(match (lhs, rhs) {
-                (Value::Number(lhs), Value::Number(rhs)) => (*lhs - *rhs).into(),
-                (Value::Timestamp(ts), Value::Interval(dur)) => Value::Timestamp(try_or_overflow!(
-                    ts.checked_sub_signed(Duration::microseconds(*dur)),
-                    "{} - {}us",
-                    ts,
-                    dur
-                )),
-                (Value::Interval(a), Value::Interval(b)) => {
-                    Value::Interval(try_or_overflow!(a.checked_sub(*b), "{} - {}", a, b))
-                }
-                _ => require!(@false, "unsupport argument types"),
-            })))
-        }
-        Function::Mul => {
-            let lhs = arg::<&Value, _>(name, args, 0, None)?;
-            let rhs = arg::<&Value, _>(name, args, 1, None)?;
-            Ok(Compiled(C::Constant(match (lhs, rhs) {
-                (Value::Number(lhs), Value::Number(rhs)) => (*lhs * *rhs).into(),
-                (Value::Number(multiple), Value::Interval(duration))
-                | (Value::Interval(duration), Value::Number(multiple)) => {
-                    let mult_res = *multiple * Number::from(*duration);
-                    if let Some(res) = mult_res.to::<i64>() {
-                        Value::Interval(res)
+        Function::Add | Function::Sub | Function::Mul | Function::FloatDiv => {
+            let func = match name {
+                Function::Add => Value::sql_add,
+                Function::Sub => Value::sql_sub,
+                Function::Mul => Value::sql_mul,
+                Function::FloatDiv => Value::sql_float_div,
+                _ => unreachable!(),
+            };
+
+            let result =
+                iter_args::<&Value, _>(name, args).try_fold(None::<Cow<'_, Value>>, |accum, cur| -> Result<_, Error> {
+                    let cur = cur?;
+                    Ok(Some(if let Some(prev) = accum {
+                        Cow::Owned(func(&*prev, cur)?)
                     } else {
-                        return Err(ErrorKind::IntegerOverflow(format!("{} microseconds", mult_res)).into());
-                    }
-                }
-                _ => require!(@false, "unsupport argument types"),
-            })))
-        }
-        Function::FloatDiv => {
-            let lhs = arg::<Number, _>(name, args, 0, None)?;
-            let rhs = arg::<Number, _>(name, args, 1, None)?;
-            Ok(Compiled(C::Constant(if rhs.to_sql_bool() == Some(true) {
-                (lhs / rhs).into()
-            } else {
-                Value::Null
-            })))
+                        Cow::Borrowed(cur)
+                    }))
+                });
+            Ok(Compiled(C::Constant(
+                result?.expect("at least 1 argument").into_owned(),
+            )))
         }
 
         Function::Timestamp => {
@@ -386,24 +377,6 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             let timestamp = NaiveDateTime::parse_from_str(input, TIMESTAMP_FORMAT)
                 .with_context(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?;
             Ok(Compiled(C::Constant(Value::Timestamp(timestamp))))
-        }
-
-        Function::CaseValueWhen => {
-            let check = arg::<&Value, _>(name, args, 0, None)?;
-            let args_count = args.len();
-
-            for i in (1..args_count).step_by(2) {
-                let compare = arg::<&Value, _>(name, args, i, None)?;
-                if check.sql_cmp(compare, name)? == Some(Ordering::Equal) {
-                    return Ok(args[i + 1].to_compiled());
-                }
-            }
-            Ok(if args_count % 2 == 0 {
-                // contains an "else" clause
-                args[args_count - 1].to_compiled()
-            } else {
-                Compiled(C::Constant(Value::Null))
-            })
         }
 
         Function::Greatest | Function::Least => {
@@ -414,7 +387,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
                     Some(Ordering::Greater) => name == Function::Greatest,
                     Some(Ordering::Less) => name == Function::Least,
                     None => res == &Value::Null,
-                    _ => false
+                    _ => false,
                 };
                 if should_replace {
                     res = value;

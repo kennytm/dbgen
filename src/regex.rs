@@ -11,15 +11,16 @@ use regex_syntax::{
 use std::{
     char,
     collections::BTreeMap,
+    fmt::Debug,
     iter,
     ops::{Add, AddAssign, Sub},
 };
 
 /// A compiled regex generator
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Generator(Compiled);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Compiled {
     Empty,
     Sequence(Vec<Compiled>),
@@ -127,10 +128,10 @@ impl ClassRange for hir::ClassBytesRange {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct CompiledClass<T: SampleUniform>
 where
-    T::Sampler: Clone,
+    T::Sampler: Clone + Debug,
 {
     searcher: Uniform<T>,
     ranges: BTreeMap<T, T>,
@@ -139,7 +140,7 @@ where
 impl<T> Distribution<T> for CompiledClass<T>
 where
     T: SampleUniform + Copy + Ord + Add<Output = T>,
-    T::Sampler: Clone,
+    T::Sampler: Clone + Debug,
 {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> T {
         let normalized_index = self.searcher.sample(rng);
@@ -152,7 +153,7 @@ fn compile_class<C>(ranges: &[C]) -> CompiledClass<C::Item>
 where
     C: ClassRange,
     C::Item: From<u8> + Add<Output = C::Item> + Sub<Output = C::Item> + AddAssign + Copy + Ord,
-    <C::Item as SampleUniform>::Sampler: Clone,
+    <C::Item as SampleUniform>::Sampler: Clone + Debug,
 {
     let zero = C::Item::from(0);
     let one = C::Item::from(1);

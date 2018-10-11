@@ -3,10 +3,7 @@ use crate::{
     value::Value,
 };
 use failure::ResultExt;
-use pest::{
-    iterators::{Pair, Pairs},
-    Parser,
-};
+use pest::{iterators::Pairs, Parser};
 use pest_derive::Parser;
 use std::{collections::HashMap, fmt};
 
@@ -23,22 +20,20 @@ pub struct QName {
 }
 
 impl QName {
-    fn from_pairs(mut pairs: Pairs<'_, Rule>) -> Self {
-        let mut qname = Self {
-            database: None,
-            schema: None,
-            table: pairs.next().expect("at least one name").as_str().to_owned(),
-        };
-        if let Some(pair) = pairs.next() {
-            qname.schema = Some(qname.table);
-            qname.table = pair.as_str().to_owned();
-            if let Some(pair) = pairs.next() {
-                qname.database = qname.schema;
-                qname.schema = Some(qname.table);
-                qname.table = pair.as_str().to_owned();
-            }
+    fn from_pairs(pairs: Pairs<'_, Rule>) -> Self {
+        let mut database = None;
+        let mut schema = None;
+        let mut table = None;
+        for pair in pairs {
+            database = schema;
+            schema = table;
+            table = Some(pair.as_str().to_owned());
         }
-        qname
+        Self {
+            database,
+            schema,
+            table: table.expect("at least one name"),
+        }
     }
 
     fn estimated_joined_len(&self) -> usize {
@@ -150,36 +145,44 @@ pub enum Expr {
     Value(Value),
     GetVariable(usize),
     SetVariable(usize, Box<Expr>),
-    Function { name: Function, args: Vec<Expr> },
+    Function {
+        name: Function,
+        args: Vec<Expr>,
+    },
+    CaseValueWhen {
+        value: Box<Expr>,
+        conditions: Vec<(Expr, Expr)>,
+        otherwise: Option<Box<Expr>>,
+    },
 }
 
 impl Template {
     pub fn parse(input: &str) -> Result<Self, Error> {
-        let mut pairs = TemplateParser::parse(Rule::create_table, input).context(ErrorKind::ParseTemplate)?;
+        let pairs = TemplateParser::parse(Rule::create_table, input).context(ErrorKind::ParseTemplate)?;
 
-        let name = QName::from_pairs(pairs.next().unwrap().into_inner());
-
+        let mut name = None;
         let mut alloc = Allocator::default();
         let mut exprs = Vec::new();
         let mut content = String::from("(");
 
-        for pair in pairs.next().unwrap().into_inner() {
+        for pair in pairs {
             match pair.as_rule() {
-                Rule::column_definition => {
+                Rule::kw_create | Rule::kw_table => {}
+                Rule::qname => {
+                    name = Some(QName::from_pairs(pair.into_inner()));
+                }
+                Rule::column_definition | Rule::table_options => {
                     content.push_str(pair.as_str());
                 }
-                Rule::table_options => {
-                    content.push(')');
-                    content.push_str(pair.as_str());
+                Rule::expr => {
+                    exprs.push(alloc.expr_from_pairs(pair.into_inner())?);
                 }
-                _ => {
-                    exprs.push(alloc.expr_from_pair(pair)?);
-                }
+                r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
         Ok(Self {
-            name,
+            name: name.unwrap(),
             content,
             exprs,
             variables_count: alloc.count,
@@ -194,7 +197,9 @@ struct Allocator {
 }
 
 impl Allocator {
-    fn allocate(&mut self, var_name: String) -> usize {
+    fn allocate(&mut self, raw_var_name: &str) -> usize {
+        let mut var_name = String::with_capacity(raw_var_name.len());
+        unescape_into(&mut var_name, raw_var_name, false);
         let count = &mut self.count;
         *self.map.entry(var_name).or_insert_with(|| {
             let last = *count;
@@ -203,120 +208,266 @@ impl Allocator {
         })
     }
 
-    fn expr_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Vec<Expr>, Error> {
-        pairs.map(|p| self.expr_from_pair(p)).collect()
-    }
+    fn expr_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut indices = Vec::new();
 
-    fn expr_from_pair(&mut self, pair: Pair<'_, Rule>) -> Result<Expr, Error> {
-        match pair.as_rule() {
-            Rule::expr_rownum => Ok(Expr::RowNum),
-            Rule::expr_null => Ok(Expr::Value(Value::Null)),
-            Rule::expr_true => Ok(Expr::Value(1_u64.into())),
-            Rule::expr_false => Ok(Expr::Value(0_u64.into())),
-            Rule::expr_function => {
-                let mut pairs = pair.into_inner();
-                let q_name = QName::from_pairs(pairs.next().unwrap().into_inner());
-                let name = Function::from_name(q_name.unique_name())?;
-                let args = self.expr_from_pairs(pairs)?;
-                Ok(Expr::Function { name, args })
-            }
-            Rule::expr_string => {
-                let mut string = String::with_capacity(pair.as_str().len());
-                unescape_into(&mut string, pair.as_str(), false);
-                Ok(Expr::Value(string.into()))
-            }
-            Rule::expr_number => parse_number(pair.as_str()).map(Expr::Value),
-            Rule::expr_cmp => {
-                let mut pairs = pair.into_inner();
-                let left = self.expr_from_pair(pairs.next().unwrap())?;
-                let op = pairs.next().unwrap().as_str();
-                let right = self.expr_from_pair(pairs.next().unwrap())?;
-                Ok(Expr::Function {
-                    name: Function::from_op(op).unwrap_or(Function::IsNot),
-                    args: vec![left, right],
-                })
-            }
-            Rule::expr_plus | Rule::expr_mul => {
-                let mut pairs = pair.into_inner();
-                let mut args = Vec::with_capacity(2);
-                args.push(self.expr_from_pair(pairs.next().unwrap())?);
-                let mut name = Function::from_op(pairs.next().unwrap().as_str()).unwrap();
-                args.push(self.expr_from_pair(pairs.next().unwrap())?);
-                for pair in pairs {
-                    match pair.as_rule() {
-                        Rule::plus_op | Rule::mul_op => {
-                            let cur_name = Function::from_op(pair.as_str()).unwrap();
-                            if cur_name != name {
-                                let collapsed = Expr::Function { name, args };
-                                name = cur_name;
-                                args = Vec::with_capacity(2);
-                                args.push(collapsed);
-                            }
-                        }
-                        _ => {
-                            args.push(self.expr_from_pair(pair)?);
-                        }
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::ident => {
+                    indices.push(self.allocate(pair.as_str()));
+                }
+                Rule::expr_or => {
+                    let mut expr = self.expr_binary_from_pairs(pair.into_inner())?;
+                    for i in indices.into_iter().rev() {
+                        expr = Expr::SetVariable(i, Box::new(expr));
                     }
+                    return Ok(expr);
                 }
-                Ok(Expr::Function { name, args })
-            }
-            Rule::expr_set_variable | Rule::expr_get_variable => {
-                let mut pairs = pair.into_inner();
-                let ident_str = pairs.next().unwrap().as_str();
-                let mut ident = String::with_capacity(ident_str.len());
-                unescape_into(&mut ident, ident_str, false);
-                let var_index = self.allocate(ident);
-                if let Some(expr_pair) = pairs.next() {
-                    let expr = self.expr_from_pair(expr_pair)?;
-                    Ok(Expr::SetVariable(var_index, Box::new(expr)))
-                } else {
-                    Ok(Expr::GetVariable(var_index))
-                }
-            }
-            Rule::expr_unary => {
-                let mut pairs = pair.into_inner();
-                let op = pairs.next().unwrap().as_str();
-                let inner = self.expr_from_pair(pairs.next().unwrap())?;
-                Ok(match op {
-                    "+" => inner,
-                    "-" => Expr::Function {
-                        name: Function::Neg,
-                        args: vec![inner],
-                    },
-                    _ => unreachable!(),
-                })
-            }
-            Rule::expr_interval => {
-                let mut pairs = pair.into_inner();
-                let multiple = self.expr_from_pair(pairs.next().unwrap())?;
-                let interval_unit = match pairs.next().unwrap().as_rule() {
-                    Rule::interval_unit_week => 604_800_000_000,
-                    Rule::interval_unit_day => 86_400_000_000,
-                    Rule::interval_unit_hour => 3_600_000_000,
-                    Rule::interval_unit_minute => 60_000_000,
-                    Rule::interval_unit_second => 1_000_000,
-                    Rule::interval_unit_ms => 1_000,
-                    Rule::interval_unit_us => 1,
-                    _ => unreachable!(),
-                };
-                Ok(Expr::Function {
-                    name: Function::Mul,
-                    args: vec![multiple, Expr::Value(Value::Interval(interval_unit))],
-                })
-            }
-            rule => {
-                let name = match rule {
-                    Rule::expr_case_value_when => Function::CaseValueWhen,
-                    Rule::expr_and => Function::And,
-                    Rule::expr_or => Function::Or,
-                    Rule::expr_not => Function::Not,
-                    Rule::expr_timestamp => Function::Timestamp,
-                    r => panic!("unexpected rule <{:?}> while parsing an expression", r),
-                };
-                let args = self.expr_from_pairs(pair.into_inner())?;
-                Ok(Expr::Function { name, args })
+                r => unreachable!("Unexpected rule {:?}", r),
             }
         }
+
+        unreachable!("Pairs exhausted without finding the inner expression");
+    }
+
+    fn expr_binary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut args = Vec::with_capacity(1);
+        let mut op = None;
+
+        for pair in pairs {
+            let rule = pair.as_rule();
+            match rule {
+                Rule::expr_and | Rule::expr_add | Rule::expr_mul => {
+                    args.push(self.expr_binary_from_pairs(pair.into_inner())?);
+                }
+                Rule::expr_not => {
+                    args.push(self.expr_not_from_pairs(pair.into_inner())?);
+                }
+                Rule::expr_primary => {
+                    args.push(self.expr_primary_from_pairs(pair.into_inner())?);
+                }
+                Rule::kw_or
+                | Rule::kw_and
+                | Rule::is_not
+                | Rule::kw_is
+                | Rule::op_le
+                | Rule::op_ge
+                | Rule::op_lt
+                | Rule::op_gt
+                | Rule::op_eq
+                | Rule::op_ne
+                | Rule::op_add
+                | Rule::op_sub
+                | Rule::op_concat
+                | Rule::op_mul
+                | Rule::op_float_div => {
+                    match op {
+                        Some(o) if o != rule => {
+                            args = vec![Expr::Function {
+                                name: Function::from_rule(o),
+                                args,
+                            }];
+                        }
+                        _ => {}
+                    }
+                    op = Some(rule);
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok(if let Some(o) = op {
+            Expr::Function {
+                name: Function::from_rule(o),
+                args,
+            }
+        } else {
+            debug_assert_eq!(args.len(), 1);
+            args.swap_remove(0)
+        })
+    }
+
+    fn expr_not_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut has_not = false;
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::kw_not => {
+                    has_not = !has_not;
+                }
+                Rule::expr_cmp => {
+                    let expr = self.expr_binary_from_pairs(pair.into_inner())?;
+                    return Ok(if has_not {
+                        Expr::Function {
+                            name: Function::Not,
+                            args: vec![expr],
+                        }
+                    } else {
+                        expr
+                    });
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+        unreachable!("Pairs exhausted without finding the inner expression");
+    }
+
+    fn expr_primary_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let pair = pairs.next().unwrap();
+        Ok(match pair.as_rule() {
+            Rule::kw_rownum => Expr::RowNum,
+            Rule::kw_null => Expr::Value(Value::Null),
+            Rule::kw_true => Expr::Value(1_u64.into()),
+            Rule::kw_false => Expr::Value(0_u64.into()),
+            Rule::expr_group => self.expr_group_from_pairs(pair.into_inner())?,
+            Rule::number => Expr::Value(parse_number(pair.as_str())?),
+            Rule::expr_unary => self.expr_unary_from_pairs(pair.into_inner())?,
+            Rule::expr_timestamp => self.expr_timestamp_from_pairs(pair.into_inner())?,
+            Rule::expr_interval => self.expr_interval_from_pairs(pair.into_inner())?,
+            Rule::expr_get_variable => self.expr_get_variable_from_pairs(pair.into_inner())?,
+            Rule::expr_function => self.expr_function_from_pairs(pair.into_inner())?,
+            Rule::expr_case_value_when => self.expr_case_value_when_from_pairs(pair.into_inner())?,
+
+            Rule::single_quoted => {
+                let mut string = String::with_capacity(pair.as_str().len());
+                unescape_into(&mut string, pair.as_str(), false);
+                Expr::Value(string.into())
+            }
+
+            r => unreachable!("Unexpected rule {:?}", r),
+        })
+    }
+
+    fn expr_function_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut name = None;
+        let mut args = Vec::new();
+
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::qname => {
+                    let q_name = QName::from_pairs(pair.into_inner());
+                    name = Some(Function::from_name(q_name.unique_name())?);
+                }
+                Rule::expr => {
+                    args.push(self.expr_from_pairs(pair.into_inner())?);
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok(Expr::Function {
+            name: name.unwrap(),
+            args,
+        })
+    }
+
+    fn expr_group_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        self.expr_from_pairs(pairs.next().unwrap().into_inner())
+    }
+
+    fn expr_get_variable_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let pair = pairs.next().unwrap();
+        Ok(Expr::GetVariable(self.allocate(pair.as_str())))
+    }
+
+    fn expr_unary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut has_neg = false;
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::op_add => {}
+                Rule::op_sub => {
+                    has_neg = !has_neg;
+                }
+                Rule::expr_primary => {
+                    let expr = self.expr_primary_from_pairs(pair.into_inner())?;
+                    return Ok(if has_neg {
+                        Expr::Function {
+                            name: Function::Neg,
+                            args: vec![expr],
+                        }
+                    } else {
+                        expr
+                    });
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+        unreachable!("Pairs exhausted without finding the inner expression");
+    }
+
+    fn expr_case_value_when_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut value = None;
+        let mut pattern = None;
+        let mut conditions = Vec::with_capacity(2);
+        let mut otherwise = None;
+
+        for pair in pairs {
+            let rule = pair.as_rule();
+            match rule {
+                Rule::kw_case | Rule::kw_when | Rule::kw_then | Rule::kw_else | Rule::kw_end => {}
+                Rule::case_value_when_value
+                | Rule::case_value_when_pattern
+                | Rule::case_value_when_result
+                | Rule::case_value_when_else => {
+                    let expr = self.expr_group_from_pairs(pair.into_inner())?;
+                    match rule {
+                        Rule::case_value_when_value => value = Some(Box::new(expr)),
+                        Rule::case_value_when_pattern => pattern = Some(expr),
+                        Rule::case_value_when_result => conditions.push((pattern.take().unwrap(), expr)),
+                        Rule::case_value_when_else => otherwise = Some(Box::new(expr)),
+                        _ => unreachable!(),
+                    }
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok(Expr::CaseValueWhen {
+            value: value.unwrap(),
+            conditions,
+            otherwise,
+        })
+    }
+
+    fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::kw_timestamp => {}
+                Rule::expr_primary => {
+                    return Ok(Expr::Function {
+                        name: Function::Timestamp,
+                        args: vec![self.expr_primary_from_pairs(pair.into_inner())?],
+                    })
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        unreachable!("Pairs exhausted without finding the inner expression");
+    }
+
+    fn expr_interval_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut unit = 1;
+        let mut expr = None;
+
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::kw_interval => {}
+                Rule::expr => expr = Some(self.expr_from_pairs(pair.into_inner())?),
+                Rule::kw_week => unit = 604_800_000_000,
+                Rule::kw_day => unit = 86_400_000_000,
+                Rule::kw_hour => unit = 3_600_000_000,
+                Rule::kw_minute => unit = 60_000_000,
+                Rule::kw_second => unit = 1_000_000,
+                Rule::kw_millisecond => unit = 1_000,
+                Rule::kw_microsecond => unit = 1,
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok(Expr::Function {
+            name: Function::Mul,
+            args: vec![expr.unwrap(), Expr::Value(Value::Interval(unit))],
+        })
     }
 }
 
@@ -341,10 +492,8 @@ macro_rules! define_function {
         pub enum $F:ident {
         'function:
             $($fi:ident = $fs:tt,)*
-        'sym_op:
-            $($si:ident = $ss:tt,)*
-        'named_op:
-            $($ni:ident = $ns:tt,)*
+        'rule:
+            $($ri:ident = $rs:tt / $rr:ident,)*
         'else:
             $($ei:ident = $es:tt,)*
         }
@@ -352,8 +501,7 @@ macro_rules! define_function {
         #[derive(Debug, Copy, Clone, PartialEq, Eq)]
         pub enum $F {
             $($fi,)+
-            $($si,)+
-            $($ni,)+
+            $($ri,)+
             $($ei,)+
         }
 
@@ -361,8 +509,7 @@ macro_rules! define_function {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str(match self {
                     $($F::$fi => $fs,)*
-                    $($F::$si => $ss,)*
-                    $($F::$ni => $ns,)*
+                    $($F::$ri => $rs,)*
                     $($F::$ei => $es,)*
                 })
             }
@@ -376,15 +523,10 @@ macro_rules! define_function {
                 })
             }
 
-            fn from_op(name: &str) -> Option<Self> {
-                match name {
-                    $($ss => Some($F::$si),)*
-                    _ => {
-                        $(if name.eq_ignore_ascii_case($ns) {
-                            return Some($F::$ni);
-                        })*
-                        None
-                    }
+            fn from_rule(rule: Rule) -> Self {
+                match rule {
+                    $(Rule::$rr => $F::$ri,)*
+                    r => unreachable!("Unexpected operator rule {:?}", r),
                 }
             }
         }
@@ -406,29 +548,26 @@ define_function! {
         Greatest = "greatest",
         Least = "least",
 
-    'sym_op:
-        Eq = "=",
-        Lt = "<",
-        Gt = ">",
-        Le = "<=",
-        Ge = ">=",
-        Ne = "<>",
-        Add = "+",
-        Sub = "-",
-        Mul = "*",
-        FloatDiv = "/",
-        Concat = "||",
-
-    'named_op:
-        Is = "is",
-        IsNot = "is not",
-        Or = "or",
-        And = "and",
-        Not = "not",
+    'rule:
+        Eq = "=" / op_eq,
+        Lt = "<" / op_lt,
+        Gt = ">" / op_gt,
+        Le = "<=" / op_le,
+        Ge = ">=" / op_ge,
+        Ne = "<>" / op_ne,
+        Add = "+" / op_add,
+        Sub = "-" / op_sub,
+        Mul = "*" / op_mul,
+        FloatDiv = "/" / op_float_div,
+        Concat = "||" / op_concat,
+        Is = "is" / kw_is,
+        IsNot = "is not" / is_not,
+        Or = "or" / kw_or,
+        And = "and" / kw_and,
 
     'else:
-        Neg = "unary -",
-        CaseValueWhen = "case ... when",
+        Not = "not",
+        Neg = "neg",
         Timestamp = "timestamp",
     }
 }
