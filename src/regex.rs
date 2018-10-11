@@ -10,7 +10,6 @@ use regex_syntax::{
 };
 use std::{
     char,
-    collections::BTreeMap,
     fmt::Debug,
     iter,
     ops::{Add, AddAssign, Sub},
@@ -155,7 +154,7 @@ where
     T::Sampler: Clone + Debug,
 {
     searcher: Uniform<T>,
-    ranges: BTreeMap<T, T>,
+    ranges: Vec<(T, T)>,
 }
 
 impl<T> Distribution<T> for CompiledClass<T>
@@ -165,8 +164,11 @@ where
 {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> T {
         let normalized_index = self.searcher.sample(rng);
-        let offset = self.ranges.range(..=normalized_index).next_back().expect("found").1;
-        normalized_index + *offset
+        let entry_index = self
+            .ranges
+            .binary_search_by(|(normalized_start, _)| normalized_start.cmp(&normalized_index))
+            .unwrap_or_else(|e| e - 1);
+        normalized_index + self.ranges[entry_index].1
     }
 }
 
@@ -179,12 +181,12 @@ where
     let zero = C::Item::from(0);
     let one = C::Item::from(1);
 
-    let mut normalized_ranges = BTreeMap::new();
+    let mut normalized_ranges = Vec::with_capacity(ranges.len());
     let mut normalized_len = zero;
 
     {
         let mut push = |start, end| {
-            normalized_ranges.insert(normalized_len, start - normalized_len);
+            normalized_ranges.push((normalized_len, start - normalized_len));
             normalized_len += end - start + one;
         };
 
