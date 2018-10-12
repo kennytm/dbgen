@@ -33,3 +33,6 @@ diff = "0.1"
 
 [features]
 nightly = ["rand/nightly"]
+
+[profile.release]
+panic = "abort"
