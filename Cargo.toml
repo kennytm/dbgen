@@ -10,7 +10,6 @@ repository = "https://github.com/kennytm/dbgen"
 
 [dependencies]
 structopt = "0.2"
-clap = "2.32"
 pest = "2.0"
 pest_derive = "2.0"
 failure = "0.1"
@@ -21,7 +20,7 @@ pbr = "1.0"
 num-traits = "0.2"
 rayon = "1.0"
 zipf = "4.0.1"
-chrono = "0.4"
+chrono = { version = "0.4", default-features = false }
 ryu = "0.2"
 
 [dev-dependencies]
@@ -29,3 +28,6 @@ regex = "1.0"
 tempfile = "3.0"
 serde_json = "1.0"
 diff = "0.1"
+
+[features]
+nightly = ["rand/nightly"]
