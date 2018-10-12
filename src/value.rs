@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime};
+use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::{
     cmp::Ordering,
@@ -262,7 +262,22 @@ impl Value {
                 bytes.write_sql(output)?;
             }
             Value::Timestamp(timestamp) => {
-                write!(output, "'{}'", timestamp.format(TIMESTAMP_FORMAT))?;
+                // write!(output, "'{}'", timestamp.format(TIMESTAMP_FORMAT))?;
+                write!(
+                    output,
+                    "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                    timestamp.year(),
+                    timestamp.month(),
+                    timestamp.day(),
+                    timestamp.hour(),
+                    timestamp.minute(),
+                    timestamp.second(),
+                )?;
+                let ns = timestamp.nanosecond();
+                if ns != 0 {
+                    write!(output, ".{:06}", ns / 1000)?;
+                }
+                output.write_all(b"'")?;
             }
             Value::Interval(interval) => {
                 write!(output, "INTERVAL {} MICROSECOND", interval)?;
