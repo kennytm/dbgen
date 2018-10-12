@@ -1,4 +1,3 @@
-use crate::error::{Error, ErrorKind};
 use failure::ResultExt;
 use rand::{
     distributions::{uniform::SampleUniform, Distribution, Uniform},
@@ -13,6 +12,12 @@ use std::{
     fmt::Debug,
     iter,
     ops::{Add, AddAssign, Sub},
+    str::from_utf8,
+};
+
+use crate::{
+    error::{Error, ErrorKind},
+    value::Value,
 };
 
 /// A compiled regex generator
@@ -20,6 +25,7 @@ use std::{
 pub struct Generator {
     compiled: Compiled,
     capacity: usize,
+    is_utf8: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +48,7 @@ enum Compiled {
     },
     ByteClass {
         class: CompiledClass<u8>,
+        max_byte: u8,
     },
 }
 
@@ -72,7 +79,7 @@ impl Compiled {
                 let mut buf = [0; 4];
                 output.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
             }
-            Compiled::ByteClass { class } => {
+            Compiled::ByteClass { class, .. } => {
                 let b = class.sample(rng);
                 output.push(b);
             }
@@ -88,6 +95,19 @@ impl Compiled {
             Compiled::Any { choices, .. } => choices.iter().map(Self::capacity).max().unwrap_or(0),
             Compiled::UnicodeClass { max_char_len, .. } => *max_char_len,
             Compiled::ByteClass { .. } => 1,
+        }
+    }
+
+    /// Checks whether this compiled pattern can only generate UTF-8 strings.
+    fn is_utf8(&self) -> bool {
+        match self {
+            Compiled::Empty => true,
+            Compiled::Sequence(seq) => seq.iter().all(Self::is_utf8),
+            Compiled::Literal(lit) => from_utf8(lit).is_ok(),
+            Compiled::Repeat { inner, .. } => inner.is_utf8(),
+            Compiled::Any { choices, .. } => choices.iter().all(Self::is_utf8),
+            Compiled::UnicodeClass { .. } => true,
+            Compiled::ByteClass { max_byte, .. } => *max_byte <= b'\x7f',
         }
     }
 }
@@ -237,25 +257,30 @@ fn compile_hir(hir: Hir, max_repeat: u32) -> Result<Compiled, Error> {
         HirKind::Literal(hir::Literal::Unicode(c)) => Compiled::Literal(c.to_string().into_bytes()),
         HirKind::Literal(hir::Literal::Byte(b)) => Compiled::Literal(vec![b]),
         HirKind::Class(hir::Class::Unicode(class)) => {
-            let max_char_len = class.iter().last().expect("at least 1 interval").end().len_utf8();
-            if max_char_len == 1 {
+            let max_char = class.iter().last().expect("at least 1 interval").end();
+            if max_char <= '\x7f' {
                 Compiled::ByteClass {
                     class: compile_class(
                         class
                             .iter()
                             .map(|uc| hir::ClassBytesRange::new(uc.start() as u8, uc.end() as u8)),
                     ),
+                    max_byte: max_char as u8,
                 }
             } else {
                 Compiled::UnicodeClass {
                     class: compile_class(class.iter()),
-                    max_char_len,
+                    max_char_len: max_char.len_utf8(),
                 }
             }
         }
-        HirKind::Class(hir::Class::Bytes(class)) => Compiled::ByteClass {
-            class: compile_class(class.iter()),
-        },
+        HirKind::Class(hir::Class::Bytes(class)) => {
+            let max_byte = class.iter().last().expect("at least 1 interval").end();
+            Compiled::ByteClass {
+                class: compile_class(class.iter()),
+                max_byte,
+            }
+        }
         HirKind::Repetition(rep) => {
             let (lower, upper) = match rep.kind {
                 hir::RepetitionKind::ZeroOrOne => (0, 1),
@@ -340,23 +365,32 @@ impl Generator {
             .with_context(|_| ErrorKind::InvalidRegex(regex.to_owned()))?;
         let compiled = compile_hir(hir, max_repeat)?;
         let capacity = compiled.capacity();
-        Ok(Self { compiled, capacity })
+        let is_utf8 = compiled.is_utf8();
+        Ok(Self {
+            compiled,
+            capacity,
+            is_utf8,
+        })
     }
 
-    /// Generates a new byte string which satisfies the regex pattern.
-    pub fn eval(&self, rng: &mut impl Rng) -> Vec<u8> {
+    /// Generates a new value which satisfies the regex pattern.
+    pub fn eval(&self, rng: &mut impl Rng) -> Value {
         let mut res = Vec::with_capacity(self.capacity);
         self.compiled.eval_into(rng, &mut res);
-        res
+        if self.is_utf8 {
+            unsafe { String::from_utf8_unchecked(res) }.into()
+        } else {
+            res.into()
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::value::TryFromValue;
     use rand::{rngs::SmallRng, FromEntropy};
     use regex::Regex;
-    use std::str::from_utf8;
 
     fn check(pattern: &str) {
         let r = Regex::new(pattern).unwrap();
@@ -365,7 +399,7 @@ mod test {
 
         for _ in 0..10000 {
             let res = gen.eval(&mut rng);
-            let s = from_utf8(&res).unwrap();
+            let s = <&str>::try_from_value(&res).unwrap();
             assert!(r.is_match(s), "Wrong sample: {}", s);
         }
     }

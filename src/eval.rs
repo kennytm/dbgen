@@ -186,7 +186,7 @@ impl Compiled {
                 otherwise.eval(state)?
             }
 
-            C::RandRegex(generator) => generator.eval(&mut state.rng).into(),
+            C::RandRegex(generator) => generator.eval(&mut state.rng),
             C::RandUniformU64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformI64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformF64(uniform) => state.rng.sample(uniform).into(),
