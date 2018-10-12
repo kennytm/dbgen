@@ -215,10 +215,15 @@ struct Env {
 struct WriteCountWrapper<W: Write> {
     inner: W,
     count: usize,
+    skip_write: bool,
 }
 impl<W: Write> WriteCountWrapper<W> {
     fn new(inner: W) -> Self {
-        Self { inner, count: 0 }
+        Self {
+            inner,
+            count: 0,
+            skip_write: false,
+        }
     }
 
     fn commit_bytes_written(&mut self) {
@@ -229,12 +234,20 @@ impl<W: Write> WriteCountWrapper<W> {
 
 impl<W: Write> Write for WriteCountWrapper<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let bytes_written = self.inner.write(buf)?;
+        let bytes_written = if self.skip_write {
+            buf.len()
+        } else {
+            self.inner.write(buf)?
+        };
         self.count += bytes_written;
         Ok(bytes_written)
     }
     fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
+        if self.skip_write {
+            Ok(())
+        } else {
+            self.inner.flush()
+        }
     }
 }
 
@@ -251,6 +264,9 @@ impl Env {
             self.unique_name, file_index, self.file_num_digits
         ));
         let mut file = WriteCountWrapper::new(BufWriter::new(File::create(&path).with_path(&path)?));
+        file.skip_write = std::env::var("DBGEN_WRITE_TO_DEV_NULL")
+            .map(|s| s == "1")
+            .unwrap_or(false);
         for _ in 0..self.inserts_count {
             writeln!(file, "INSERT INTO {} VALUES", self.qualified_name).with_path(&path)?;
 
