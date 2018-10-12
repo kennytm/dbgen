@@ -185,54 +185,7 @@ fn run() -> Result<(), Error> {
     let variables_count = template.variables_count;
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
 
-    let progress_bar_thread = spawn(move || {
-        let total_rows = u64::from(files_count) * rows_per_file;
-        let mut mb = MultiBar::new();
-
-        let mut pb = mb.create_bar(total_rows);
-
-        let mut speed_bar = mb.create_bar(0);
-        speed_bar.set_units(Units::Bytes);
-        speed_bar.show_percent = false;
-        speed_bar.show_time_left = false;
-        speed_bar.show_tick = true;
-        speed_bar.show_bar = false;
-        #[cfg_attr(feature = "cargo-clippy", allow(clippy::non_ascii_literal))]
-        {
-            speed_bar.tick_format("🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛");
-        }
-
-        pb.message("Progress ");
-        speed_bar.message("Size     ");
-
-        let mb_thread = spawn(move || mb.listen());
-
-        while !WRITE_FINISHED.load(Ordering::Relaxed) {
-            sleep(Duration::from_millis(500));
-            let rows_count = WRITE_PROGRESS.load(Ordering::Relaxed);
-            pb.set(rows_count as u64);
-
-            let written_size = WRITTEN_SIZE.load(Ordering::Relaxed);
-            #[cfg_attr(
-                feature = "cargo-clippy",
-                allow(
-                    clippy::cast_precision_loss,
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss
-                )
-            )]
-            {
-                let estimated_total = (written_size as f64) * (total_rows as f64) / (rows_count as f64);
-                speed_bar.total = estimated_total as u64;
-                speed_bar.set(written_size as u64);
-            }
-        }
-
-        pb.finish_println("Done!");
-        speed_bar.finish();
-
-        mb_thread.join().unwrap();
-    });
+    let progress_bar_thread = spawn(move || run_progress_thread(files_count, rows_per_file));
 
     let iv = (0..files_count)
         .map(|i| (seeding_rng.gen(), i + 1, u64::from(i) * rows_per_file + 1))
@@ -317,4 +270,53 @@ impl Env {
         }
         Ok(())
     }
+}
+
+fn run_progress_thread(files_count: u32, rows_per_file: u64) {
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::non_ascii_literal))]
+    const TICK_FORMAT: &str = "🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛";
+
+    let total_rows = u64::from(files_count) * rows_per_file;
+    let mut mb = MultiBar::new();
+
+    let mut pb = mb.create_bar(total_rows);
+
+    let mut speed_bar = mb.create_bar(0);
+    speed_bar.set_units(Units::Bytes);
+    speed_bar.show_percent = false;
+    speed_bar.show_time_left = false;
+    speed_bar.show_tick = true;
+    speed_bar.show_bar = false;
+    speed_bar.tick_format(TICK_FORMAT);
+
+    pb.message("Progress ");
+    speed_bar.message("Size     ");
+
+    let mb_thread = spawn(move || mb.listen());
+
+    while !WRITE_FINISHED.load(Ordering::Relaxed) {
+        sleep(Duration::from_millis(500));
+        let rows_count = WRITE_PROGRESS.load(Ordering::Relaxed);
+        pb.set(rows_count as u64);
+
+        let written_size = WRITTEN_SIZE.load(Ordering::Relaxed);
+        #[cfg_attr(
+            feature = "cargo-clippy",
+            allow(
+                clippy::cast_precision_loss,
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss
+            )
+        )]
+        {
+            let estimated_total = (written_size as f64) * (total_rows as f64) / (rows_count as f64);
+            speed_bar.total = estimated_total as u64;
+            speed_bar.set(written_size as u64);
+        }
+    }
+
+    pb.finish_println("Done!");
+    speed_bar.finish();
+
+    mb_thread.join().unwrap();
 }
