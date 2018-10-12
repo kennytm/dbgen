@@ -6,9 +6,11 @@
 extern crate data_encoding;
 extern crate failure;
 extern crate pbr;
+extern crate pcg_rand;
 extern crate rand;
 extern crate rayon;
 extern crate structopt;
+extern crate xoshiro;
 
 use dbgen::{
     eval::State,
@@ -19,7 +21,7 @@ use dbgen::{
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
 use pbr::{MultiBar, Units};
-use rand::{EntropyRng, Rng, SeedableRng, StdRng};
+use rand::{prng, EntropyRng, Rng, RngCore, SeedableRng, StdRng};
 use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     ThreadPoolBuilder,
@@ -29,6 +31,7 @@ use std::{
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
     process::exit,
+    str::FromStr,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     thread::{sleep, spawn},
     time::Duration,
@@ -100,6 +103,14 @@ struct Args {
         default_value = "0"
     )]
     jobs: usize,
+
+    #[structopt(
+        long = "rng",
+        help = "Random number generator engine",
+        raw(possible_values = r#"&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "xoshiro256**"]"#),
+        default_value = "pcg32"
+    )]
+    rng: RngName,
 }
 
 fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
@@ -184,11 +195,18 @@ fn run() -> Result<(), Error> {
     let files_count = args.files_count;
     let variables_count = template.variables_count;
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
+    let rng_name = args.rng;
 
     let progress_bar_thread = spawn(move || run_progress_thread(files_count, rows_per_file));
 
     let iv = (0..files_count)
-        .map(|i| (seeding_rng.gen(), i + 1, u64::from(i) * rows_per_file + 1))
+        .map(move |i| {
+            (
+                rng_name.create(&mut seeding_rng),
+                i + 1,
+                u64::from(i) * rows_per_file + 1,
+            )
+        })
         .collect::<Vec<_>>();
     let res = iv.into_par_iter().try_for_each(|(seed, file_index, row_num)| {
         let mut state = State::new(row_num, seed, variables_count);
@@ -202,14 +220,48 @@ fn run() -> Result<(), Error> {
     Ok(())
 }
 
-struct Env {
-    out_dir: PathBuf,
-    file_num_digits: usize,
-    row_gen: Row,
-    unique_name: String,
-    qualified_name: String,
-    inserts_count: u32,
-    rows_count: u32,
+#[derive(Copy, Clone, Debug)]
+enum RngName {
+    ChaCha,
+    Hc128,
+    Isaac,
+    Isaac64,
+    XorShift,
+    Pcg32,
+    Xoshiro256StarStar,
+}
+
+impl FromStr for RngName {
+    type Err = Error;
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Ok(match name {
+            "chacha" => RngName::ChaCha,
+            "hc128" => RngName::Hc128,
+            "isaac" => RngName::Isaac,
+            "isaac64" => RngName::Isaac64,
+            "xorshift" => RngName::XorShift,
+            "pcg32" => RngName::Pcg32,
+            "xoshiro256**" => RngName::Xoshiro256StarStar,
+            _ => failure::bail!("Unsupported RNG {}", name),
+        })
+    }
+}
+
+impl RngName {
+    fn create(self, src: &mut StdRng) -> Box<dyn RngCore + Send> {
+        use pcg_rand::{seeds::PcgSeeder, Pcg32Oneseq};
+        use xoshiro::Xoshiro256StarStar;
+
+        match self {
+            RngName::ChaCha => Box::new(prng::ChaChaRng::from_seed(src.gen())),
+            RngName::Hc128 => Box::new(prng::Hc128Rng::from_seed(src.gen())),
+            RngName::Isaac => Box::new(prng::IsaacRng::from_seed(src.gen())),
+            RngName::Isaac64 => Box::new(prng::Isaac64Rng::from_seed(src.gen())),
+            RngName::XorShift => Box::new(prng::XorShiftRng::from_seed(src.gen())),
+            RngName::Pcg32 => Box::new(Pcg32Oneseq::from_seed(PcgSeeder::seed(src.gen()))),
+            RngName::Xoshiro256StarStar => Box::new(Xoshiro256StarStar::from_seed(src.gen())),
+        }
+    }
 }
 
 struct WriteCountWrapper<W: Write> {
@@ -249,6 +301,16 @@ impl<W: Write> Write for WriteCountWrapper<W> {
             self.inner.flush()
         }
     }
+}
+
+struct Env {
+    out_dir: PathBuf,
+    file_num_digits: usize,
+    row_gen: Row,
+    unique_name: String,
+    qualified_name: String,
+    inserts_count: u32,
+    rows_count: u32,
 }
 
 impl Env {

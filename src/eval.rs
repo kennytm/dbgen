@@ -8,7 +8,7 @@ use crate::{
 use failure::ResultExt;
 use rand::{
     distributions::{self, Uniform},
-    Rng, SeedableRng, StdRng,
+    Rng, RngCore, SeedableRng, StdRng,
 };
 use std::{borrow::Cow, cmp::Ordering};
 use zipf::ZipfDistribution;
@@ -18,17 +18,17 @@ pub type Seed = <StdRng as SeedableRng>::Seed;
 /// The external state used during evaluation.
 pub struct State {
     pub(crate) row_num: u64,
-    rng: StdRng,
+    rng: Box<dyn RngCore>,
     variables: Vec<Value>,
 }
 
 impl State {
-    /// Creates a new state from the seed and starting row number.
+    /// Creates a new state from the random number generator and starting row number.
     #[cfg_attr(feature = "cargo-clippy", allow(clippy::needless_pass_by_value))] // false positive
-    pub fn new(row_num: u64, seed: Seed, variables_count: usize) -> Self {
+    pub fn new(row_num: u64, rng: Box<dyn RngCore>, variables_count: usize) -> Self {
         Self {
             row_num,
-            rng: StdRng::from_seed(seed),
+            rng,
             variables: vec![Value::Null; variables_count],
         }
     }
