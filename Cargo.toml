@@ -22,7 +22,7 @@ rayon = "1.0"
 zipf = "4.0.1"
 chrono = { version = "0.4", default-features = false }
 ryu = "0.2"
-pcg_rand = "0.9"
+pcg_rand = "=0.9.1" # FIXME: unpin the version until robojeb/pcg_rand#9 is fixed
 xoshiro = "0.0.4"
 serde_derive = "1.0"
 serde = "1.0"
