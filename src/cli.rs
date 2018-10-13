@@ -108,6 +108,9 @@ pub struct Args {
         default_value = "pcg32"
     )]
     pub rng: RngName,
+
+    #[structopt(short = "q", long = "quiet", help = "Disable progress bar")]
+    pub quiet: bool,
 }
 
 impl Default for Args {
@@ -123,6 +126,7 @@ impl Default for Args {
             seed: None,
             jobs: 0,
             rng: RngName::Pcg32,
+            quiet: true,
         }
     }
 }
@@ -192,7 +196,10 @@ pub fn run(args: Args) -> Result<(), Error> {
     env.write_schema(&template.content)?;
 
     let meta_seed = args.seed.unwrap_or_else(|| EntropyRng::new().gen());
-    eprintln!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&meta_seed));
+    let show_progress = !args.quiet;
+    if show_progress {
+        println!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&meta_seed));
+    }
     let mut seeding_rng = StdRng::from_seed(meta_seed);
 
     let files_count = args.files_count;
@@ -200,7 +207,11 @@ pub fn run(args: Args) -> Result<(), Error> {
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
     let rng_name = args.rng;
 
-    let progress_bar_thread = spawn(move || run_progress_thread(files_count, rows_per_file));
+    let progress_bar_thread = spawn(move || {
+        if show_progress {
+            run_progress_thread(files_count, rows_per_file)
+        }
+    });
 
     let iv = (0..files_count)
         .map(move |i| {
