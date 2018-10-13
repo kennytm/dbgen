@@ -506,7 +506,7 @@ macro_rules! define_function {
         }
 
         impl fmt::Display for $F {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(match self {
                     $($F::$fi => $fs,)*
                     $($F::$ri => $rs,)*

@@ -50,7 +50,7 @@ impl I65 {
 }
 
 impl fmt::Debug for I65 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}_i65", i128::from(*self))
     }
 }
@@ -65,7 +65,7 @@ enum N {
 pub struct Number(N);
 
 impl fmt::Display for Number {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             N::Int(v) => i128::from(v).fmt(f),
             N::Float(v) => {
@@ -240,7 +240,7 @@ macro_rules! try_or_overflow {
 }
 
 impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut output = Vec::new();
         self.write_sql(&mut output).map_err(|_| fmt::Error)?;
         let s = String::from_utf8(output).map_err(|_| fmt::Error)?;
@@ -498,10 +498,10 @@ impl<'s> TryFromValue<'s> for &'s Value {
     }
 }
 
+#[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
 impl<'s> TryFromValue<'s> for Option<bool> {
     const NAME: &'static str = "nullable boolean";
 
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
     fn try_from_value(value: &'s Value) -> Option<Self> {
         match value {
             Value::Null => Some(None),

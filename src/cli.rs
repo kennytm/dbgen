@@ -22,6 +22,7 @@ use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     ThreadPoolBuilder,
 };
+use serde_derive::Deserialize;
 use std::{
     fs::{create_dir_all, read_to_string, File},
     io::{self, BufWriter, Write},
@@ -32,7 +33,6 @@ use std::{
     time::Duration,
 };
 use structopt::StructOpt;
-use serde_derive::Deserialize;
 
 #[derive(StructOpt, Debug, Deserialize)]
 pub struct Args {

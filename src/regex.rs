@@ -101,12 +101,10 @@ impl Compiled {
     /// Checks whether this compiled pattern can only generate UTF-8 strings.
     fn is_utf8(&self) -> bool {
         match self {
-            Compiled::Empty => true,
-            Compiled::Sequence(seq) => seq.iter().all(Self::is_utf8),
+            Compiled::Empty | Compiled::UnicodeClass { .. } => true,
+            Compiled::Sequence(seq) | Compiled::Any { choices: seq, .. } => seq.iter().all(Self::is_utf8),
             Compiled::Literal(lit) => from_utf8(lit).is_ok(),
             Compiled::Repeat { inner, .. } => inner.is_utf8(),
-            Compiled::Any { choices, .. } => choices.iter().all(Self::is_utf8),
-            Compiled::UnicodeClass { .. } => true,
             Compiled::ByteClass { max_byte, .. } => *max_byte <= b'\x7f',
         }
     }
