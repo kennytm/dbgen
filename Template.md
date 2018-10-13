@@ -4,30 +4,28 @@ Template reference
 File syntax
 -----------
 
-The template file should consist of one CREATE TABLE AS statement, like this:
+The template file should consist of one CREATE TABLE statement, with expressions telling how a value
+should be generated inside `{{ … }}` blocks:
 
 ```sql
 CREATE TABLE "database"."schema"."table" (
     column_1    COLUMN_TYPE_1,
+        {{ value_1 }}
     column_2    COLUMN_TYPE_2,
+        {{ value_2 }}
     -- ...
-    column_n    COLUMN_TYPE_N
-) OPTION_1 = 1, /*...*/ OPTION_N = N
-AS SELECT
-    rand.int(16),
-    rand.regex('[a-z]*'),
-    -- ...
-    rand.uniform(-4.0, 4.0)
-FROM rand;
+    column_n    COLUMN_TYPE_N,
+        {{ value_n }}
+    INDEX(some_index),
+    INDEX(more_index)
+) OPTION_1 = 1 /*, ... */;
 ```
-
-(The `FROM rand` at the end is part of the syntax and cannot be changed.)
 
 Expression syntax
 -----------------
 
-Each value in the SELECT clause can be an expression. `dbgen` will evaluate the expression to
-generate a new row when writing them out.
+`dbgen` supports an SQL-like expression syntax. These expressions will be re-evaluated for every new
+row generated.
 
 ### Literals
 
@@ -68,8 +66,8 @@ From highest to lowest precedence:
 
 * **Concatenation `||`**
 
-    The `||` will concatenate two strings together. If either side is a number, it will first be
-    converted into a string.
+    The `||` will concatenate two strings together. If either side is not a string, they will first
+    be converted into a string.
 
 * **Comparison `=`, `<>`, `<`, `>`, `<=`, `>=`**
 
@@ -88,6 +86,8 @@ From highest to lowest precedence:
     - `NULL IS NULL` is TRUE.
     - Values having different types are not identical (`'4' IS 5` is FALSE).
     - Values having the same types compare like the `=` and `<>` operators.
+
+    These operators are a generalization of standard SQL's `IS [NOT] {TRUE|FALSE|NULL}` operators.
 
 * **Logical operators `NOT`, `AND`, `OR`**
 
@@ -213,8 +213,8 @@ From highest to lowest precedence:
 
 * **INTERVAL 30 MINUTE**
 
-    Creates a time interval. The inner expression should be a number (can be negative). Valid units
-    are:
+    Creates a time interval. The inner expression should evaluate a number (can be negative). Valid
+    units are:
 
     - MICROSECOND
     - MILLISECOND
@@ -229,9 +229,13 @@ From highest to lowest precedence:
 
 ### Miscellaneous
 
-* **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *r3* END**
+* **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**
 
-    If *value* equals to *p1*, then the expression's value is *r1*, etc.
+    Equivalent to the SQL `CASE … WHEN` expression.
+
+    If *value* equals to *p1* (i.e. `(value = p1) IS TRUE`), then the expression's value is *r1*,
+    etc. If the *value* does not equal to any of the listed pattern, the value *ro* will be
+    returned. If the ELSE branch is missing, returns NULL.
 
 * **@local**
 
