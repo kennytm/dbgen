@@ -21,3 +21,4 @@ pub mod gen;
 pub mod parser;
 pub mod regex;
 pub mod value;
+pub mod cli;

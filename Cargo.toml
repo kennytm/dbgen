@@ -24,6 +24,8 @@ chrono = { version = "0.4", default-features = false }
 ryu = "0.2"
 pcg_rand = "0.9"
 xoshiro = "0.0.4"
+serde_derive = "1.0"
+serde = "1.0"
 
 [dev-dependencies]
 regex = "1.0"
