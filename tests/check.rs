@@ -1,11 +1,10 @@
+use dbgen::cli::{run, Args};
 use diff::{lines, Result as DiffResult};
+use failure::Error;
 use serde_json::from_reader;
 use std::{
-    env,
     fs::{read_dir, read_to_string, File},
-    io::{Error, ErrorKind},
     path::Path,
-    process::Command,
 };
 use tempfile::tempdir;
 
@@ -15,7 +14,6 @@ fn run_test() {
 }
 
 fn main() -> Result<(), Error> {
-    let cargo = env::var_os("CARGO").ok_or_else(|| Error::new(ErrorKind::NotFound, "$CARGO is undefined"))?;
     let out_dir = tempdir()?;
 
     let data_dir = Path::new(file!()).with_file_name("data");
@@ -26,19 +24,11 @@ fn main() -> Result<(), Error> {
         }
 
         let child_path = child_dir.path();
+        let mut args: Args = from_reader(File::open(child_path.join("flags.json"))?)?;
+        args.template = child_path.join("template.sql");
+        args.out_dir = out_dir.path().to_owned();
 
-        let mut cmd = Command::new(&cargo);
-        cmd.args(&["run", "--", "-i"]).arg(child_path.join("template.sql"));
-        cmd.arg("-o").arg(out_dir.path());
-        let flags = from_reader::<_, Vec<String>>(File::open(child_path.join("flags.json"))?)?;
-        cmd.args(&flags);
-        let status = cmd.status()?;
-        assert!(
-            status.success(),
-            "returned invalid status on {}: {}",
-            child_path.display(),
-            status
-        );
+        run(args)?;
 
         for result_entry in read_dir(out_dir.path())? {
             let result_entry = result_entry?;

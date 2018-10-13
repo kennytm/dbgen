@@ -35,15 +35,16 @@ use std::{
 use structopt::StructOpt;
 
 #[derive(StructOpt, Debug, Deserialize)]
+#[serde(default)]
 pub struct Args {
     #[structopt(
         long = "qualified",
         help = "Keep the qualified name when writing the SQL statements"
     )]
-    qualified: bool,
+    pub qualified: bool,
 
     #[structopt(long = "table-name", help = "Override the table name")]
-    table_name: Option<String>,
+    pub table_name: Option<String>,
 
     #[structopt(
         short = "o",
@@ -51,7 +52,7 @@ pub struct Args {
         help = "Output directory",
         parse(from_os_str)
     )]
-    out_dir: PathBuf,
+    pub out_dir: PathBuf,
 
     #[structopt(
         short = "k",
@@ -59,14 +60,14 @@ pub struct Args {
         help = "Number of files to generate",
         default_value = "1"
     )]
-    files_count: u32,
+    pub files_count: u32,
 
     #[structopt(
         short = "n",
         long = "inserts-count",
         help = "Number of INSERT statements per file"
     )]
-    inserts_count: u32,
+    pub inserts_count: u32,
 
     #[structopt(
         short = "r",
@@ -74,7 +75,7 @@ pub struct Args {
         help = "Number of rows per INSERT statement",
         default_value = "1"
     )]
-    rows_count: u32,
+    pub rows_count: u32,
 
     #[structopt(
         short = "i",
@@ -82,7 +83,7 @@ pub struct Args {
         help = "Generation template SQL",
         parse(from_os_str)
     )]
-    template: PathBuf,
+    pub template: PathBuf,
 
     #[structopt(
         short = "s",
@@ -90,7 +91,7 @@ pub struct Args {
         help = "Random number generator seed (should have 64 hex digits)",
         parse(try_from_str = "seed_from_str")
     )]
-    seed: Option<<StdRng as SeedableRng>::Seed>,
+    pub seed: Option<<StdRng as SeedableRng>::Seed>,
 
     #[structopt(
         short = "j",
@@ -98,7 +99,7 @@ pub struct Args {
         help = "Number of jobs to run in parallel, default to number of CPUs",
         default_value = "0"
     )]
-    jobs: usize,
+    pub jobs: usize,
 
     #[structopt(
         long = "rng",
@@ -106,7 +107,24 @@ pub struct Args {
         raw(possible_values = r#"&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "xoshiro256**"]"#),
         default_value = "pcg32"
     )]
-    rng: RngName,
+    pub rng: RngName,
+}
+
+impl Default for Args {
+    fn default() -> Self {
+        Self {
+            qualified: false,
+            table_name: None,
+            out_dir: PathBuf::default(),
+            files_count: 1,
+            inserts_count: 1,
+            rows_count: 1,
+            template: PathBuf::default(),
+            seed: None,
+            jobs: 0,
+            rng: RngName::Pcg32,
+        }
+    }
 }
 
 fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
@@ -145,9 +163,9 @@ pub fn run(args: Args) -> Result<(), Error> {
     let input = read_to_string(&args.template).context("failed to read template")?;
     let template = Template::parse(&input)?;
 
-    ThreadPoolBuilder::new()
+    let pool = ThreadPoolBuilder::new()
         .num_threads(args.jobs)
-        .build_global()
+        .build()
         .context("failed to configure thread pool")?;
 
     let table_name = match args.table_name {
@@ -193,9 +211,11 @@ pub fn run(args: Args) -> Result<(), Error> {
             )
         })
         .collect::<Vec<_>>();
-    let res = iv.into_par_iter().try_for_each(|(seed, file_index, row_num)| {
-        let mut state = State::new(row_num, seed, variables_count);
-        env.write_data_file(file_index, &mut state)
+    let res = pool.install(move || {
+        iv.into_par_iter().try_for_each(|(seed, file_index, row_num)| {
+            let mut state = State::new(row_num, seed, variables_count);
+            env.write_data_file(file_index, &mut state)
+        })
     });
 
     WRITE_FINISHED.store(true, Ordering::Relaxed);

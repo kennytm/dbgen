@@ -1,1 +1,6 @@
-["-n", "1", "-r", "100", "--rng", "hc128", "-s", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+{
+    "inserts_count": 1,
+    "rows_count": 100,
+    "rng": "Hc128",
+    "seed": [170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170]
+}

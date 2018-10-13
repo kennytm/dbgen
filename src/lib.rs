@@ -1,6 +1,9 @@
 // TODO remove all #[cfg_attr(feature = "cargo-clippy")] once tool_lints is stabilized.
 #![cfg_attr(feature = "cargo-clippy", feature(tool_lints))]
-#![cfg_attr(feature = "cargo-clippy", warn(clippy::pedantic, warnings, rust_2018_idioms))]
+#![cfg_attr(
+    feature = "cargo-clippy",
+    warn(clippy::pedantic, warnings, rust_2018_idioms)
+)]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::stutter, unused_extern_crates))]
 
 // TODO remove these `extern crate` once RLS understands these are not needed.
