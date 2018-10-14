@@ -96,7 +96,11 @@ impl Number {
 macro_rules! impl_from_int_for_number {
     ($($ty:ty),*) => {
         $(impl From<$ty> for Number {
-            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_possible_wrap, clippy::cast_lossless))] // u63 to i64 won't wrap.
+            #[cfg_attr(feature = "cargo-clippy", allow(
+                clippy::cast_possible_wrap,
+                clippy::cast_lossless,
+                trivial_numeric_casts,
+            ))] // u63 to i64 won't wrap.
             fn from(value: $ty) -> Self {
                 Number(N::Int(I65 {
                     lsbit: (value & 1) != 0,

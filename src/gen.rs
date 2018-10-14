@@ -6,6 +6,7 @@ use crate::{
 };
 use std::io::{self, Write};
 
+#[derive(Debug)]
 pub struct Row(Vec<Compiled>);
 
 impl Row {

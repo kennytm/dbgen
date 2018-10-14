@@ -10,7 +10,7 @@ use rand::{
     distributions::{self, Uniform},
     Rng, RngCore, SeedableRng, StdRng,
 };
-use std::{borrow::Cow, cmp::Ordering};
+use std::{borrow::Cow, cmp::Ordering, fmt};
 use zipf::ZipfDistribution;
 
 pub type Seed = <StdRng as SeedableRng>::Seed;
@@ -20,6 +20,16 @@ pub struct State {
     pub(crate) row_num: u64,
     rng: Box<dyn RngCore>,
     variables: Vec<Value>,
+}
+
+impl fmt::Debug for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("State")
+            .field("row_num", &self.row_num)
+            .field("rng", &())
+            .field("variables", &self.variables)
+            .finish()
+    }
 }
 
 impl State {
