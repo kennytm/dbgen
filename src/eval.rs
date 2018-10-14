@@ -1,3 +1,5 @@
+//! Evaluating compiled expressions into values.
+
 use chrono::NaiveDateTime;
 use crate::{
     error::{Error, ErrorKind},
@@ -8,14 +10,12 @@ use crate::{
 use failure::ResultExt;
 use rand::{
     distributions::{self, Uniform},
-    Rng, RngCore, SeedableRng, StdRng,
+    Rng, RngCore,
 };
 use std::{borrow::Cow, cmp::Ordering, fmt};
 use zipf::ZipfDistribution;
 
-pub type Seed = <StdRng as SeedableRng>::Seed;
-
-/// The external state used during evaluation.
+/// The external mutable state used during evaluation.
 pub struct State {
     pub(crate) row_num: u64,
     rng: Box<dyn RngCore>,
@@ -33,8 +33,14 @@ impl fmt::Debug for State {
 }
 
 impl State {
-    /// Creates a new state from the random number generator and starting row number.
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::needless_pass_by_value))] // false positive
+    /// Creates a new state.
+    ///
+    /// # Parameters
+    ///
+    /// - `row_num`: The starting row number in this state. The first file should have this set
+    ///     to 1, and the second to `rows_count * inserts_count + 1`, etc.
+    /// - `rng`: The seeded random number generator.
+    /// - `variables_count`: Number of local variables per row.
     pub fn new(row_num: u64, rng: Box<dyn RngCore>, variables_count: usize) -> Self {
         Self {
             row_num,
@@ -44,6 +50,7 @@ impl State {
     }
 }
 
+/// Interior of a compiled expression.
 #[derive(Clone, Debug)]
 enum C {
     /// The row number.
@@ -52,23 +59,38 @@ enum C {
     Constant(Value),
     /// An unevaluated function.
     RawFunction {
+        /// Function name.
         name: Function,
+        /// Function arguments.
         args: Vec<Compiled>,
     },
+    /// Obtains a local variable.
     GetVariable(usize),
+    /// Assigns a value to a local variable.
     SetVariable(usize, Box<Compiled>),
+    /// The `CASE … WHEN` expression.
     CaseValueWhen {
+        /// The value to match against.
         value: Box<Compiled>,
+        /// The conditions and their corresponding results.
         conditions: Vec<(Compiled, Compiled)>,
+        /// The result when all conditions failed.
         otherwise: Box<Compiled>,
     },
 
+    /// Regex-based random string.
     RandRegex(regex::Generator),
+    /// Uniform distribution for `u64`.
     RandUniformU64(Uniform<u64>),
+    /// Uniform distribution for `i64`.
     RandUniformI64(Uniform<i64>),
+    /// Uniform distribution for `f64`.
     RandUniformF64(Uniform<f64>),
+    /// Zipfian distribution.
     RandZipf(ZipfDistribution),
+    /// Log-normal distribution.
     RandLogNormal(distributions::LogNormal),
+    /// Bernoulli distribution for `bool` (i.e. a weighted random boolean).
     RandBool(distributions::Bernoulli),
 }
 
@@ -88,6 +110,7 @@ impl AsValue for Compiled {
     }
 }
 
+/// Extracts a single argument in a specific type.
 fn arg<'a, T, E>(name: Function, args: &'a [E], index: usize, default: Option<T>) -> Result<T, ErrorKind>
 where
     T: TryFromValue<'a>,
@@ -107,6 +130,7 @@ where
     }
 }
 
+/// Converts a slice of arguments all into a specific type.
 fn iter_args<'a, T, E>(name: Function, args: &'a [E]) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
     T: TryFromValue<'a>,
@@ -125,6 +149,7 @@ where
 }
 
 impl Compiled {
+    /// Compiles an expression.
     pub fn compile(expr: Expr) -> Result<Self, Error> {
         Ok(Compiled(match expr {
             Expr::RowNum => C::RowNum,
@@ -165,6 +190,7 @@ impl Compiled {
         }))
     }
 
+    /// Evaluates a compiled expression and updates the state. Returns the evaluated value.
     pub fn eval(&self, state: &mut State) -> Result<Value, Error> {
         Ok(match &self.0 {
             C::RowNum => state.row_num.into(),
@@ -207,8 +233,13 @@ impl Compiled {
     }
 }
 
+/// Types which can be treated like a [`Value`].
 pub trait AsValue {
+    /// Borrows a [`Value`] out of this instance. Returns `None` if this instance does not contain
+    /// any `Value`s.
     fn as_value(&self) -> Option<&Value>;
+
+    /// Converts this instance into an owned compiled expression.
     fn to_compiled(&self) -> Compiled;
 }
 
@@ -221,6 +252,7 @@ impl AsValue for Value {
     }
 }
 
+/// Compiles a function with some value-like objects as input.
 pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
     macro_rules! require {
         (@false, $($fmt:tt)+) => {

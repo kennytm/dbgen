@@ -1,3 +1,5 @@
+//! CLI driver of `dbgen`.
+
 // TODO remove these `extern crate` once racer-rust/racer#916 is closed.
 extern crate data_encoding;
 extern crate failure;
@@ -35,18 +37,22 @@ use std::{
 };
 use structopt::StructOpt;
 
+/// Arguments to the `dbgen` CLI program.
 #[derive(StructOpt, Debug, Deserialize)]
 #[serde(default)]
 pub struct Args {
+    /// Keep the qualified name when writing the SQL statements.
     #[structopt(
         long = "qualified",
         help = "Keep the qualified name when writing the SQL statements"
     )]
     pub qualified: bool,
 
+    /// Override the table name.
     #[structopt(long = "table-name", help = "Override the table name")]
     pub table_name: Option<String>,
 
+    /// Output directory.
     #[structopt(
         short = "o",
         long = "out-dir",
@@ -55,6 +61,7 @@ pub struct Args {
     )]
     pub out_dir: PathBuf,
 
+    /// Number of files to generate.
     #[structopt(
         short = "k",
         long = "files-count",
@@ -63,6 +70,7 @@ pub struct Args {
     )]
     pub files_count: u32,
 
+    /// Number of INSERT statements per file.
     #[structopt(
         short = "n",
         long = "inserts-count",
@@ -70,6 +78,7 @@ pub struct Args {
     )]
     pub inserts_count: u32,
 
+    /// Number of rows per INSERT statement.
     #[structopt(
         short = "r",
         long = "rows-count",
@@ -78,14 +87,16 @@ pub struct Args {
     )]
     pub rows_count: u32,
 
+    /// Generation template file.
     #[structopt(
         short = "i",
         long = "template",
-        help = "Generation template SQL",
+        help = "Generation template file",
         parse(from_os_str)
     )]
     pub template: PathBuf,
 
+    /// Random number generator seed.
     #[structopt(
         short = "s",
         long = "seed",
@@ -94,6 +105,7 @@ pub struct Args {
     )]
     pub seed: Option<<StdRng as SeedableRng>::Seed>,
 
+    /// Number of jobs to run in parallel, default to number of CPUs.
     #[structopt(
         short = "j",
         long = "jobs",
@@ -102,6 +114,7 @@ pub struct Args {
     )]
     pub jobs: usize,
 
+    /// Random number generator engine
     #[structopt(
         long = "rng",
         help = "Random number generator engine",
@@ -110,10 +123,12 @@ pub struct Args {
     )]
     pub rng: RngName,
 
+    /// Disable progress bar.
     #[structopt(short = "q", long = "quiet", help = "Disable progress bar")]
     pub quiet: bool,
 }
 
+/// The default implementation of the argument suitable for *testing*.
 impl Default for Args {
     fn default() -> Self {
         Self {
@@ -132,6 +147,7 @@ impl Default for Args {
     }
 }
 
+/// Parses a 64-digit hex string into an RNG seed.
 fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
     let mut seed = <StdRng as SeedableRng>::Seed::default();
 
@@ -147,6 +163,7 @@ fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> 
     }
 }
 
+/// Extension trait for `Result` to annotate it with a file path.
 trait PathResultExt {
     type Ok;
     fn with_path(self, path: &Path) -> Result<Self::Ok, Error>;
@@ -160,10 +177,14 @@ impl<T, E: Fail> PathResultExt for Result<T, E> {
     }
 }
 
+/// Indicator whether all tables are written. Used by the progress bar thread to break the loop.
 static WRITE_FINISHED: AtomicBool = AtomicBool::new(false);
+/// Counter of number of rows being written.
 static WRITE_PROGRESS: AtomicUsize = AtomicUsize::new(0);
+/// Counter of number of bytes being written.
 static WRITTEN_SIZE: AtomicUsize = AtomicUsize::new(0);
 
+/// Runs the CLI program.
 pub fn run(args: Args) -> Result<(), Error> {
     let input = read_to_string(&args.template).context("failed to read template")?;
     let template = Template::parse(&input)?;
@@ -237,14 +258,22 @@ pub fn run(args: Args) -> Result<(), Error> {
     Ok(())
 }
 
+/// Names of random number generators supported by `dbgen`.
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub enum RngName {
+    /// ChaCha20
     ChaCha,
+    /// HC-128
     Hc128,
+    /// ISAAC
     Isaac,
+    /// ISAAC-64
     Isaac64,
+    /// Xorshift
     XorShift,
+    /// PCG32-Oneseq
     Pcg32,
+    /// xoshiro256**
     Xoshiro256StarStar,
 }
 
@@ -265,6 +294,7 @@ impl FromStr for RngName {
 }
 
 impl RngName {
+    /// Creates an RNG engine given the name. The RNG engine instance will be seeded from `src`.
     fn create(self, src: &mut StdRng) -> Box<dyn RngCore + Send> {
         use pcg_rand::{seeds::PcgSeeder, Pcg32Oneseq};
         use xoshiro::Xoshiro256StarStar;
@@ -281,12 +311,14 @@ impl RngName {
     }
 }
 
+/// Wrapping of a [`Write`] which counts how many bytes are written.
 struct WriteCountWrapper<W: Write> {
     inner: W,
     count: usize,
     skip_write: bool,
 }
 impl<W: Write> WriteCountWrapper<W> {
+    /// Creates a new [`WriteCountWrapper`] by wrapping another [`Write`].
     fn new(inner: W) -> Self {
         Self {
             inner,
@@ -295,6 +327,8 @@ impl<W: Write> WriteCountWrapper<W> {
         }
     }
 
+    /// Commits the number of bytes written into the [`WRITTEN_SIZE`] global variable, then resets
+    /// the byte count of this instance to zero.
     fn commit_bytes_written(&mut self) {
         WRITTEN_SIZE.fetch_add(self.count, Ordering::Relaxed);
         self.count = 0;
@@ -320,6 +354,7 @@ impl<W: Write> Write for WriteCountWrapper<W> {
     }
 }
 
+/// The environmental data shared by all data writers.
 struct Env {
     out_dir: PathBuf,
     file_num_digits: usize,
@@ -331,12 +366,14 @@ struct Env {
 }
 
 impl Env {
+    /// Writes the `CREATE TABLE` schema file.
     fn write_schema(&self, content: &str) -> Result<(), Error> {
         let path = self.out_dir.join(format!("{}-schema.sql", self.unique_name));
         let mut file = BufWriter::new(File::create(&path).with_path(&path)?);
         writeln!(file, "CREATE TABLE {} {}", self.qualified_name, content).with_path(&path)
     }
 
+    /// Writes a single data file.
     fn write_data_file(&self, file_index: u32, state: &mut State) -> Result<(), Error> {
         let path = self.out_dir.join(format!(
             "{0}.{1:02$}.sql",
@@ -367,6 +404,10 @@ impl Env {
     }
 }
 
+/// Runs the progress bar thread.
+///
+/// This function will loop and update the progress bar every 0.5 seconds, until [`WRITE_FINISHED`]
+/// becomes `true`.
 fn run_progress_thread(files_count: u32, rows_per_file: u64) {
     #[cfg_attr(feature = "cargo-clippy", allow(clippy::non_ascii_literal))]
     const TICK_FORMAT: &str = "🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛";

@@ -1,21 +1,31 @@
+//! Template parser.
+
 use crate::{
     error::{Error, ErrorKind},
     value::Value,
 };
+use self::derived::{TemplateParser, Rule};
+
 use failure::ResultExt;
 use pest::{iterators::Pairs, Parser};
-use pest_derive::Parser;
 use std::{collections::HashMap, fmt};
 
-#[derive(Parser)]
-#[grammar = "parser.pest"]
-struct TemplateParser;
+mod derived {
+    use pest_derive::Parser;
+
+    #[derive(Parser)]
+    #[grammar = "parser.pest"]
+    pub(super) struct TemplateParser;
+}
 
 /// A schema-qualified name with quotation marks still intact.
 #[derive(Debug, Clone)]
 pub struct QName {
+    /// Database name
     pub database: Option<String>,
+    /// Schema name
     pub schema: Option<String>,
+    /// Table name
     pub table: String,
 }
 
@@ -68,7 +78,7 @@ impl QName {
     /// This name is transformed from the qualified name with these changes:
     ///  - Unquoted names are all converted to lower case in the default
     ///     collation (`XyzÄbc` → `xyzäbc`). If the lowercasing results in
-    ///     multiple characters (e.g. `İ` → `i̇`), only the first will be
+    ///     multiple characters (e.g. `İ` → `i̇`), only the first (`i`) will be
     ///     included.
     ///  - Quotation marks are removed (`"Hello ""world"""` → `Hello "world"`)
     ///  - Special characters including `.`, `-` and `/` are percent-encoded,
@@ -124,6 +134,7 @@ fn unescape_into(res: &mut String, ident: &str, do_percent_escape: bool) {
     }
 }
 
+/// A parsed template.
 #[derive(Debug, Clone)]
 pub struct Template {
     /// The default table name.
@@ -139,24 +150,37 @@ pub struct Template {
     pub variables_count: usize,
 }
 
+/// A parsed expression.
 #[derive(Debug, Clone)]
 pub enum Expr {
+    /// The `rownum` symbol.
     RowNum,
+    /// A constant value.
     Value(Value),
+    /// Symbol of a local variable `@x`.
     GetVariable(usize),
+    /// A variable assignment expression `@x := y`.
     SetVariable(usize, Box<Expr>),
+    /// A function call.
     Function {
+        /// Function name.
         name: Function,
+        /// Function arguments.
         args: Vec<Expr>,
     },
+    /// A `CASE … WHEN` expression.
     CaseValueWhen {
+        /// The expression to match against.
         value: Box<Expr>,
+        /// The conditions and their corresponding results.
         conditions: Vec<(Expr, Expr)>,
+        /// The result when all conditions failed.
         otherwise: Option<Box<Expr>>,
     },
 }
 
 impl Template {
+    /// Parses a raw string into a structured template.
     pub fn parse(input: &str) -> Result<Self, Error> {
         let pairs = TemplateParser::parse(Rule::create_table, input).context(ErrorKind::ParseTemplate)?;
 
@@ -185,29 +209,28 @@ impl Template {
             name: name.unwrap(),
             content,
             exprs,
-            variables_count: alloc.count,
+            variables_count: alloc.map.len(),
         })
     }
 }
 
+/// Local variable allocator. This structure keeps record of local variables `@x` and assigns a
+/// unique number of each variable, so that they can be referred using a number instead of a string.
 #[derive(Default)]
 struct Allocator {
-    count: usize,
     map: HashMap<String, usize>,
 }
 
 impl Allocator {
+    /// Allocates a local variable index given the name.
     fn allocate(&mut self, raw_var_name: &str) -> usize {
         let mut var_name = String::with_capacity(raw_var_name.len());
         unescape_into(&mut var_name, raw_var_name, false);
-        let count = &mut self.count;
-        *self.map.entry(var_name).or_insert_with(|| {
-            let last = *count;
-            *count += 1;
-            last
-        })
+        let count = self.map.len();
+        *self.map.entry(var_name).or_insert(count)
     }
 
+    /// Creates an assignment expression `@x := @y := z`.
     fn expr_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut indices = Vec::new();
 
@@ -230,6 +253,7 @@ impl Allocator {
         unreachable!("Pairs exhausted without finding the inner expression");
     }
 
+    /// Creates any expression involving a binary operator `x + y`, `x * y`, etc.
     fn expr_binary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut args = Vec::with_capacity(1);
         let mut op = None;
@@ -287,6 +311,7 @@ impl Allocator {
         })
     }
 
+    /// Creates a NOT expression `NOT NOT NOT x`.
     fn expr_not_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut has_not = false;
         for pair in pairs {
@@ -311,6 +336,7 @@ impl Allocator {
         unreachable!("Pairs exhausted without finding the inner expression");
     }
 
+    /// Creates a primary expression.
     fn expr_primary_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let pair = pairs.next().unwrap();
         Ok(match pair.as_rule() {
@@ -337,6 +363,7 @@ impl Allocator {
         })
     }
 
+    /// Creates a function call expression `x.y.z(a, b, c)`.
     fn expr_function_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut name = None;
         let mut args = Vec::new();
@@ -360,15 +387,18 @@ impl Allocator {
         })
     }
 
+    /// Creates a group expression `(x)`.
     fn expr_group_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         self.expr_from_pairs(pairs.next().unwrap().into_inner())
     }
 
+    /// Creates a local variable expression `@x`.
     fn expr_get_variable_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let pair = pairs.next().unwrap();
         Ok(Expr::GetVariable(self.allocate(pair.as_str())))
     }
 
+    /// Creates any expression involving a unary operator `+x`, `-x`, etc.
     fn expr_unary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut has_neg = false;
         for pair in pairs {
@@ -394,6 +424,7 @@ impl Allocator {
         unreachable!("Pairs exhausted without finding the inner expression");
     }
 
+    /// Creates a `CASE … WHEN` expression.
     fn expr_case_value_when_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut value = None;
         let mut pattern = None;
@@ -428,6 +459,7 @@ impl Allocator {
         })
     }
 
+    /// Creates a `TIMESTAMP` expression.
     fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         for pair in pairs {
             match pair.as_rule() {
@@ -445,6 +477,7 @@ impl Allocator {
         unreachable!("Pairs exhausted without finding the inner expression");
     }
 
+    /// Creates an `INTERVAL` expression.
     fn expr_interval_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut unit = 1;
         let mut expr = None;
@@ -471,6 +504,7 @@ impl Allocator {
     }
 }
 
+/// Parses a number (integer or floating-point number) into a value.
 fn parse_number(input: &str) -> Result<Value, Error> {
     match input.get(..2) {
         Some("0x") | Some("0X") => {
@@ -489,6 +523,7 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 
 macro_rules! define_function {
     (
+        $(#[$meta:meta])*
         pub enum $F:ident {
         'function:
             $($fi:ident = $fs:tt,)*
@@ -498,11 +533,12 @@ macro_rules! define_function {
             $($ei:ident = $es:tt,)*
         }
     ) => {
+        $(#[$meta])*
         #[derive(Debug, Copy, Clone, PartialEq, Eq)]
         pub enum $F {
-            $($fi,)+
-            $($ri,)+
-            $($ei,)+
+            $($fi,)*
+            $($ri,)*
+            $($ei,)*
         }
 
         impl fmt::Display for $F {
@@ -534,6 +570,8 @@ macro_rules! define_function {
 }
 
 define_function! {
+    /// Built-in function names.
+    #[allow(missing_docs)]
     pub enum Function {
     'function:
         RandRegex = "rand.regex",

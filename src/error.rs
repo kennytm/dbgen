@@ -1,31 +1,63 @@
+//! Error types for the `dbgen` library.
+
 use crate::parser::Function;
 use failure::{Backtrace, Context, Fail};
 use std::fmt;
 
+/// Kinds of errors produced by the `dbgen` library.
 #[derive(Fail, Debug, Clone, PartialEq, Eq)]
 //#[non_exhaustive]
 pub enum ErrorKind {
+    /// Failed to parse template.
     #[fail(display = "failed to parse template")]
     ParseTemplate,
 
+    /// Unknown SQL function.
     #[fail(display = "unknown function '{}'", 0)]
-    UnknownFunction(String),
+    UnknownFunction(
+        /// The name of the unknown SQL function.
+        String,
+    ),
 
+    /// Integer is too big.
     #[fail(display = "integer '{}' is too big", 0)]
-    IntegerOverflow(String),
+    IntegerOverflow(
+        /// The string representation of the expression that produced the overflow.
+        String,
+    ),
 
+    /// Not enough arguments provided to the SQL function.
     #[fail(display = "not enough arguments to function {}", 0)]
-    NotEnoughArguments(Function),
+    NotEnoughArguments(
+        /// The SQL function causing the error.
+        Function,
+    ),
 
+    /// Invalid regex.
     #[fail(display = "invalid regex {}", 0)]
-    InvalidRegex(String),
+    InvalidRegex(
+        /// The regex pattern.
+        String,
+    ),
 
+    /// Unknown regex flag.
     #[fail(display = "unknown regex flag {}", 0)]
-    UnknownRegexFlag(char),
+    UnknownRegexFlag(
+        /// The regex flag.
+        char,
+    ),
 
+    /// Unsupported regex element (e.g. `\b`)
     #[fail(display = "unsupported regex element: '{}'", 0)]
-    UnsupportedRegexElement(String),
+    UnsupportedRegexElement(
+        /// The regex element.
+        String,
+    ),
 
+    /// Invalid argument type.
+    ///
+    /// If this error is encountered during compilation phase, the error will be
+    /// ignored and the function will be kept in raw form.
     #[fail(
         display = "invalid argument type: in function {}, argument #{} should be a {}",
         name,
@@ -33,27 +65,43 @@ pub enum ErrorKind {
         expected
     )]
     InvalidArgumentType {
+        /// The SQL function causing the error.
         name: Function,
+        /// Argument index.
         index: usize,
+        /// The expected type.
         expected: &'static str,
     },
 
+    /// Invalid arguments.
     #[fail(
         display = "invalid arguments: in function {}, assertion failed: {}",
         name,
         cause
     )]
-    InvalidArguments { name: Function, cause: String },
+    InvalidArguments {
+        /// The SQL function causing the error.
+        name: Function,
+        /// Cause of the error.
+        cause: String,
+    },
 
+    /// The timestamp string does not follow the ISO-8601 format.
     #[fail(display = "timestamp '{}' does not follow the ISO-8601 format", 0)]
-    InvalidTimestampString(String),
+    InvalidTimestampString(
+        /// The literal which is in the wrong format.
+        String,
+    ),
 
+    /// Failed to write the SQL `CREATE TABLE` schema file.
     #[fail(display = "failed to write SQL schema")]
     WriteSqlSchema,
 
+    /// Failed to write the SQL data file.
     #[fail(display = "failed to write SQL data")]
     WriteSqlData,
 
+    /// Failed to write an SQL value.
     #[fail(display = "failed to write SQL value")]
     WriteSqlValue,
 
@@ -62,6 +110,7 @@ pub enum ErrorKind {
     __NonExhaustive,
 }
 
+/// An error produced by the `dbgen` library.
 #[derive(Debug)]
 pub struct Error {
     inner: Context<ErrorKind>,
@@ -84,6 +133,7 @@ impl fmt::Display for Error {
 }
 
 impl Error {
+    /// The kind of this error.
     pub fn kind(&self) -> &ErrorKind {
         self.inner.get_context()
     }

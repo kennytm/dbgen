@@ -1,3 +1,5 @@
+//! Regex-based string generator
+
 use failure::ResultExt;
 use rand::{
     distributions::{uniform::SampleUniform, Distribution, Uniform},
@@ -20,7 +22,7 @@ use crate::{
     value::Value,
 };
 
-/// A compiled regex generator
+/// A compiled regex-based string generator
 #[derive(Clone, Debug)]
 pub struct Generator {
     compiled: Compiled,

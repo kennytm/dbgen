@@ -1,3 +1,5 @@
+//! Values
+
 use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::{
@@ -13,8 +15,10 @@ use crate::{
     parser::Function,
 };
 
+/// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
 
+/// A signed 65-bit number.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 struct I65 {
     msb: i64,
@@ -34,6 +38,7 @@ impl From<I65> for f64 {
 }
 
 impl I65 {
+    /// Negate the number.
     fn wrapping_neg(self) -> Self {
         Self {
             lsbit: self.lsbit,
@@ -41,6 +46,7 @@ impl I65 {
         }
     }
 
+    /// Tries to convert an `i128` into a 65-bit signed number.
     fn try_from_i128(v: i128) -> Option<Self> {
         Some(Self {
             lsbit: (v & 1) != 0,
@@ -55,12 +61,14 @@ impl fmt::Debug for I65 {
     }
 }
 
+/// Implementation of a number.
 #[derive(Copy, Clone, Debug)]
 enum N {
     Int(I65),
     Float(f64),
 }
 
+/// An SQL number (could represent an integer or floating point number).
 #[derive(Copy, Clone, Debug)]
 pub struct Number(N);
 
@@ -77,6 +85,7 @@ impl fmt::Display for Number {
 }
 
 impl Number {
+    /// Tries to convert this number into a primitive.
     pub fn to<P: FromPrimitive>(&self) -> Option<P> {
         match self.0 {
             N::Int(v) => P::from_i128(v.into()),
@@ -84,6 +93,7 @@ impl Number {
         }
     }
 
+    /// Converts this number into a nullable boolean using SQL rule.
     pub fn to_sql_bool(&self) -> Option<bool> {
         match self.0 {
             N::Int(v) => Some(v != I65::default()),
@@ -191,13 +201,17 @@ impl PartialOrd for Number {
     }
 }
 
+/// An SQL string (UTF-8 or byte-string).
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct Bytes {
+    /// The raw bytes.
     bytes: Vec<u8>,
+    /// Whether the bytes contained non-UTF-8 content.
     is_binary: bool,
 }
 
 impl Bytes {
+    /// Writes the content using SQL format.
     pub fn write_sql(&self, mut output: impl Write) -> Result<(), io::Error> {
         if self.is_binary {
             output.write_all(b"X'")?;
@@ -340,6 +354,7 @@ impl Value {
         })
     }
 
+    /// Subtracts two values using the rules common among SQL implementations.
     pub fn sql_sub(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Value::Number(lhs), Value::Number(rhs)) => (*lhs - *rhs).into(),
@@ -362,6 +377,7 @@ impl Value {
         })
     }
 
+    /// Multiplies two values using the rules common among SQL implementations.
     pub fn sql_mul(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Value::Number(lhs), Value::Number(rhs)) => (*lhs * *rhs).into(),
@@ -379,6 +395,7 @@ impl Value {
         })
     }
 
+    /// Divides two values using the rules common among SQL implementations.
     pub fn sql_float_div(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Value::Number(_), Value::Number(rhs)) | (Value::Interval(_), Value::Number(rhs))
@@ -401,6 +418,7 @@ impl Value {
         })
     }
 
+    /// Concatenates multiple values into a string.
     pub fn try_sql_concat(values: impl Iterator<Item = Result<Self, Error>>) -> Result<Self, Error> {
         let mut res = Bytes::default();
         let mut should_check_binary = false;
@@ -439,8 +457,11 @@ impl Value {
     }
 }
 
+/// Types which can be extracted out of a [`Value`].
 pub trait TryFromValue<'s>: Sized {
+    /// The name of the type, used when an error happens.
     const NAME: &'static str;
+    /// Converts a [`Value`] into the required type.
     fn try_from_value(value: &'s Value) -> Option<Self>;
 }
 

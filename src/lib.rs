@@ -7,10 +7,13 @@
         trivial_numeric_casts,
         unreachable_pub,
         variant_size_differences,
+        missing_docs,
         rust_2018_idioms
     )
 )]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::stutter, unused_extern_crates))]
+
+//! The reusable library powering `dbgen`.
 
 // TODO remove these `extern crate` once racer-rust/racer#916 is closed.
 extern crate chrono;
