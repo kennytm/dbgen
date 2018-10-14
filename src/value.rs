@@ -1,7 +1,7 @@
 //! Values
 
 use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
-use num_traits::{FromPrimitive, ToPrimitive};
+use num_traits::FromPrimitive;
 use std::{
     cmp::Ordering,
     fmt,
@@ -18,53 +18,11 @@ use crate::{
 /// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
 
-/// A signed 65-bit number.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
-struct I65 {
-    msb: i64,
-    lsbit: bool,
-}
-
-impl From<I65> for i128 {
-    fn from(value: I65) -> Self {
-        Self::from(value.msb) << 1 | Self::from(value.lsbit)
-    }
-}
-impl From<I65> for f64 {
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))]
-    fn from(value: I65) -> Self {
-        (value.msb as Self) * 2.0 + Self::from(u8::from(value.lsbit))
-    }
-}
-
-impl I65 {
-    /// Negate the number.
-    fn wrapping_neg(self) -> Self {
-        Self {
-            lsbit: self.lsbit,
-            msb: i64::from(self.lsbit).wrapping_add(self.msb).wrapping_neg(),
-        }
-    }
-
-    /// Tries to convert an `i128` into a 65-bit signed number.
-    fn try_from_i128(v: i128) -> Option<Self> {
-        Some(Self {
-            lsbit: (v & 1) != 0,
-            msb: (v >> 1).to_i64()?,
-        })
-    }
-}
-
-impl fmt::Debug for I65 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_i65", i128::from(*self))
-    }
-}
 
 /// Implementation of a number.
 #[derive(Copy, Clone, Debug)]
 enum N {
-    Int(I65),
+    Int(i128),
     Float(f64),
 }
 
@@ -75,7 +33,7 @@ pub struct Number(N);
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            N::Int(v) => i128::from(v).fmt(f),
+            N::Int(v) => v.fmt(f),
             N::Float(v) => {
                 let mut output = ryu::Buffer::new();
                 f.write_str(output.format(v))
@@ -88,7 +46,7 @@ impl Number {
     /// Tries to convert this number into a primitive.
     pub fn to<P: FromPrimitive>(&self) -> Option<P> {
         match self.0 {
-            N::Int(v) => P::from_i128(v.into()),
+            N::Int(v) => P::from_i128(v),
             N::Float(v) => P::from_f64(v),
         }
     }
@@ -96,7 +54,7 @@ impl Number {
     /// Converts this number into a nullable boolean using SQL rule.
     pub fn to_sql_bool(&self) -> Option<bool> {
         match self.0 {
-            N::Int(v) => Some(v != I65::default()),
+            N::Int(v) => Some(v != 0),
             N::Float(v) if v.is_nan() => None,
             N::Float(v) => Some(v != 0.0),
         }
@@ -106,27 +64,14 @@ impl Number {
 macro_rules! impl_from_int_for_number {
     ($($ty:ty),*) => {
         $(impl From<$ty> for Number {
-            #[cfg_attr(feature = "cargo-clippy", allow(
-                clippy::cast_possible_wrap,
-                clippy::cast_lossless,
-                trivial_numeric_casts,
-            ))] // u63 to i64 won't wrap.
             fn from(value: $ty) -> Self {
-                Number(N::Int(I65 {
-                    lsbit: (value & 1) != 0,
-                    msb: (value >> 1) as i64,
-                }))
+                Number(N::Int(value.into()))
             }
         })*
     }
 }
-impl_from_int_for_number!(u8, u16, u32, u64, i8, i16, i32, i64);
+impl_from_int_for_number!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
 
-impl From<bool> for Number {
-    fn from(value: bool) -> Self {
-        Number(N::Int(I65 { lsbit: value, msb: 0 }))
-    }
-}
 impl From<f32> for Number {
     fn from(value: f32) -> Self {
         Number(N::Float(value.into()))
@@ -138,9 +83,10 @@ impl From<f64> for Number {
     }
 }
 impl From<N> for f64 {
+    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))]
     fn from(n: N) -> Self {
         match n {
-            N::Int(i) => i.into(),
+            N::Int(i) => i as Self,
             N::Float(f) => f,
         }
     }
@@ -162,7 +108,7 @@ macro_rules! impl_number_bin_op {
             type Output = Self;
             fn $fname(self, other: Self) -> Self {
                 if let (N::Int(a), N::Int(b)) = (self.0, other.0) {
-                    if let Some(c) = i128::from(a).$checked(i128::from(b)).and_then(I65::try_from_i128) {
+                    if let Some(c) = a.$checked(b) {
                         return Number(N::Int(c));
                     }
                 }
