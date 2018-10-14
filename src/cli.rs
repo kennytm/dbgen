@@ -16,6 +16,7 @@ use crate::{
 
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
+use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
 use rand::{prng, EntropyRng, Rng, RngCore, SeedableRng, StdRng};
 use rayon::{
@@ -390,23 +391,14 @@ fn run_progress_thread(files_count: u32, rows_per_file: u64) {
 
     while !WRITE_FINISHED.load(Ordering::Relaxed) {
         sleep(Duration::from_millis(500));
-        let rows_count = WRITE_PROGRESS.load(Ordering::Relaxed);
-        pb.set(rows_count as u64);
+        let rows_count = WRITE_PROGRESS.load(Ordering::Relaxed) as u64;
+        pb.set(rows_count);
 
-        let written_size = WRITTEN_SIZE.load(Ordering::Relaxed);
-        #[cfg_attr(
-            feature = "cargo-clippy",
-            allow(
-                clippy::cast_precision_loss,
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss
-            )
-        )]
-        {
-            let estimated_total = (written_size as f64) * (total_rows as f64) / (rows_count as f64);
-            speed_bar.total = estimated_total as u64;
-            speed_bar.set(written_size as u64);
-        }
+        let written_size = WRITTEN_SIZE.load(Ordering::Relaxed) as u64;
+        speed_bar.total = written_size
+            .mul_div_round(total_rows, rows_count)
+            .unwrap_or_else(u64::max_value);
+        speed_bar.set(written_size);
     }
 
     pb.finish_println("Done!");
