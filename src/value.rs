@@ -18,7 +18,6 @@ use crate::{
 /// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
 
-
 /// Implementation of a number.
 #[derive(Copy, Clone, Debug)]
 enum N {

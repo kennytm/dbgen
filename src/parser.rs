@@ -1,10 +1,10 @@
 //! Template parser.
 
+use self::derived::{Rule, TemplateParser};
 use crate::{
     error::{Error, ErrorKind},
     value::Value,
 };
-use self::derived::{TemplateParser, Rule};
 
 use failure::ResultExt;
 use pest::{iterators::Pairs, Parser};
