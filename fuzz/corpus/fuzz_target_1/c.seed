@@ -1,0 +1,8 @@
+/*vGc!1wid7"?D*d>C1AxsGGJ=BUDo*/create table [contacts] (
+    [contact id] integer primary key {{ rownum + 0x1000 }},
+    [first name] text not null {{ @first := rand.regex('[A-Z][a-z]*') }},
+    [last name] text not null {{ @last := rand.regex('[A-Z][a-z]*') }},
+    [email] text not null unique {{ @first || '.' || @last || '@' || rand.regex('\w+\.com') }},
+    [phone] text unique {{ case rand.bool(0.9) when true then rand.regex('[0-9#*]{8}') end }},
+    [last updated] datetime not null {{ timestamp '2015-01-01 00:00:00' + interval rownum day }}
+);

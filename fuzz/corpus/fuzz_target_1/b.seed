@@ -1,0 +1,10 @@
+--#F&"x}Gk@95--"<FVS.RqOEbJLy~=+/* comments */
+-- comments
+CREATE
+TABLE
+`foo`
+(
+    `x` CHAR(20) {{ `rand`.`regex`('[a-z]{19}\w', 'a') }},
+    `y` VARCHAR(30) {{ `rand`.`regex`('(x-|ggh-)\d{2,5}:.{0,13}') }},
+    `z` INT {{ `greatest`(`rand`.`range`(0, 256), `rand`.`range`(0, 256)) }}
+) ENGINE=InnoDB;
