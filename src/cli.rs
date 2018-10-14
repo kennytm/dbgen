@@ -105,7 +105,7 @@ pub struct Args {
         long = "rng",
         help = "Random number generator engine",
         raw(possible_values = r#"&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "xoshiro256**"]"#),
-        default_value = "pcg32"
+        default_value = "hc128"
     )]
     pub rng: RngName,
 
@@ -125,7 +125,7 @@ impl Default for Args {
             template: PathBuf::default(),
             seed: None,
             jobs: 0,
-            rng: RngName::Pcg32,
+            rng: RngName::Hc128,
             quiet: true,
         }
     }
