@@ -4,7 +4,7 @@
 )]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::stutter, unused_extern_crates))]
 
-// TODO remove these `extern crate` once RLS understands these are not needed.
+// TODO remove these `extern crate` once racer-rust/racer#916 is closed.
 extern crate chrono;
 extern crate data_encoding;
 extern crate failure;
