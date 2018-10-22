@@ -1,12 +1,12 @@
 //! Values
 
-use chrono::{Datelike, Duration, NaiveDateTime, Timelike};
+use chrono::{Duration, NaiveDateTime};
 use num_traits::FromPrimitive;
 use std::{
     cmp::Ordering,
     fmt,
-    io::{self, Write},
-    ops, slice,
+    io::Write,
+    ops,
     str::{from_utf8, from_utf8_unchecked},
 };
 
@@ -156,21 +156,14 @@ pub struct Bytes {
 }
 
 impl Bytes {
-    /// Writes the content using SQL format.
-    pub fn write_sql(&self, mut output: impl Write) -> Result<(), io::Error> {
-        if self.is_binary {
-            output.write_all(b"X'")?;
-            for b in &self.bytes {
-                write!(output, "{:02X}", b)?;
-            }
-        } else {
-            output.write_all(b"'")?;
-            for b in &self.bytes {
-                output.write_all(if *b == b'\'' { b"''" } else { slice::from_ref(b) })?;
-            }
-        }
-        output.write_all(b"'")?;
-        Ok(())
+    /// Gets whether the bytes contained non-UTF-8 content.
+    pub fn is_binary(&self) -> bool {
+        self.is_binary
+    }
+
+    /// Gets the byte content of this string.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -204,52 +197,19 @@ macro_rules! try_or_overflow {
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut output = Vec::new();
-        self.write_sql(&mut output).map_err(|_| fmt::Error)?;
-        let s = String::from_utf8(output).map_err(|_| fmt::Error)?;
+        use crate::format::{Format, SqlFormat};
+
+        let mut format = SqlFormat {
+            writer: Vec::new(),
+            escape_backslash: false,
+        };
+        format.write_value(self).map_err(|_| fmt::Error)?;
+        let s = String::from_utf8(format.writer).map_err(|_| fmt::Error)?;
         f.write_str(&s)
     }
 }
 
 impl Value {
-    /// Writes the SQL representation of this value into a write stream.
-    pub fn write_sql(&self, mut output: impl Write) -> Result<(), io::Error> {
-        match self {
-            Value::Null => {
-                output.write_all(b"NULL")?;
-            }
-            Value::Number(number) => {
-                write!(output, "{}", number)?;
-            }
-            Value::Bytes(bytes) => {
-                bytes.write_sql(output)?;
-            }
-            Value::Timestamp(timestamp) => {
-                // write!(output, "'{}'", timestamp.format(TIMESTAMP_FORMAT))?;
-                write!(
-                    output,
-                    "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                    timestamp.year(),
-                    timestamp.month(),
-                    timestamp.day(),
-                    timestamp.hour(),
-                    timestamp.minute(),
-                    timestamp.second(),
-                )?;
-                let ns = timestamp.nanosecond();
-                if ns != 0 {
-                    write!(output, ".{:06}", ns / 1000)?;
-                }
-                output.write_all(b"'")?;
-            }
-            Value::Interval(interval) => {
-                write!(output, "INTERVAL {} MICROSECOND", interval)?;
-            }
-            Value::__NonExhaustive => {}
-        }
-        Ok(())
-    }
-
     /// Compares two values using the rules common among SQL implementations.
     ///
     /// * Comparing with NULL always return `None`.

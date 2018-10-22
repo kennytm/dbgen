@@ -30,7 +30,7 @@ extern crate zipf;
 pub mod cli;
 pub mod error;
 pub mod eval;
-pub mod gen;
+pub mod format;
 pub mod parser;
 pub mod regex;
 pub mod value;

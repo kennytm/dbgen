@@ -11,8 +11,8 @@ extern crate structopt;
 extern crate xoshiro;
 
 use crate::{
-    eval::State,
-    gen::Row,
+    eval::{Row, State},
+    format::{Format, SqlFormat},
     parser::{QName, Template},
 };
 
@@ -74,7 +74,8 @@ pub struct Args {
     #[structopt(
         short = "n",
         long = "inserts-count",
-        help = "Number of INSERT statements per file"
+        help = "Number of INSERT statements per file",
+        default_value = "1"
     )]
     pub inserts_count: u32,
 
@@ -86,6 +87,13 @@ pub struct Args {
         default_value = "1"
     )]
     pub rows_count: u32,
+
+    /// Do not escape backslashes when writing a string.
+    #[structopt(
+        long = "escape-backslash",
+        help = "Escape backslashes when writing a string"
+    )]
+    pub escape_backslash: bool,
 
     /// Generation template file.
     #[structopt(
@@ -138,6 +146,7 @@ impl Default for Args {
             files_count: 1,
             inserts_count: 1,
             rows_count: 1,
+            escape_backslash: false,
             template: PathBuf::default(),
             seed: None,
             jobs: 0,
@@ -213,6 +222,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         },
         inserts_count: args.inserts_count,
         rows_count: args.rows_count,
+        escape_backslash: args.escape_backslash,
     };
 
     env.write_schema(&template.content)?;
@@ -363,6 +373,7 @@ struct Env {
     qualified_name: String,
     inserts_count: u32,
     rows_count: u32,
+    escape_backslash: bool,
 }
 
 impl Env {
@@ -383,21 +394,30 @@ impl Env {
         file.skip_write = std::env::var("DBGEN_WRITE_TO_DEV_NULL")
             .map(|s| s == "1")
             .unwrap_or(false);
+        let mut format = SqlFormat {
+            writer: file,
+            escape_backslash: self.escape_backslash,
+        };
+
         for _ in 0..self.inserts_count {
-            writeln!(file, "INSERT INTO {} VALUES", self.qualified_name).with_path(&path)?;
+            format.write_header(&self.qualified_name).with_path(&path)?;
 
             for row_index in 0..self.rows_count {
+                if row_index != 0 {
+                    format.write_row_separator().with_path(&path)?;
+                }
+
                 let values = self.row_gen.eval(state).with_path(&path)?;
-                Row::write_sql(values, &mut file).with_path(&path)?;
-                file.write_all(if row_index == self.rows_count - 1 {
-                    b";\n"
-                } else {
-                    b",\n"
-                })
-                .with_path(&path)?;
+                for (col_index, value) in values.iter().enumerate() {
+                    if col_index != 0 {
+                        format.write_value_separator().with_path(&path)?;
+                    }
+                    format.write_value(value).with_path(&path)?;
+                }
             }
 
-            file.commit_bytes_written();
+            format.write_trailer().with_path(&path)?;
+            format.writer.commit_bytes_written();
             WRITE_PROGRESS.fetch_add(self.rows_count as usize, Ordering::Relaxed);
         }
         Ok(())

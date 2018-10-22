@@ -76,9 +76,26 @@ More options
 
     Disable progress bar output.
 
+* `--escape-backslash`
+
+    When enabled, backslash (`\\`) is considered introducing a C-style escape sequence, and should
+    itself be escaped as `\\\\`. In standard SQL, the backslash does not have any special meanings.
+    This setting should match that of the target database, otherwise it could lead to invalid data
+    or syntax error if a generated string contained a backslash.
+
+    | SQL dialect | Should pass `--escape-backslash`                                |
+    |-------------|-----------------------------------------------------------------|
+    | MySQL       | Yes if [`NO_BACKSLASH_ESCAPES`] is off (default)                |
+    | PostgreSQL  | No if [`standard_conforming_strings`] is on (default since 9.1) |
+    | SQLite3     | No                                                              |
+    | TransactSQL | No                                                              |
+
 [ChaCha20]: https://cr.yp.to/chacha.html
 [HC-128]: https://www.ntu.edu.sg/home/wuhj/research/hc/index.html
 [ISAAC]: http://www.burtleburtle.net/bob/rand/isaacafa.html
 [Xorshift]: https://en.wikipedia.org/wiki/Xorshift
 [PCG32-Oneseq]: http://www.pcg-random.org/
 [xoshiro256**]: http://xoshiro.di.unimi.it/
+
+[`NO_BACKSLASH_ESCAPES`]: https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_backslash_escapes
+[`standard_conforming_strings`]: https://www.postgresql.org/docs/current/static/runtime-config-compatible.html#GUC-STANDARD-CONFORMING-STRINGS
