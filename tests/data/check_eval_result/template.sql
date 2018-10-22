@@ -93,4 +93,6 @@ CREATE TABLE result (
     {{ timestamp '2010-01-01 00:00:00' - interval 4 week }}
     {{ timestamp '2010-01-01 00:00:00' - interval 3.5 day * 12 }}
     {{ timestamp '2010-01-01 00:00:00' + interval 15 hour + interval 71 minute - interval 13 second }}
+
+    {{ '\' }}
 );

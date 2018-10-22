@@ -4,9 +4,9 @@ COMMENT = _{
     "/*" ~ (!"*/" ~ ANY)* ~ "*/"
 }
 
-back_quoted     = @{ "`" ~ (!("`"|"\\") ~ ANY | "``" | "\\" ~ ANY)* ~ "`" }
-single_quoted   = @{ "'" ~ (!("'"|"\\") ~ ANY | "''" | "\\" ~ ANY)* ~ "'" }
-double_quoted   = @{ "\"" ~ (!("\""|"\\") ~ ANY | "\"\"" | "\\" ~ ANY)* ~ "\"" }
+back_quoted     = @{ "`" ~ (!"`" ~ ANY | "``")* ~ "`" }
+single_quoted   = @{ "'" ~ (!"'" ~ ANY | "''")* ~ "'" }
+double_quoted   = @{ "\"" ~ (!"\"" ~ ANY | "\"\"")* ~ "\"" }
 
 ident = @{
     back_quoted |
