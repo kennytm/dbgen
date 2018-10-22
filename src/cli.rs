@@ -456,10 +456,12 @@ fn run_progress_thread(files_count: u32, rows_per_file: u64) {
         pb.set(rows_count);
 
         let written_size = WRITTEN_SIZE.load(Ordering::Relaxed) as u64;
-        speed_bar.total = written_size
-            .mul_div_round(total_rows, rows_count)
-            .unwrap_or_else(u64::max_value);
-        speed_bar.set(written_size);
+        if rows_count != 0 {
+            speed_bar.total = written_size
+                .mul_div_round(total_rows, rows_count)
+                .unwrap_or_else(u64::max_value);
+            speed_bar.set(written_size);
+        }
     }
 
     pb.finish_println("Done!");
