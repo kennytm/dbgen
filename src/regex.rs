@@ -344,7 +344,7 @@ fn compile_hir(hir: Hir, max_repeat: u32) -> Result<Compiled, Error> {
 
 impl Generator {
     /// Compiles a regex pattern into a generator
-    pub fn new(regex: &str, flags: &str, max_repeat: u32) -> Result<Self, Error> {
+    pub fn compile(regex: &str, flags: &str, max_repeat: u32) -> Result<Self, Error> {
         let mut parser = ParserBuilder::new();
         for flag in flags.chars() {
             match flag {
@@ -394,7 +394,7 @@ mod test {
 
     fn check(pattern: &str) {
         let r = Regex::new(pattern).unwrap();
-        let gen = Generator::new(pattern, "", 100).unwrap();
+        let gen = Generator::compile(pattern, "", 100).unwrap();
         let mut rng = SmallRng::from_entropy();
 
         for _ in 0..10000 {

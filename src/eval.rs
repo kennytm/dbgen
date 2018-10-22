@@ -272,7 +272,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             let regex = arg(name, args, 0, None)?;
             let flags = arg(name, args, 1, Some(""))?;
             let max_repeat = arg(name, args, 2, Some(100))?;
-            let generator = regex::Generator::new(regex, flags, max_repeat)?;
+            let generator = regex::Generator::compile(regex, flags, max_repeat)?;
             Ok(Compiled(C::RandRegex(generator)))
         }
 
