@@ -60,9 +60,7 @@ pub enum ErrorKind {
     /// ignored and the function will be kept in raw form.
     #[fail(
         display = "invalid argument type: in function {}, argument #{} should be a {}",
-        name,
-        index,
-        expected
+        name, index, expected
     )]
     InvalidArgumentType {
         /// The SQL function causing the error.
@@ -74,11 +72,7 @@ pub enum ErrorKind {
     },
 
     /// Invalid arguments.
-    #[fail(
-        display = "invalid arguments: in function {}, assertion failed: {}",
-        name,
-        cause
-    )]
+    #[fail(display = "invalid arguments: in function {}, assertion failed: {}", name, cause)]
     InvalidArguments {
         /// The SQL function causing the error.
         name: Function,

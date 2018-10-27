@@ -42,10 +42,7 @@ use structopt::StructOpt;
 #[serde(default)]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
-    #[structopt(
-        long = "qualified",
-        help = "Keep the qualified name when writing the SQL statements"
-    )]
+    #[structopt(long = "qualified", help = "Keep the qualified name when writing the SQL statements")]
     pub qualified: bool,
 
     /// Override the table name.
@@ -53,12 +50,7 @@ pub struct Args {
     pub table_name: Option<String>,
 
     /// Output directory.
-    #[structopt(
-        short = "o",
-        long = "out-dir",
-        help = "Output directory",
-        parse(from_os_str)
-    )]
+    #[structopt(short = "o", long = "out-dir", help = "Output directory", parse(from_os_str))]
     pub out_dir: PathBuf,
 
     /// Number of files to generate.
@@ -89,10 +81,7 @@ pub struct Args {
     pub rows_count: u32,
 
     /// Do not escape backslashes when writing a string.
-    #[structopt(
-        long = "escape-backslash",
-        help = "Escape backslashes when writing a string"
-    )]
+    #[structopt(long = "escape-backslash", help = "Escape backslashes when writing a string")]
     pub escape_backslash: bool,
 
     /// Generation template file.

@@ -1,11 +1,11 @@
 //! Evaluating compiled expressions into values.
 
-use chrono::NaiveDateTime;
 use crate::{
     error::{Error, ErrorKind},
     parser::{Expr, Function},
     value::{Number, TryFromValue, Value, TIMESTAMP_FORMAT},
 };
+use chrono::NaiveDateTime;
 use failure::ResultExt;
 use rand::{
     distributions::{self, Uniform},
