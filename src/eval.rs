@@ -4,7 +4,6 @@ use chrono::NaiveDateTime;
 use crate::{
     error::{Error, ErrorKind},
     parser::{Expr, Function},
-    regex,
     value::{Number, TryFromValue, Value, TIMESTAMP_FORMAT},
 };
 use failure::ResultExt;
@@ -104,7 +103,7 @@ enum C {
     },
 
     /// Regex-based random string.
-    RandRegex(regex::Generator),
+    RandRegex(rand_regex::Regex),
     /// Uniform distribution for `u64`.
     RandUniformU64(Uniform<u64>),
     /// Uniform distribution for `i64`.
@@ -247,7 +246,13 @@ impl Compiled {
                 otherwise.eval(state)?
             }
 
-            C::RandRegex(generator) => generator.eval(&mut state.rng),
+            C::RandRegex(generator) => {
+                if generator.is_utf8() {
+                    state.rng.sample::<String, _>(generator).into()
+                } else {
+                    state.rng.sample::<Vec<u8>, _>(generator).into()
+                }
+            }
             C::RandUniformU64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformI64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformF64(uniform) => state.rng.sample(uniform).into(),
@@ -297,7 +302,7 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             let regex = arg(name, args, 0, None)?;
             let flags = arg(name, args, 1, Some(""))?;
             let max_repeat = arg(name, args, 2, Some(100))?;
-            let generator = regex::Generator::compile(regex, flags, max_repeat)?;
+            let generator = compile_regex_generator(regex, flags, max_repeat)?;
             Ok(Compiled(C::RandRegex(generator)))
         }
 
@@ -463,4 +468,29 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             Ok(Compiled(C::Constant(res.clone())))
         }
     }
+}
+
+fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<rand_regex::Regex, Error> {
+    let mut parser = regex_syntax::ParserBuilder::new();
+    for flag in flags.chars() {
+        match flag {
+            'o' => parser.octal(true),
+            'a' => parser.allow_invalid_utf8(true).unicode(false),
+            'u' => parser.allow_invalid_utf8(false).unicode(true),
+            'x' => parser.ignore_whitespace(true),
+            'i' => parser.case_insensitive(true),
+            'm' => parser.multi_line(true),
+            's' => parser.dot_matches_new_line(true),
+            'U' => parser.swap_greed(true),
+            _ => return Err(ErrorKind::UnknownRegexFlag(flag).into()),
+        };
+    }
+
+    let hir = parser
+        .build()
+        .parse(regex)
+        .with_context(|_| ErrorKind::InvalidRegex(regex.to_owned()))?;
+    let gen =
+        rand_regex::Regex::with_hir(hir, max_repeat).with_context(|_| ErrorKind::InvalidRegex(regex.to_owned()))?;
+    Ok(gen)
 }
