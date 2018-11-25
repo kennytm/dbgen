@@ -333,15 +333,15 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
         }
 
         Function::RandUniform => {
-            let lower = arg(name, args, 0, None)?;
-            let upper = arg(name, args, 1, None)?;
+            let lower = arg::<f64, _>(name, args, 0, None)?;
+            let upper = arg::<f64, _>(name, args, 1, None)?;
             require!(lower < upper, "{} < {}", lower, upper);
             Ok(Compiled(C::RandUniformF64(Uniform::new(lower, upper))))
         }
 
         Function::RandUniformInclusive => {
-            let lower = arg(name, args, 0, None)?;
-            let upper = arg(name, args, 1, None)?;
+            let lower = arg::<f64, _>(name, args, 0, None)?;
+            let upper = arg::<f64, _>(name, args, 1, None)?;
             require!(lower <= upper, "{} <= {}", lower, upper);
             Ok(Compiled(C::RandUniformF64(Uniform::new_inclusive(lower, upper))))
         }

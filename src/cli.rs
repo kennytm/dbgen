@@ -1,15 +1,5 @@
 //! CLI driver of `dbgen`.
 
-// TODO remove these `extern crate` once racer-rust/racer#916 is closed.
-extern crate data_encoding;
-extern crate failure;
-extern crate pbr;
-extern crate pcg_rand;
-extern crate rand;
-extern crate rayon;
-extern crate structopt;
-extern crate xoshiro;
-
 use crate::{
     eval::{Row, State},
     format::{Format, SqlFormat},
@@ -20,7 +10,10 @@ use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
 use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
-use rand::{prng, EntropyRng, Rng, RngCore, SeedableRng, StdRng};
+use rand::{
+    rngs::{EntropyRng, StdRng},
+    Rng, RngCore, SeedableRng,
+};
 use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     ThreadPoolBuilder,
@@ -270,10 +263,8 @@ pub enum RngName {
     Isaac64,
     /// Xorshift
     XorShift,
-    /// PCG32-Oneseq
+    /// PCG32
     Pcg32,
-    /// xoshiro256**
-    Xoshiro256StarStar,
 }
 
 impl FromStr for RngName {
@@ -286,7 +277,6 @@ impl FromStr for RngName {
             "isaac64" => RngName::Isaac64,
             "xorshift" => RngName::XorShift,
             "pcg32" => RngName::Pcg32,
-            "xoshiro256**" => RngName::Xoshiro256StarStar,
             _ => failure::bail!("Unsupported RNG {}", name),
         })
     }
@@ -295,17 +285,13 @@ impl FromStr for RngName {
 impl RngName {
     /// Creates an RNG engine given the name. The RNG engine instance will be seeded from `src`.
     fn create(self, src: &mut StdRng) -> Box<dyn RngCore + Send> {
-        use pcg_rand::{seeds::PcgSeeder, Pcg32Oneseq};
-        use xoshiro::Xoshiro256StarStar;
-
         match self {
-            RngName::ChaCha => Box::new(prng::ChaChaRng::from_seed(src.gen())),
-            RngName::Hc128 => Box::new(prng::Hc128Rng::from_seed(src.gen())),
-            RngName::Isaac => Box::new(prng::IsaacRng::from_seed(src.gen())),
-            RngName::Isaac64 => Box::new(prng::Isaac64Rng::from_seed(src.gen())),
-            RngName::XorShift => Box::new(prng::XorShiftRng::from_seed(src.gen())),
-            RngName::Pcg32 => Box::new(Pcg32Oneseq::from_seed(PcgSeeder::seed(src.gen()))),
-            RngName::Xoshiro256StarStar => Box::new(Xoshiro256StarStar::from_seed(src.gen())),
+            RngName::ChaCha => Box::new(rand_chacha::ChaChaRng::from_seed(src.gen())),
+            RngName::Hc128 => Box::new(rand_hc::Hc128Rng::from_seed(src.gen())),
+            RngName::Isaac => Box::new(rand_isaac::IsaacRng::from_seed(src.gen())),
+            RngName::Isaac64 => Box::new(rand_isaac::Isaac64Rng::from_seed(src.gen())),
+            RngName::XorShift => Box::new(rand_xorshift::XorShiftRng::from_seed(src.gen())),
+            RngName::Pcg32 => Box::new(rand_pcg::Pcg32::from_seed(src.gen())),
         }
     }
 }
