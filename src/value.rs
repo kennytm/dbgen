@@ -333,7 +333,7 @@ impl Value {
                     return Ok(Value::Null);
                 }
                 Value::Number(n) => {
-                    write!(&mut res.bytes, "{}", n);
+                    write!(&mut res.bytes, "{}", n).unwrap();
                 }
                 Value::Bytes(mut b) => {
                     res.bytes.append(&mut b.bytes);
@@ -346,10 +346,10 @@ impl Value {
                     }
                 }
                 Value::Timestamp(timestamp) => {
-                    write!(&mut res.bytes, "{}", timestamp.format(TIMESTAMP_FORMAT));
+                    write!(&mut res.bytes, "{}", timestamp.format(TIMESTAMP_FORMAT)).unwrap();
                 }
                 Value::Interval(interval) => {
-                    write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval);
+                    write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval).unwrap();
                 }
                 Value::__NonExhaustive => {}
             }
