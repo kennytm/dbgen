@@ -73,6 +73,20 @@ pub struct Args {
     )]
     pub rows_count: u32,
 
+    /// Number of INSERT statements in the last file.
+    #[structopt(
+        long = "last-file-inserts-count",
+        help = "Number of INSERT statements in the last file"
+    )]
+    pub last_file_inserts_count: Option<u32>,
+
+    /// Number of rows of the last INSERT statement of the last file.
+    #[structopt(
+        long = "last-insert-rows-count",
+        help = "Number of rows of the last INSERT statement of the last file"
+    )]
+    pub last_insert_rows_count: Option<u32>,
+
     /// Do not escape backslashes when writing a string.
     #[structopt(long = "escape-backslash", help = "Escape backslashes when writing a string")]
     pub escape_backslash: bool,
@@ -128,6 +142,8 @@ impl Default for Args {
             files_count: 1,
             inserts_count: 1,
             rows_count: 1,
+            last_file_inserts_count: None,
+            last_insert_rows_count: None,
             escape_backslash: false,
             template: PathBuf::default(),
             seed: None,
@@ -202,7 +218,6 @@ pub fn run(args: Args) -> Result<(), Error> {
         } else {
             table_name.table
         },
-        inserts_count: args.inserts_count,
         rows_count: args.rows_count,
         escape_backslash: args.escape_backslash,
     };
@@ -220,26 +235,47 @@ pub fn run(args: Args) -> Result<(), Error> {
     let variables_count = template.variables_count;
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
     let rng_name = args.rng;
+    let inserts_count = args.inserts_count;
+    let rows_count = args.rows_count;
+    let last_file_inserts_count = args.last_file_inserts_count.unwrap_or(inserts_count);
+    let last_insert_rows_count = args.last_insert_rows_count.unwrap_or(rows_count);
 
     let progress_bar_thread = spawn(move || {
         if show_progress {
-            run_progress_thread(files_count, rows_per_file)
+            run_progress_thread(
+                u64::from(files_count - 1) * rows_per_file
+                    + u64::from(last_file_inserts_count - 1) * u64::from(rows_count)
+                    + u64::from(last_insert_rows_count),
+            );
         }
     });
 
     let iv = (0..files_count)
         .map(move |i| {
+            let file_index = i + 1;
             (
                 rng_name.create(&mut seeding_rng),
-                i + 1,
+                FileInfo {
+                    file_index,
+                    inserts_count: if file_index == files_count {
+                        last_file_inserts_count
+                    } else {
+                        inserts_count
+                    },
+                    last_insert_rows_count: if file_index == files_count {
+                        last_insert_rows_count
+                    } else {
+                        rows_count
+                    },
+                },
                 u64::from(i) * rows_per_file + 1,
             )
         })
         .collect::<Vec<_>>();
     let res = pool.install(move || {
-        iv.into_par_iter().try_for_each(|(seed, file_index, row_num)| {
+        iv.into_par_iter().try_for_each(|(seed, file_info, row_num)| {
             let mut state = State::new(row_num, seed, variables_count);
-            env.write_data_file(file_index, &mut state)
+            env.write_data_file(&file_info, &mut state)
         })
     });
 
@@ -346,9 +382,15 @@ struct Env {
     row_gen: Row,
     unique_name: String,
     qualified_name: String,
-    inserts_count: u32,
     rows_count: u32,
     escape_backslash: bool,
+}
+
+/// Information specific to a data file.
+struct FileInfo {
+    file_index: u32,
+    inserts_count: u32,
+    last_insert_rows_count: u32,
 }
 
 impl Env {
@@ -360,10 +402,10 @@ impl Env {
     }
 
     /// Writes a single data file.
-    fn write_data_file(&self, file_index: u32, state: &mut State) -> Result<(), Error> {
+    fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), Error> {
         let path = self.out_dir.join(format!(
             "{0}.{1:02$}.sql",
-            self.unique_name, file_index, self.file_num_digits
+            self.unique_name, info.file_index, self.file_num_digits
         ));
         let mut file = WriteCountWrapper::new(BufWriter::new(File::create(&path).with_path(&path)?));
         file.skip_write = std::env::var("DBGEN_WRITE_TO_DEV_NULL")
@@ -374,10 +416,15 @@ impl Env {
             escape_backslash: self.escape_backslash,
         };
 
-        for _ in 0..self.inserts_count {
+        for i in 0..info.inserts_count {
             format.write_header(&self.qualified_name).with_path(&path)?;
 
-            for row_index in 0..self.rows_count {
+            let rows_count = if i == info.inserts_count - 1 {
+                info.last_insert_rows_count
+            } else {
+                self.rows_count
+            };
+            for row_index in 0..rows_count {
                 if row_index != 0 {
                     format.write_row_separator().with_path(&path)?;
                 }
@@ -393,7 +440,7 @@ impl Env {
 
             format.write_trailer().with_path(&path)?;
             format.writer.commit_bytes_written();
-            WRITE_PROGRESS.fetch_add(self.rows_count as usize, Ordering::Relaxed);
+            WRITE_PROGRESS.fetch_add(rows_count as usize, Ordering::Relaxed);
         }
         Ok(())
     }
@@ -403,11 +450,10 @@ impl Env {
 ///
 /// This function will loop and update the progress bar every 0.5 seconds, until [`WRITE_FINISHED`]
 /// becomes `true`.
-fn run_progress_thread(files_count: u32, rows_per_file: u64) {
+fn run_progress_thread(total_rows: u64) {
     #[cfg_attr(feature = "cargo-clippy", allow(clippy::non_ascii_literal))]
     const TICK_FORMAT: &str = "🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛";
 
-    let total_rows = u64::from(files_count) * rows_per_file;
     let mut mb = MultiBar::new();
 
     let mut pb = mb.create_bar(total_rows);
