@@ -179,6 +179,10 @@ pub enum Expr {
     },
 }
 
+fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
 impl Template {
     /// Parses a raw string into a structured template.
     pub fn parse(input: &str) -> Result<Self, Error> {
@@ -196,6 +200,11 @@ impl Template {
                     name = Some(QName::from_pairs(pair.into_inner()));
                 }
                 Rule::column_definition | Rule::table_options => {
+                    let s = pair.as_str();
+                    // insert a space if needed to ensure word boundaries
+                    if content.ends_with(is_ident_char) && s.starts_with(is_ident_char) {
+                        content.push(' ');
+                    }
                     content.push_str(pair.as_str());
                 }
                 Rule::expr => {
