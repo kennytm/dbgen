@@ -100,23 +100,23 @@ From highest to lowest precedence:
 
     The trinary logic operates like this:
 
-    |   AND |  TRUE |  NULL | FALSE |
-    |------:|:-----:|:-----:|:-----:|
-    |  TRUE |  TRUE |  NULL | FALSE |
-    |  NULL |  NULL |  NULL | FALSE |
-    | FALSE | FALSE | FALSE | FALSE |
+    |       AND |  TRUE |  NULL | FALSE |
+    |----------:|:-----:|:-----:|:-----:|
+    |  **TRUE** |  TRUE |  NULL | FALSE |
+    |  **NULL** |  NULL |  NULL | FALSE |
+    | **FALSE** | FALSE | FALSE | FALSE |
 
-    |    OR |  TRUE |  NULL | FALSE |
-    |------:|:-----:|:-----:|:-----:|
-    |  TRUE |  TRUE |  TRUE |  TRUE |
-    |  NULL |  TRUE |  NULL |  NULL |
-    | FALSE |  TRUE |  NULL | FALSE |
+    |    OR     |  TRUE |  NULL | FALSE |
+    |----------:|:-----:|:-----:|:-----:|
+    |  **TRUE** |  TRUE |  TRUE |  TRUE |
+    |  **NULL** |  TRUE |  NULL |  NULL |
+    | **FALSE** |  TRUE |  NULL | FALSE |
 
-    |   NOT | value |
-    |------:|:-----:|
-    |  TRUE | FALSE |
-    |  NULL |  NULL |
-    | FALSE |  TRUE |
+    |   NOT     | value |
+    |----------:|:-----:|
+    |  **TRUE** | FALSE |
+    |  **NULL** |  NULL |
+    | **FALSE** |  TRUE |
 
 * **Assignment `:=`**
 
