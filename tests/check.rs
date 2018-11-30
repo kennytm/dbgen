@@ -3,7 +3,7 @@ use diff::{lines, Result as DiffResult};
 use failure::Error;
 use serde_json::from_reader;
 use std::{
-    fs::{read_dir, read_to_string, File},
+    fs::{read_dir, read_to_string, remove_file, File},
     path::Path,
 };
 use tempfile::tempdir;
@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
             let actual_path = result_entry.path();
             eprintln!("Comparing {} vs {} ...", expected_path.display(), actual_path.display());
             let expected_content = read_to_string(expected_path)?;
-            let actual_content = read_to_string(actual_path)?;
+            let actual_content = read_to_string(&actual_path)?;
             if expected_content != actual_content {
                 for diff in lines(&expected_content, &actual_content) {
                     match diff {
@@ -53,6 +53,7 @@ fn main() -> Result<(), Error> {
                 }
                 panic!("CONTENT DIFFERED");
             }
+            remove_file(actual_path)?;
         }
     }
 
