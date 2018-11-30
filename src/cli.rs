@@ -39,7 +39,7 @@ pub struct Args {
     pub qualified: bool,
 
     /// Override the table name.
-    #[structopt(long = "table-name", help = "Override the table name")]
+    #[structopt(short = "t", long = "table-name", help = "Override the table name")]
     pub table_name: Option<String>,
 
     /// Output directory.
