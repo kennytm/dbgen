@@ -34,7 +34,7 @@ The total number of rows generated will be (files-count) × (inserts-count) × (
 More options
 ------------
 
-* `--table-name «NAME»`
+* `-t «NAME»`, `--table-name «NAME»`
 
     Override the table name of generated data. Should be a qualified and quoted name like
     `'"database"."schema"."table"'`.
@@ -88,6 +88,19 @@ More options
     | PostgreSQL  | No if [`standard_conforming_strings`] is on (default since 9.1) |
     | SQLite3     | No                                                              |
     | TransactSQL | No                                                              |
+
+* `--last-file-inserts-count «N»`
+
+    In the last data file, generate *N* INSERT statements instead of the value
+    given by `--inserts-count`.
+
+* `--last-insert-rows-count «N»`
+
+    In the last INSERT statement of the last data file, generate *N* rows instead of the value
+    given by `--rows-count`.
+
+    These two options allow one to fine-tune the actual rows count of the table.
+
 
 [ChaCha20]: https://cr.yp.to/chacha.html
 [HC-128]: https://www.ntu.edu.sg/home/wuhj/research/hc/index.html

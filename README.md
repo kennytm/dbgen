@@ -5,5 +5,6 @@
 expressions.
 
 * [CLI usage](CLI.md)
+* [Schema generator CLI usage](SchemaGen.md)
 * [Template reference](Template.md)
 
