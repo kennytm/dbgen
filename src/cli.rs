@@ -122,7 +122,7 @@ pub struct Args {
     #[structopt(
         long = "rng",
         help = "Random number generator engine",
-        raw(possible_values = r#"&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "xoshiro256**"]"#),
+        raw(possible_values = r#"&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32"]"#),
         default_value = "hc128"
     )]
     pub rng: RngName,
