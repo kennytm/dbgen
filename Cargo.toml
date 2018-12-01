@@ -40,6 +40,7 @@ rand_isaac = "0.1"
 rand_chacha = "0.1"
 rand_hc = "0.1"
 rand_xorshift = "0.1"
+shlex = "0.1"
 
 [dev-dependencies]
 regex = "1.0"
