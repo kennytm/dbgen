@@ -1,6 +1,6 @@
 [package]
 name = "dbgen"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["kennytm <kennytm@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -43,7 +43,7 @@ rand_xorshift = "0.1"
 shlex = "0.1"
 
 [dev-dependencies]
-regex = "1.0"
+regex = "1.1"
 tempfile = "3.0"
 serde_json = "1.0"
 diff = "0.1"
