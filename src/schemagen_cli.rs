@@ -1,9 +1,10 @@
 //! CLI driver of `dbschemagen`.
 
 use crate::parser::QName;
+use data_encoding::HEXLOWER_PERMISSIVE;
 use failure::Error;
 use rand::{
-    distributions::{Distribution, Pareto, Triangular, Uniform},
+    distributions::{Distribution, LogNormal, Pareto, WeightedIndex},
     seq::SliceRandom,
     thread_rng, Rng, RngCore,
 };
@@ -131,7 +132,7 @@ fn gen_int_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
         let base: i128 = 128 << (8 * bytes);
         (-base, base - 1)
     };
-    let neg_log2_prob = f64::from(bytes) * 8.0;
+    let neg_log2_prob = f64::from(bytes + 1) * 8.0;
 
     let end = (max + 1) as f64;
     let digits = end.log10().ceil();
@@ -261,57 +262,72 @@ fn gen_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
     gen(dialect, rng)
 }
 
-#[allow(clippy::cast_possible_truncation)]
-fn append_index(
-    schema: &mut String,
-    index_sets: &mut HashSet<BTreeSet<usize>>,
-    dialect: Dialect,
-    rng: &mut dyn RngCore,
-    columns: &[Column],
-    unique_cutoff: f64,
-    is_primary_key: bool,
-) {
-    // randomly generate an index set
-    let mut index_set = BTreeSet::new();
-    let dist = Uniform::new(0, columns.len());
+struct IndexAppender<'a> {
+    index_count_distr: Pareto,
+    index_distr: WeightedIndex<f64>,
+    columns: &'a [Column],
+    index_sets: HashSet<BTreeSet<usize>>,
+}
 
-    for i in 0..(columns.len() as u32) {
-        if rng.gen_ratio(1, 2 + i) {
-            index_set.insert(dist.sample(rng));
+impl<'a> IndexAppender<'a> {
+    fn new(columns: &'a [Column]) -> Self {
+        Self {
+            index_count_distr: Pareto::new(1.0, 1.6),
+            index_distr: WeightedIndex::new(columns.iter().map(|col| col.neg_log2_prob.min(32.0))).unwrap(),
+            columns,
+            index_sets: HashSet::new(),
         }
     }
-    let total_neg_log2_prob: f64 = index_set.iter().map(|i| columns[*i].neg_log2_prob).sum();
-    let is_unique = total_neg_log2_prob > unique_cutoff;
 
-    if is_primary_key && !is_unique {
-        return;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn append_to(
+        &mut self,
+        schema: &mut String,
+        dialect: Dialect,
+        mut rng: &mut dyn RngCore,
+        unique_cutoff: f64,
+        is_primary_key: bool,
+    ) {
+        let index_count = self.index_count_distr.sample(rng) as usize;
+        let index_set = self
+            .index_distr
+            .sample_iter(&mut rng)
+            .take(index_count)
+            .collect::<BTreeSet<_>>();
+
+        let total_neg_log2_prob: f64 = index_set.iter().map(|i| self.columns[*i].neg_log2_prob).sum();
+        let is_unique = total_neg_log2_prob > unique_cutoff;
+        if is_primary_key && !is_unique {
+            return;
+        }
+
+        let index_spec = index_set
+            .iter()
+            .map(|i| format!("c{}", i))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        if index_set.is_empty() || !self.index_sets.insert(index_set) {
+            return;
+        }
+
+        if is_primary_key {
+            schema.push_str(",\nPRIMARY KEY (");
+        } else if is_unique {
+            schema.push_str(",\nUNIQUE (");
+        } else if dialect == Dialect::MySQL {
+            schema.push_str(",\nKEY (");
+        } else {
+            return;
+        }
+        schema.push_str(&index_spec);
+        schema.push(')');
     }
-
-    let index_spec = index_set
-        .iter()
-        .map(|i| format!("c{}", i))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    if index_set.is_empty() || !index_sets.insert(index_set) {
-        return;
-    }
-
-    if is_primary_key {
-        schema.push_str(",\nPRIMARY KEY (");
-    } else if is_unique {
-        schema.push_str(",\nUNIQUE (");
-    } else if dialect == Dialect::MySQL {
-        schema.push_str(",\nKEY (");
-    } else {
-        return;
-    }
-    schema.push_str(&index_spec);
-    schema.push(')');
 }
 
 struct Table {
     schema: String,
+    target_size: f64,
     rows_count: u64,
 }
 
@@ -319,7 +335,7 @@ struct Table {
 fn gen_table(dialect: Dialect, rng: &mut dyn RngCore, target_size: f64) -> Table {
     let mut schema = String::from("CREATE TABLE _ (\n");
 
-    let columns_count = Triangular::new(1.0, 50.0, 6.0).sample(rng) as usize;
+    let columns_count = LogNormal::new(2.354_259_469_228_055, 0.75).sample(rng) as usize;
     let columns = {
         let rng2 = &mut *rng;
         repeat_with(move || gen_column(dialect, rng2))
@@ -344,31 +360,16 @@ fn gen_table(dialect: Dialect, rng: &mut dyn RngCore, target_size: f64) -> Table
     let unique_cutoff = rows_count.log2() * 2.0 + 6.736_593_289_427_474;
 
     // pick a random column as primary key
-    let mut index_sets = HashSet::new();
-    append_index(
-        &mut schema,
-        &mut index_sets,
-        dialect,
-        rng,
-        &columns,
-        unique_cutoff,
-        true,
-    );
-    while rng.gen_ratio(columns_count as u32, (columns_count + index_sets.len()) as u32) {
-        append_index(
-            &mut schema,
-            &mut index_sets,
-            dialect,
-            rng,
-            &columns,
-            unique_cutoff,
-            false,
-        );
+    let mut appender = IndexAppender::new(&columns);
+    appender.append_to(&mut schema, dialect, rng, unique_cutoff, true);
+    while rng.gen_ratio(columns_count as u32, (columns_count + appender.index_sets.len()) as u32) {
+        appender.append_to(&mut schema, dialect, rng, unique_cutoff, false);
     }
-    schema.push_str("\n)");
+    schema.push_str("\n);");
 
     Table {
         schema,
+        target_size,
         rows_count: (rows_count as u64).max(1),
     }
 }
@@ -389,6 +390,18 @@ fn gen_tables<'a>(
     relative_sizes
         .into_iter()
         .map(move |f| gen_table(dialect, &mut rng, f * ratio))
+}
+
+fn to_human_size(s: f64) -> String {
+    if s < 1_043_333.12 {
+        format!("{:.2} KiB", s / 1_024.0)
+    } else if s < 1_068_373_114.88 {
+        format!("{:.2} MiB", s / 1_048_576.0)
+    } else if s < 1_094_014_069_637.12 {
+        format!("{:.2} GiB", s / 1_073_741_824.0)
+    } else {
+        format!("{:.2} TiB", s / 1_099_511_627_776.0)
+    }
 }
 
 /// Generates a shell script for invoking `dbgen` into stdout.
@@ -418,10 +431,16 @@ pub fn print_script(args: &Args) {
                 (inserts + 1, rows_residue)
             }
         };
+        let seed = thread_rng().gen::<[u8; 32]>();
+        let seed = HEXLOWER_PERMISSIVE.encode(&seed);
         println!(
-            "dbgen -i /dev/stdin -o . -t {}.s{} -n {} -r {} -k {} \
+            "# rows count: {}, estimated size: {}\n\
+             dbgen -i /dev/stdin -o . -s {} -t {}.s{} -n {} -r {} -k {} \
              --last-file-inserts-count {} --last-insert-rows-count {} \
              {} <<SCHEMAEOF\n{}\nSCHEMAEOF\n",
+            table.rows_count,
+            to_human_size(table.target_size),
+            seed,
             quoted_schema_name,
             i,
             args.inserts_count,
