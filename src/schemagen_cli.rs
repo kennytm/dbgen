@@ -288,7 +288,7 @@ impl<'a> IndexAppender<'a> {
         unique_cutoff: f64,
         is_primary_key: bool,
     ) {
-        let index_count = self.index_count_distr.sample(rng) as usize;
+        let index_count = (self.index_count_distr.sample(rng) as usize).min(12);
         let index_set = self
             .index_distr
             .sample_iter(&mut rng)
