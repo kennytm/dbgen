@@ -1,9 +1,13 @@
-sudo: false
 language: rust
-os:
-  - linux
-  - osx
-#  - windows
-rust:
-  - beta
-  - nightly
+jobs:
+  include:
+    - rust: 1.31.0
+      os: linux
+    - rust: 1.31.0
+      os: osx
+    - rust: 1.31.0
+      os: windows
+    - rust: beta
+      os: linux
+    - rust: nightly
+      os: linux
