@@ -155,7 +155,7 @@ impl Default for Args {
 }
 
 /// Parses a 64-digit hex string into an RNG seed.
-fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
+pub(crate) fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
     let mut seed = <StdRng as SeedableRng>::Seed::default();
 
     if HEXLOWER_PERMISSIVE.decode_len(s.len())? != seed.len() {

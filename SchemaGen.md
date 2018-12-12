@@ -44,3 +44,11 @@ More options
 
     Number of rows per INSERT statement.
 
+* `--seed «SEED»`
+
+    Provide a 64-digit hex number to seed the random number generator, so that the output becomes
+    reproducible. If not specified, the seed will be obtained from the system entropy.
+
+    (Note: There is no guarantee that the same seed will produce the same output across major
+    versions of `dbschemagen`.)
+
