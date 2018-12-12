@@ -96,6 +96,8 @@ struct Column {
     neg_log2_prob: f64,
     /// The estimated average formatted length a generated value of this column.
     average_len: f64,
+    /// Whether the type is nullable (thus must be excluded from PRIMARY KEY).
+    nullable: bool,
 }
 
 type ColumnGenerator = fn(Dialect, &mut dyn RngCore) -> Column;
@@ -146,6 +148,7 @@ fn gen_int_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
         expr: format!("rand.range_inclusive({}, {})", min, max),
         neg_log2_prob,
         average_len,
+        nullable: false,
     }
 }
 
@@ -160,6 +163,7 @@ fn gen_serial_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
         expr: "rownum".to_owned(),
         neg_log2_prob: 64.0,
         average_len: 6.0,
+        nullable: false,
     }
 }
 
@@ -178,6 +182,7 @@ fn gen_decimal_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
         ),
         neg_log2_prob: LOG2_10 * (before + after) as f64 + 1.0,
         average_len: (before + after) as f64 + 17.0 / 9.0,
+        nullable: false,
     }
 }
 
@@ -193,6 +198,7 @@ fn gen_varchar_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
         expr: format!("rand.regex('.{{0,{}}}', 's')", len),
         neg_log2_prob: f64::from(len + 1).log2() - residue,
         average_len: AVERAGE_LEN_PER_CHAR * 0.5 * f64::from(len) + 2.0,
+        nullable: false,
     }
 }
 
@@ -204,6 +210,7 @@ fn gen_char_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
         expr: format!("rand.regex('.{{{}}}', 's')", len),
         neg_log2_prob: factor * f64::from(len),
         average_len: AVERAGE_LEN_PER_CHAR * f64::from(len) + 2.0,
+        nullable: false,
     }
 }
 
@@ -217,6 +224,7 @@ fn gen_timestamp_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
         expr: "TIMESTAMP '1970-01-01 00:00:00' + INTERVAL rand.range_inclusive(0, 2147483647) SECOND".to_owned(),
         neg_log2_prob: 31.0,
         average_len: 21.0,
+        nullable: false,
     }
 }
 
@@ -233,16 +241,18 @@ fn gen_datetime_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
         expr: "TIMESTAMP '1000-01-01 00:00:00' + INTERVAL rand.range(0, 284012524800) SECOND".to_owned(),
         neg_log2_prob: DATEIME_SECONDS.log2(),
         average_len: 21.0,
+        nullable: false,
     }
 }
 
-fn gen_nullable_bool(_: Dialect, rng: &mut dyn RngCore) -> Column {
+fn gen_nullable_bool_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
     let p = rng.gen::<f64>();
     Column {
         ty: "boolean".to_owned(),
         expr: format!("CASE rand.bool({}) WHEN TRUE THEN '' || rand.bool(0.5) END", p),
         neg_log2_prob: -((1.5 * p - 2.0) * p + 1.0).log2(),
         average_len: 4.0 - p,
+        nullable: true,
     }
 }
 
@@ -253,7 +263,7 @@ static GENERATORS: [ColumnGenerator; 8] = [
     gen_char_column,
     gen_timestamp_column,
     gen_datetime_column,
-    gen_nullable_bool,
+    gen_nullable_bool_column,
     gen_decimal_column,
 ];
 
@@ -297,7 +307,8 @@ impl<'a> IndexAppender<'a> {
 
         let total_neg_log2_prob: f64 = index_set.iter().map(|i| self.columns[*i].neg_log2_prob).sum();
         let is_unique = total_neg_log2_prob > unique_cutoff;
-        if is_primary_key && !is_unique {
+        let is_nullable = index_set.iter().any(|i| self.columns[*i].nullable);
+        if is_primary_key && (!is_unique || is_nullable) {
             return;
         }
 
