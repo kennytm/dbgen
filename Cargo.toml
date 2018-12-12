@@ -1,6 +1,6 @@
 [package]
 name = "dbgen"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["kennytm <kennytm@gmail.com>"]
 edition = "2018"
 license = "MIT"
