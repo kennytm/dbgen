@@ -5,8 +5,8 @@ jobs:
       os: linux
     - rust: 1.31.0
       os: osx
-    - rust: 1.31.0
-      os: windows
+    # - rust: 1.31.0
+    #   os: windows
     - rust: beta
       os: linux
     - rust: nightly
