@@ -470,12 +470,16 @@ impl Allocator {
 
     /// Creates a `TIMESTAMP` expression.
     fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut name = Function::Timestamp;
         for pair in pairs {
             match pair.as_rule() {
                 Rule::kw_timestamp => {}
+                Rule::kw_with | Rule::kw_time | Rule::kw_zone => {
+                    name = Function::TimestampTz;
+                }
                 Rule::expr_primary => {
                     return Ok(Expr::Function {
-                        name: Function::Timestamp,
+                        name,
                         args: vec![self.expr_primary_from_pairs(pair.into_inner())?],
                     });
                 }
@@ -619,5 +623,6 @@ define_function! {
         Not = "not",
         Neg = "neg",
         Timestamp = "timestamp",
+        TimestampTz = "timestamp with time zone",
     }
 }

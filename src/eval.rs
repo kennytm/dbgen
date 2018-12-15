@@ -491,6 +491,25 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             Ok(Compiled(C::Constant(Value::Timestamp(timestamp, tz))))
         }
 
+        Function::TimestampTz => {
+            let mut input = arg::<&str, _>(name, args, 0, None)?;
+            let tz = match input.find(|c: char| c.is_ascii_alphabetic()) {
+                None => ctx.time_zone,
+                Some(i) => {
+                    let tz = input[i..]
+                        .parse::<Tz>()
+                        .map_err(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?;
+                    input = input[..i].trim_end();
+                    tz
+                }
+            };
+            let timestamp = tz
+                .datetime_from_str(input, TIMESTAMP_FORMAT)
+                .with_context(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?
+                .naive_utc();
+            Ok(Compiled(C::Constant(Value::Timestamp(timestamp, tz))))
+        }
+
         Function::Greatest | Function::Least => {
             let mut res = &Value::Null;
             for value in iter_args::<&Value, _>(name, args) {

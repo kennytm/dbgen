@@ -222,6 +222,14 @@ From highest to lowest precedence:
     If a time zone observes DST, there will be some time values which are impossible or ambiguous.
     Both of these cases will cause an "invalid timestamp" error.
 
+* **TIMESTAMP WITH TIME ZONE '2016-01-02 15:04:05.999 Asia/Hong_Kong'**
+
+    Converts an ISO-8601-formatted string into a timestamp, using the time zone specified inside
+    the string. The timestamp is internally stored as UTC.
+
+    Only names in the `tz` database are recognized. The time zone will **not** be printed together
+    with the timestamp.
+
 * **INTERVAL 30 MINUTE**
 
     Creates a time interval. The inner expression should evaluate a number (can be negative). Valid

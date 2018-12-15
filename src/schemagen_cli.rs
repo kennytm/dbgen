@@ -247,7 +247,7 @@ fn gen_datetime_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
     };
     Column {
         ty: ty.to_owned(),
-        expr: "TIMESTAMP '1000-01-01 00:00:00' + INTERVAL rand.range(0, 284012524800) SECOND".to_owned(),
+        expr: "TIMESTAMP WITH TIME ZONE '1000-01-01 00:00:00 UTC' + INTERVAL rand.range(0, 284012524800) SECOND".to_owned(),
         neg_log2_prob: DATEIME_SECONDS.log2(),
         average_len: 21.0,
         nullable: false,
