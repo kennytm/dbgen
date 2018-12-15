@@ -593,6 +593,7 @@ define_function! {
         RandBool = "rand.bool",
         RandFiniteF32 = "rand.finite_f32",
         RandFiniteF64 = "rand.finite_f64",
+        RandU31Timestamp = "rand.u31_timestamp",
 
         Greatest = "greatest",
         Least = "least",

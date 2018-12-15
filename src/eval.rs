@@ -5,7 +5,7 @@ use crate::{
     parser::{Expr, Function},
     value::{Number, TryFromValue, Value, TIMESTAMP_FORMAT},
 };
-use chrono::TimeZone;
+use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use failure::ResultExt;
 use rand::{
@@ -132,6 +132,8 @@ enum C {
     RandFiniteF32(Uniform<u32>),
     /// Random f64 with uniform bit pattern
     RandFiniteF64(Uniform<u64>),
+    /// Random u31 timestamp
+    RandU31Timestamp,
 }
 
 /// A compiled expression
@@ -282,6 +284,12 @@ impl Compiled {
             C::RandBool(bern) => u64::from(state.rng.sample(bern)).into(),
             C::RandFiniteF32(uniform) => f32::from_bits(state.rng.sample(uniform).rotate_right(1)).into(),
             C::RandFiniteF64(uniform) => f64::from_bits(state.rng.sample(uniform).rotate_right(1)).into(),
+
+            C::RandU31Timestamp => {
+                let seconds = state.rng.gen::<u32>() & 0x7fff_ffff;
+                let timestamp = NaiveDateTime::from_timestamp(i64::from(seconds), 0);
+                Value::new_timestamp(timestamp, state.compile_context.time_zone)
+            }
         })
     }
 }
@@ -392,6 +400,8 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         Function::RandFiniteF32 => Ok(Compiled(C::RandFiniteF32(Uniform::new(0, 0xff00_0000)))),
 
         Function::RandFiniteF64 => Ok(Compiled(C::RandFiniteF64(Uniform::new(0, 0xffe0_0000_0000_0000)))),
+
+        Function::RandU31Timestamp => Ok(Compiled(C::RandU31Timestamp)),
 
         Function::Neg => {
             let inner = arg::<Number, _>(name, args, 0, None)?;

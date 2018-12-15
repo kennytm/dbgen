@@ -230,7 +230,7 @@ fn gen_timestamp_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
     };
     Column {
         ty: ty.to_owned(),
-        expr: "TIMESTAMP '1970-01-01 00:00:00' + INTERVAL rand.range_inclusive(0, 2147483647) SECOND".to_owned(),
+        expr: "rand.u31_timestamp()".to_owned(),
         neg_log2_prob: 31.0,
         average_len: 21.0,
         nullable: false,

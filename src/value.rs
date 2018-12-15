@@ -211,6 +211,11 @@ impl fmt::Display for Value {
 }
 
 impl Value {
+    /// Creates a timestamp value.
+    pub fn new_timestamp(ts: NaiveDateTime, tz: Tz) -> Self {
+        Value::Timestamp(ts, tz)
+    }
+
     /// Compares two values using the rules common among SQL implementations.
     ///
     /// * Comparing with NULL always return `None`.

@@ -238,6 +238,11 @@ From highest to lowest precedence:
     Intervals can be added to or subtracted from timestamps, and can therefore be used to generate
     a random timestamp.
 
+* **rand.u31_timestamp()**
+
+    Generates a random timestamp distributed uniformly between 1970-01-01 00:00:00 and
+    2038-01-19 03:14:08 (UTC). There are exactly 2<sup>31</sup> seconds between these two time.
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**
