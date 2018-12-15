@@ -265,7 +265,31 @@ fn gen_nullable_bool_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
     }
 }
 
-static GENERATORS: [ColumnGenerator; 8] = [
+const NEG_LOG2_PROB_FINITE_F32: f64 = 31.994_353_436_858_86;
+const NEG_LOG2_PROB_FINITE_F64: f64 = 63.999_295_387_023_41;
+
+fn gen_float_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
+    let bits = rng.gen_range(1, 3) * 32;
+    let ty = match (bits, dialect) {
+        (32, Dialect::MySQL) => "float not null",
+        (64, Dialect::MySQL) => "double not null",
+        (64, Dialect::PostgreSQL) => "double precision not null",
+        _ => "real not null",
+    };
+    Column {
+        ty: ty.to_owned(),
+        expr: format!("rand.finite_f{}()", bits),
+        neg_log2_prob: if bits == 32 {
+            NEG_LOG2_PROB_FINITE_F32
+        } else {
+            NEG_LOG2_PROB_FINITE_F64
+        },
+        average_len: 21.966,
+        nullable: false,
+    }
+}
+
+static GENERATORS: [ColumnGenerator; 9] = [
     gen_int_column,
     gen_serial_column,
     gen_varchar_column,
@@ -274,6 +298,7 @@ static GENERATORS: [ColumnGenerator; 8] = [
     gen_datetime_column,
     gen_nullable_bool_column,
     gen_decimal_column,
+    gen_float_column,
 ];
 
 fn gen_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {

@@ -205,6 +205,13 @@ From highest to lowest precedence:
 
     [log-normal distribution]: https://en.wikipedia.org/wiki/Log-normal_distribution
 
+* **rand.finite_f32()**, **rand.finite_f64()**
+
+    Generates a random finite IEEE-754 binary32 or binary64 floating-point number.
+
+    The numbers are uniform in its *bit-pattern* across the entire supported range
+    (±3.4 × 10<sup>38</sup> for `f32`, ±1.8 × 10<sup>308</sup> for `f64`)
+
 ### Date and Time
 
 * **TIMESTAMP '2016-01-02 15:04:05.999'**

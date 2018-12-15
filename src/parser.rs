@@ -591,6 +591,8 @@ define_function! {
         RandZipf = "rand.zipf",
         RandLogNormal = "rand.log_normal",
         RandBool = "rand.bool",
+        RandFiniteF32 = "rand.finite_f32",
+        RandFiniteF64 = "rand.finite_f64",
 
         Greatest = "greatest",
         Least = "least",

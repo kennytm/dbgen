@@ -116,6 +116,10 @@ enum C {
     RandLogNormal(distributions::LogNormal),
     /// Bernoulli distribution for `bool` (i.e. a weighted random boolean).
     RandBool(distributions::Bernoulli),
+    /// Random f32 with uniform bit pattern
+    RandFiniteF32(Uniform<u32>),
+    /// Random f64 with uniform bit pattern
+    RandFiniteF64(Uniform<u64>),
 }
 
 /// A compiled expression
@@ -259,6 +263,8 @@ impl Compiled {
             C::RandZipf(zipf) => (state.rng.sample(zipf) as u64).into(),
             C::RandLogNormal(log_normal) => state.rng.sample(log_normal).into(),
             C::RandBool(bern) => u64::from(state.rng.sample(bern)).into(),
+            C::RandFiniteF32(uniform) => f32::from_bits(state.rng.sample(uniform).rotate_right(1)).into(),
+            C::RandFiniteF64(uniform) => f64::from_bits(state.rng.sample(uniform).rotate_right(1)).into(),
         })
     }
 }
@@ -365,6 +371,10 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
             require!(0.0 <= p && p <= 1.0, "{} between 0 and 1", p);
             Ok(Compiled(C::RandBool(distributions::Bernoulli::new(p))))
         }
+
+        Function::RandFiniteF32 => Ok(Compiled(C::RandFiniteF32(Uniform::new(0, 0xff00_0000)))),
+
+        Function::RandFiniteF64 => Ok(Compiled(C::RandFiniteF64(Uniform::new(0, 0xffe0_0000_0000_0000)))),
 
         Function::Neg => {
             let inner = arg::<Number, _>(name, args, 0, None)?;
