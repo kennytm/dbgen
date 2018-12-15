@@ -80,8 +80,8 @@ pub enum ErrorKind {
         cause: String,
     },
 
-    /// The timestamp string does not follow the ISO-8601 format.
-    #[fail(display = "timestamp '{}' does not follow the ISO-8601 format", 0)]
+    /// The timestamp string is invalid
+    #[fail(display = "invalid timestamp '{}'", 0)]
     InvalidTimestampString(
         /// The literal which is in the wrong format.
         String,

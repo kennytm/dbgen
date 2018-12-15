@@ -1,11 +1,12 @@
 //! CLI driver of `dbgen`.
 
 use crate::{
-    eval::{Row, State},
+    eval::{CompileContext, Row, State},
     format::{Format, SqlFormat},
     parser::{QName, Template},
 };
 
+use chrono_tz::Tz;
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
 use muldiv::MulDiv;
@@ -130,6 +131,10 @@ pub struct Args {
     /// Disable progress bar.
     #[structopt(short = "q", long = "quiet", help = "Disable progress bar")]
     pub quiet: bool,
+
+    /// Timezone
+    #[structopt(long = "time-zone", help = "Time zone used for timestamps")]
+    pub time_zone: Tz,
 }
 
 /// The default implementation of the argument suitable for *testing*.
@@ -150,6 +155,7 @@ impl Default for Args {
             jobs: 0,
             rng: RngName::Hc128,
             quiet: true,
+            time_zone: Tz::UTC,
         }
     }
 }
@@ -208,11 +214,15 @@ pub fn run(args: Args) -> Result<(), Error> {
 
     create_dir_all(&args.out_dir).context("failed to create output directory")?;
 
+    let ctx = CompileContext {
+        time_zone: args.time_zone,
+    };
+
     let env = Env {
         out_dir: args.out_dir,
         file_num_digits: args.files_count.to_string().len(),
         unique_name: table_name.unique_name(),
-        row_gen: Row::compile(template.exprs)?,
+        row_gen: ctx.compile_row(template.exprs)?,
         qualified_name: if args.qualified {
             table_name.qualified_name()
         } else {
@@ -274,7 +284,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         .collect::<Vec<_>>();
     let res = pool.install(move || {
         iv.into_par_iter().try_for_each(|(seed, file_info, row_num)| {
-            let mut state = State::new(row_num, seed, variables_count);
+            let mut state = State::new(row_num, seed, variables_count, ctx.clone());
             env.write_data_file(&file_info, &mut state)
         })
     });

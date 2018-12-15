@@ -477,7 +477,7 @@ impl Allocator {
                     return Ok(Expr::Function {
                         name: Function::Timestamp,
                         args: vec![self.expr_primary_from_pairs(pair.into_inner())?],
-                    })
+                    });
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
             }

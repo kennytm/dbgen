@@ -5,7 +5,8 @@ use crate::{
     parser::{Expr, Function},
     value::{Number, TryFromValue, Value, TIMESTAMP_FORMAT},
 };
-use chrono::NaiveDateTime;
+use chrono::TimeZone;
+use chrono_tz::Tz;
 use failure::ResultExt;
 use rand::{
     distributions::{self, Uniform},
@@ -14,11 +15,19 @@ use rand::{
 use std::{borrow::Cow, cmp::Ordering, fmt};
 use zipf::ZipfDistribution;
 
+/// Environment information shared by all compilations
+#[derive(Clone, Debug)]
+pub struct CompileContext {
+    /// The time zone used to interpret strings into timestamps.
+    pub time_zone: Tz,
+}
+
 /// The external mutable state used during evaluation.
 pub struct State {
     pub(crate) row_num: u64,
     rng: Box<dyn RngCore>,
     variables: Vec<Value>,
+    compile_context: CompileContext,
 }
 
 impl fmt::Debug for State {
@@ -40,11 +49,12 @@ impl State {
     ///     to 1, and the second to `rows_count * inserts_count + 1`, etc.
     /// - `rng`: The seeded random number generator.
     /// - `variables_count`: Number of local variables per row.
-    pub fn new(row_num: u64, rng: Box<dyn RngCore>, variables_count: usize) -> Self {
+    pub fn new(row_num: u64, rng: Box<dyn RngCore>, variables_count: usize, compile_context: CompileContext) -> Self {
         Self {
             row_num,
             rng,
             variables: vec![Value::Null; variables_count],
+            compile_context,
         }
     }
 }
@@ -53,15 +63,17 @@ impl State {
 #[derive(Debug)]
 pub struct Row(Vec<Compiled>);
 
-impl Row {
+impl CompileContext {
     /// Compiles a vector of parsed expressions into a row.
-    pub fn compile(exprs: Vec<Expr>) -> Result<Self, Error> {
+    pub fn compile_row(&self, exprs: Vec<Expr>) -> Result<Row, Error> {
         Ok(Row(exprs
             .into_iter()
-            .map(Compiled::compile)
+            .map(|e| self.compile(e))
             .collect::<Result<Vec<_>, Error>>()?))
     }
+}
 
+impl Row {
     /// Evaluates the row into a vector of values and updates the state.
     pub fn eval(&self, state: &mut State) -> Result<Vec<Value>, Error> {
         let result = self
@@ -176,17 +188,20 @@ where
     })
 }
 
-impl Compiled {
+impl CompileContext {
     /// Compiles an expression.
-    pub fn compile(expr: Expr) -> Result<Self, Error> {
+    pub fn compile(&self, expr: Expr) -> Result<Compiled, Error> {
         Ok(Compiled(match expr {
             Expr::RowNum => C::RowNum,
             Expr::Value(v) => C::Constant(v),
             Expr::GetVariable(index) => C::GetVariable(index),
-            Expr::SetVariable(index, e) => C::SetVariable(index, Box::new(Self::compile(*e)?)),
+            Expr::SetVariable(index, e) => C::SetVariable(index, Box::new(self.compile(*e)?)),
             Expr::Function { name, args } => {
-                let args = args.into_iter().map(Self::compile).collect::<Result<Vec<_>, _>>()?;
-                match compile_function(name, &args) {
+                let args = args
+                    .into_iter()
+                    .map(|e| self.compile(e))
+                    .collect::<Result<Vec<_>, _>>()?;
+                match compile_function(self, name, &args) {
                     Ok(c) => c.0,
                     Err(e) => match e.kind() {
                         ErrorKind::InvalidArgumentType { .. } => C::RawFunction { name, args },
@@ -199,13 +214,13 @@ impl Compiled {
                 conditions,
                 otherwise,
             } => {
-                let value = Box::new(Self::compile(*value)?);
+                let value = Box::new(self.compile(*value)?);
                 let conditions = conditions
                     .into_iter()
-                    .map(|(p, r)| Ok((Self::compile(p)?, Self::compile(r)?)))
+                    .map(|(p, r)| Ok((self.compile(p)?, self.compile(r)?)))
                     .collect::<Result<_, Error>>()?;
                 let otherwise = Box::new(if let Some(o) = otherwise {
-                    Self::compile(*o)?
+                    self.compile(*o)?
                 } else {
                     Compiled(C::Constant(Value::Null))
                 });
@@ -217,7 +232,9 @@ impl Compiled {
             }
         }))
     }
+}
 
+impl Compiled {
     /// Evaluates a compiled expression and updates the state. Returns the evaluated value.
     pub fn eval(&self, state: &mut State) -> Result<Value, Error> {
         Ok(match &self.0 {
@@ -225,7 +242,7 @@ impl Compiled {
             C::Constant(v) => v.clone(),
             C::RawFunction { name, args } => {
                 let args = args.iter().map(|c| c.eval(state)).collect::<Result<Vec<_>, _>>()?;
-                let compiled = compile_function(*name, &args)?;
+                let compiled = compile_function(&state.compile_context, *name, &args)?;
                 compiled.eval(state)?
             }
 
@@ -289,7 +306,7 @@ impl AsValue for Value {
 }
 
 /// Compiles a function with some value-like objects as input.
-pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
+pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
     macro_rules! require {
         (@false, $($fmt:tt)+) => {
             return Err(ErrorKind::InvalidArguments { name, cause: format!($($fmt)+) }.into());
@@ -456,9 +473,12 @@ pub fn compile_function(name: Function, args: &[impl AsValue]) -> Result<Compile
 
         Function::Timestamp => {
             let input = arg(name, args, 0, None)?;
-            let timestamp = NaiveDateTime::parse_from_str(input, TIMESTAMP_FORMAT)
-                .with_context(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?;
-            Ok(Compiled(C::Constant(Value::Timestamp(timestamp))))
+            let tz = ctx.time_zone;
+            let timestamp = tz
+                .datetime_from_str(input, TIMESTAMP_FORMAT)
+                .with_context(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?
+                .naive_utc();
+            Ok(Compiled(C::Constant(Value::Timestamp(timestamp, tz))))
         }
 
         Function::Greatest | Function::Least => {

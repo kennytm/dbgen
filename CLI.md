@@ -101,6 +101,11 @@ More options
 
     These two options allow one to fine-tune the actual rows count of the table.
 
+* `--time-zone «TZ»`
+
+    The time zone used to parse and format timestamps. Defaults to `UTC`, regardless of system time
+    zone. Any `tz` database time zone name (e.g. `America/New_York`) can be used.
+
 
 [ChaCha20]: https://cr.yp.to/chacha.html
 [HC-128]: https://www.ntu.edu.sg/home/wuhj/research/hc/index.html

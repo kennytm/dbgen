@@ -1,6 +1,7 @@
 //! Values
 
-use chrono::{Duration, NaiveDateTime};
+use chrono::{Duration, NaiveDateTime, TimeZone};
+use chrono_tz::Tz;
 use num_traits::FromPrimitive;
 use std::{
     cmp::Ordering,
@@ -176,8 +177,8 @@ pub enum Value {
     Number(Number),
     /// A string or byte string.
     Bytes(Bytes),
-    /// A timestamp without timezone.
-    Timestamp(NaiveDateTime),
+    /// A timestamp.
+    Timestamp(NaiveDateTime, Tz),
     /// A time interval, as multiple of microseconds.
     Interval(i64),
 
@@ -213,7 +214,8 @@ impl Value {
     /// Compares two values using the rules common among SQL implementations.
     ///
     /// * Comparing with NULL always return `None`.
-    /// * Numbers, timestamps and intervals are ordered by value.
+    /// * Numbers and intervals are ordered by value.
+    /// * Timestamps are ordered by its UTC value, ignoring time zone.
     /// * Strings are ordered by UTF-8 binary collation.
     /// * Comparing between different types are inconsistent among database
     ///     engines, thus this function will just error with `InvalidArguments`.
@@ -222,14 +224,14 @@ impl Value {
             (Value::Null, _) | (_, Value::Null) => None,
             (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
             (Value::Bytes(a), Value::Bytes(b)) => a.bytes.partial_cmp(&b.bytes),
-            (Value::Timestamp(a), Value::Timestamp(b)) => a.partial_cmp(b),
+            (Value::Timestamp(a, _), Value::Timestamp(b, _)) => a.partial_cmp(b),
             (Value::Interval(a), Value::Interval(b)) => a.partial_cmp(b),
             _ => {
                 return Err(ErrorKind::InvalidArguments {
                     name,
                     cause: format!("cannot compare {} with {}", self, other),
                 }
-                .into())
+                .into());
             }
         })
     }
@@ -238,13 +240,16 @@ impl Value {
     pub fn sql_add(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Value::Number(lhs), Value::Number(rhs)) => (*lhs + *rhs).into(),
-            (Value::Timestamp(ts), Value::Interval(dur)) | (Value::Interval(dur), Value::Timestamp(ts)) => {
-                Value::Timestamp(try_or_overflow!(
-                    ts.checked_add_signed(Duration::microseconds(*dur)),
-                    "{} + {}us",
-                    ts,
-                    dur
-                ))
+            (Value::Timestamp(ts, tz), Value::Interval(dur)) | (Value::Interval(dur), Value::Timestamp(ts, tz)) => {
+                Value::Timestamp(
+                    try_or_overflow!(
+                        ts.checked_add_signed(Duration::microseconds(*dur)),
+                        "{} + {}us",
+                        ts,
+                        dur
+                    ),
+                    *tz,
+                )
             }
             (Value::Interval(a), Value::Interval(b)) => {
                 Value::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
@@ -254,7 +259,7 @@ impl Value {
                     name: Function::Add,
                     cause: format!("cannot add {} to {}", self, other),
                 }
-                .into())
+                .into());
             }
         })
     }
@@ -263,12 +268,15 @@ impl Value {
     pub fn sql_sub(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Value::Number(lhs), Value::Number(rhs)) => (*lhs - *rhs).into(),
-            (Value::Timestamp(ts), Value::Interval(dur)) => Value::Timestamp(try_or_overflow!(
-                ts.checked_sub_signed(Duration::microseconds(*dur)),
-                "{} - {}us",
-                ts,
-                dur
-            )),
+            (Value::Timestamp(ts, tz), Value::Interval(dur)) => Value::Timestamp(
+                try_or_overflow!(
+                    ts.checked_sub_signed(Duration::microseconds(*dur)),
+                    "{} - {}us",
+                    ts,
+                    dur
+                ),
+                *tz,
+            ),
             (Value::Interval(a), Value::Interval(b)) => {
                 Value::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
             }
@@ -277,7 +285,7 @@ impl Value {
                     name: Function::Sub,
                     cause: format!("cannot subtract {} from {}", self, other),
                 }
-                .into())
+                .into());
             }
         })
     }
@@ -295,7 +303,7 @@ impl Value {
                     name: Function::Mul,
                     cause: format!("cannot multiply {} with {}", self, other),
                 }
-                .into())
+                .into());
             }
         })
     }
@@ -318,7 +326,7 @@ impl Value {
                     name: Function::FloatDiv,
                     cause: format!("cannot divide {} by {}", self, other),
                 }
-                .into())
+                .into());
             }
         })
     }
@@ -345,8 +353,13 @@ impl Value {
                         }
                     }
                 }
-                Value::Timestamp(timestamp) => {
-                    write!(&mut res.bytes, "{}", timestamp.format(TIMESTAMP_FORMAT)).unwrap();
+                Value::Timestamp(timestamp, tz) => {
+                    write!(
+                        &mut res.bytes,
+                        "{}",
+                        tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)
+                    )
+                    .unwrap();
                 }
                 Value::Interval(interval) => {
                     write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval).unwrap();

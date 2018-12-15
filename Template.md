@@ -216,7 +216,11 @@ From highest to lowest precedence:
 
 * **TIMESTAMP '2016-01-02 15:04:05.999'**
 
-    Converts an ISO-8601-formatted string into a timestamp without timezone.
+    Converts an ISO-8601-formatted string into a timestamp, using the time zone specified by the
+    `--time-zone` flag. The timestamp is internally stored as UTC.
+
+    If a time zone observes DST, there will be some time values which are impossible or ambiguous.
+    Both of these cases will cause an "invalid timestamp" error.
 
 * **INTERVAL 30 MINUTE**
 

@@ -2,7 +2,8 @@
 
 use crate::value::{Bytes, Value};
 
-use chrono::{Datelike, NaiveDateTime, Timelike};
+use chrono::{DateTime, Datelike, TimeZone, Timelike};
+use chrono_tz::Tz;
 use std::{
     io::{Error, Write},
     slice,
@@ -57,7 +58,7 @@ impl<W: Write> SqlFormat<W> {
         self.writer.write_all(b"'")
     }
 
-    fn write_timestamp(&mut self, timestamp: &NaiveDateTime) -> Result<(), Error> {
+    fn write_timestamp(&mut self, timestamp: &DateTime<Tz>) -> Result<(), Error> {
         // write!(output, "'{}'", timestamp.format(TIMESTAMP_FORMAT))?;
         write!(
             self.writer,
@@ -83,7 +84,7 @@ impl<W: Write> Format for SqlFormat<W> {
             Value::Null => self.writer.write_all(b"NULL"),
             Value::Number(number) => write!(self.writer, "{}", number),
             Value::Bytes(bytes) => self.write_bytes(bytes),
-            Value::Timestamp(timestamp) => self.write_timestamp(timestamp),
+            Value::Timestamp(timestamp, tz) => self.write_timestamp(&tz.from_utc_datetime(&timestamp)),
             Value::Interval(interval) => write!(self.writer, "INTERVAL {} MICROSECOND", interval),
             Value::__NonExhaustive => Ok(()),
         }

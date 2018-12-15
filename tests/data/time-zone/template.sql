@@ -1,0 +1,4 @@
+CREATE TABLE result (
+    {{ TIMESTAMP '2018-03-25 00:30:00' + INTERVAL 10 * rownum MINUTE }}
+    {{ TIMESTAMP '2018-10-28 00:30:00' + INTERVAL 10 * rownum MINUTE }}
+);
