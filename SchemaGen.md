@@ -26,7 +26,7 @@ Common options
     Number of tables to generate.
 
     Note that `dbschemagen` will *not* uniformly distribute the same size to every file; rather,
-    they're assigned following to Pareto distribution to simulate the size of real-world databases.
+    they're assigned following to Lomax distribution to simulate the size of real-world databases.
 
 * `-- «args»...`
 

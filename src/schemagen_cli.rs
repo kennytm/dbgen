@@ -406,6 +406,7 @@ fn gen_tables<'a>(
     let relative_sizes = distr
         .sample_iter(&mut rng)
         .take(tables_count as usize)
+        .map(|v| v - 1.0)
         .collect::<Vec<_>>();
     let total_relative_size: f64 = relative_sizes.iter().sum();
     let ratio = total_target_size / total_relative_size;
