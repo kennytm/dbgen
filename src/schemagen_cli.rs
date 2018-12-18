@@ -381,7 +381,7 @@ struct Table {
 fn gen_table(dialect: Dialect, rng: &mut dyn RngCore, target_size: f64) -> Table {
     let mut schema = String::from("CREATE TABLE _ (\n");
 
-    let columns_count = LogNormal::new(2.354_259_469_228_055, 0.75).sample(rng) as usize;
+    let columns_count = (LogNormal::new(2.354_259_469_228_055, 0.75).sample(rng) as usize).max(1);
     let columns = {
         let rng2 = &mut *rng;
         repeat_with(move || gen_column(dialect, rng2))
