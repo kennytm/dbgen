@@ -488,10 +488,11 @@ pub fn print_script(args: &Args) {
             }
         };
         println!(
-            "# rows count: {}, estimated size: {}\n\
+            "# table: s{}, rows count: {}, estimated size: {}\n\
              dbgen -i /dev/stdin -o . -s {} -t {}.s{} -n {} -r {} -k {} \
              --last-file-inserts-count {} --last-insert-rows-count {} \
              {} <<SCHEMAEOF\n{}\nSCHEMAEOF\n",
+            i,
             table.rows_count,
             to_human_size(table.target_size),
             HEXLOWER_PERMISSIVE.encode(&table.seed),
