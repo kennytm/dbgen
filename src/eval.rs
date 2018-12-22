@@ -133,7 +133,7 @@ enum C {
     /// Random f64 with uniform bit pattern
     RandFiniteF64(Uniform<u64>),
     /// Random u31 timestamp
-    RandU31Timestamp,
+    RandU31Timestamp(Uniform<i64>),
 }
 
 /// A compiled expression
@@ -285,9 +285,9 @@ impl Compiled {
             C::RandFiniteF32(uniform) => f32::from_bits(state.rng.sample(uniform).rotate_right(1)).into(),
             C::RandFiniteF64(uniform) => f64::from_bits(state.rng.sample(uniform).rotate_right(1)).into(),
 
-            C::RandU31Timestamp => {
-                let seconds = state.rng.gen::<u32>() & 0x7fff_ffff;
-                let timestamp = NaiveDateTime::from_timestamp(i64::from(seconds), 0);
+            C::RandU31Timestamp(uniform) => {
+                let seconds = state.rng.sample(uniform);
+                let timestamp = NaiveDateTime::from_timestamp(seconds, 0);
                 Value::new_timestamp(timestamp, state.compile_context.time_zone)
             }
         })
@@ -401,7 +401,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
 
         Function::RandFiniteF64 => Ok(Compiled(C::RandFiniteF64(Uniform::new(0, 0xffe0_0000_0000_0000)))),
 
-        Function::RandU31Timestamp => Ok(Compiled(C::RandU31Timestamp)),
+        Function::RandU31Timestamp => Ok(Compiled(C::RandU31Timestamp(Uniform::new(1, 0x8000_0000)))),
 
         Function::Neg => {
             let inner = arg::<Number, _>(name, args, 0, None)?;

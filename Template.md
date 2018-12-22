@@ -248,8 +248,8 @@ From highest to lowest precedence:
 
 * **rand.u31_timestamp()**
 
-    Generates a random timestamp distributed uniformly between 1970-01-01 00:00:00 and
-    2038-01-19 03:14:08 (UTC). There are exactly 2<sup>31</sup> seconds between these two time.
+    Generates a random timestamp distributed uniformly between 1970-01-01 00:00:01 and
+    2038-01-19 03:14:07 (UTC). There are exactly 2<sup>31</sup>−1 seconds between these two time.
 
 ### Miscellaneous
 
