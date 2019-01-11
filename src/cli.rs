@@ -133,7 +133,7 @@ pub struct Args {
     pub quiet: bool,
 
     /// Timezone
-    #[structopt(long = "time-zone", help = "Time zone used for timestamps")]
+    #[structopt(long = "time-zone", help = "Time zone used for timestamps", default_value = "UTC")]
     pub time_zone: Tz,
 }
 
