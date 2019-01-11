@@ -15,6 +15,16 @@
 
 //! The reusable library powering `dbgen`.
 
+/// The full version of this library, for use in the CLI
+pub const FULL_VERSION: &str = concat!(
+    "\nVersion: v",
+    structopt::clap::crate_version!(),
+    "\nCommit:  ",
+    env!("VERGEN_SHA"),
+    "\nTarget:  ",
+    env!("VERGEN_TARGET_TRIPLE"),
+);
+
 pub mod cli;
 pub mod error;
 pub mod eval;

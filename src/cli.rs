@@ -34,6 +34,7 @@ use structopt::StructOpt;
 /// Arguments to the `dbgen` CLI program.
 #[derive(StructOpt, Debug, Deserialize)]
 #[serde(default)]
+#[structopt(raw(long_version = "::FULL_VERSION"))]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
     #[structopt(long = "qualified", help = "Keep the qualified name when writing the SQL statements")]
