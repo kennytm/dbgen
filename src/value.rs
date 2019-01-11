@@ -63,7 +63,8 @@ impl Number {
 
 macro_rules! impl_from_int_for_number {
     ($($ty:ty),*) => {
-        $(impl From<$ty> for Number {
+        $(#[allow(clippy::use_self, /*reason = "FIXME: Rust issue #57523"*/)]
+        impl From<$ty> for Number {
             fn from(value: $ty) -> Self {
                 Number(N::Int(value.into()))
             }
@@ -72,11 +73,13 @@ macro_rules! impl_from_int_for_number {
 }
 impl_from_int_for_number!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
 
+#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl From<f32> for Number {
     fn from(value: f32) -> Self {
         Number(N::Float(value.into()))
     }
 }
+#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl From<f64> for Number {
     fn from(value: f64) -> Self {
         Number(N::Float(value))
@@ -92,6 +95,7 @@ impl From<N> for f64 {
     }
 }
 
+#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl ops::Neg for Number {
     type Output = Self;
     fn neg(self) -> Self {
@@ -104,6 +108,7 @@ impl ops::Neg for Number {
 
 macro_rules! impl_number_bin_op {
     ($trait:ident, $fname:ident, $checked:ident) => {
+        #[allow(clippy::use_self, /*reason = "FIXME: Rust issue #57523"*/)]
         impl ops::$trait for Number {
             type Output = Self;
             fn $fname(self, other: Self) -> Self {
@@ -122,6 +127,7 @@ impl_number_bin_op!(Add, add, checked_add);
 impl_number_bin_op!(Sub, sub, checked_sub);
 impl_number_bin_op!(Mul, mul, checked_mul);
 
+#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl ops::Div for Number {
     type Output = Self;
     fn div(self, other: Self) -> Self {
@@ -394,7 +400,7 @@ macro_rules! impl_try_from_value {
             const NAME: &'static str = $name;
 
             fn try_from_value(value: &'s Value) -> Option<Self> {
-                Number::try_from_value(value)?.to::<$T>()
+                Number::try_from_value(value)?.to::<Self>()
             }
         }
     };

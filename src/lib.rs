@@ -11,7 +11,7 @@
         rust_2018_idioms
     )
 )]
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::stutter))]
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::module_name_repetitions))]
 
 //! The reusable library powering `dbgen`.
 
