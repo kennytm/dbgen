@@ -16,6 +16,7 @@ if [ $(uname) != 'Linux' ]; then
     exit 0
 fi
 
+rustc -vV
 cargo build --release --target x86_64-unknown-linux-gnu
 strip -s target/x86_64-unknown-linux-gnu/release/dbgen
 strip -s target/x86_64-unknown-linux-gnu/release/dbschemagen
