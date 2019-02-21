@@ -95,4 +95,11 @@ CREATE TABLE result (
     {{ timestamp '2010-01-01 00:00:00' + interval 15 hour + interval 71 minute - interval 13 second }}
 
     {{ '\' }}
+
+    {{ round(123.45) }}
+    {{ round(123.45, 1) }}
+    {{ round(-123.975, 2) }}
+    {{ round(123.456, 9) }}
+    {{ round(123.456, -1) }}
+    {{ round(123.456, -9) }}
 );

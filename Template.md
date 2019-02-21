@@ -272,3 +272,12 @@ From highest to lowest precedence:
 * **least(*x*, *y*, *z*)**
 
     Returns the smallest of all given values. NULL values are ignored.
+
+* **round(456.789, 2)**
+
+    Rounds the number 456.789 to 2 decimal places (i.e. returns 456.79).
+
+    The decimal place argument is optional, and defaults to 0. It can also be negative to round by
+    powers of 10, e.g. `round(456.789, -2) = 500.0`. In case of break-even (e.g. `round(3.5)`), this
+    function will round half away from zero.
+

@@ -601,6 +601,7 @@ define_function! {
 
         Greatest = "greatest",
         Least = "least",
+        Round = "round",
 
     'rule:
         Eq = "=" / op_eq,

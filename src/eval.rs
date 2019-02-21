@@ -526,6 +526,14 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             }
             Ok(Compiled(C::Constant(res.clone())))
         }
+
+        Function::Round => {
+            let value = arg::<f64, _>(name, args, 0, None)?;
+            let digits = arg::<i32, _>(name, args, 1, Some(0))?;
+            let scale = 10.0_f64.powi(digits);
+            let result = (value * scale).round() / scale;
+            Ok(Compiled(C::Constant(result.into())))
+        }
     }
 }
 
