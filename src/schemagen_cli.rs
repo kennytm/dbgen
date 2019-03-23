@@ -468,7 +468,7 @@ pub fn print_script(args: &Args) {
          set -eu\n\
          echo 'CREATE SCHEMA '{}';' > {}-schema-create.sql\n",
         env!("CARGO_PKG_VERSION"),
-        &env!("VERGEN_SHA")[..9],
+        env!("VERGEN_SHA").get(..9).unwrap_or("unofficial release"),
         HEXLOWER_PERMISSIVE.encode(&meta_seed),
         quoted_schema_name,
         schema_name.unique_name(),
