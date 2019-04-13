@@ -13,41 +13,39 @@ use std::{
 pub trait Format {
     /// Writes a single value to the writer, formatted according to specific
     /// rules of this formatter.
-    fn write_value(&mut self, value: &Value) -> Result<(), Error>;
+    fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error>;
 
     /// Writes the content of an INSERT statement before all rows.
-    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), Error>;
+    fn write_header(&self, writer: &mut dyn Write, qualified_table_name: &str) -> Result<(), Error>;
 
     /// Writes the separator between the every value.
-    fn write_value_separator(&mut self) -> Result<(), Error>;
+    fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error>;
 
     /// Writes the separator between the every row.
-    fn write_row_separator(&mut self) -> Result<(), Error>;
+    fn write_row_separator(&self, writer: &mut dyn Write) -> Result<(), Error>;
 
     /// Writes the content of an INSERT statement after all rows.
-    fn write_trailer(&mut self) -> Result<(), Error>;
+    fn write_trailer(&self, writer: &mut dyn Write) -> Result<(), Error>;
 }
 
 /// SQL formatter.
 #[derive(Debug)]
-pub struct SqlFormat<W: Write> {
-    /// The underlying writer.
-    pub writer: W,
+pub struct SqlFormat {
     /// Whether to escapes backslashes when writing a string.
     pub escape_backslash: bool,
 }
 
-impl<W: Write> SqlFormat<W> {
-    fn write_bytes(&mut self, bytes: &Bytes) -> Result<(), Error> {
+impl SqlFormat {
+    fn write_bytes(&self, writer: &mut dyn Write, bytes: &Bytes) -> Result<(), Error> {
         if bytes.is_binary() {
-            self.writer.write_all(b"X'")?;
+            writer.write_all(b"X'")?;
             for b in bytes.as_bytes() {
-                write!(self.writer, "{:02X}", b)?;
+                write!(writer, "{:02X}", b)?;
             }
         } else {
-            self.writer.write_all(b"'")?;
+            writer.write_all(b"'")?;
             for b in bytes.as_bytes() {
-                self.writer.write_all(match *b {
+                writer.write_all(match *b {
                     b'\'' => b"''",
                     b'\\' if self.escape_backslash => b"\\\\",
                     b'\0' if self.escape_backslash => b"\\0",
@@ -55,13 +53,13 @@ impl<W: Write> SqlFormat<W> {
                 })?;
             }
         }
-        self.writer.write_all(b"'")
+        writer.write_all(b"'")
     }
 
-    fn write_timestamp(&mut self, timestamp: &DateTime<Tz>) -> Result<(), Error> {
+    fn write_timestamp(&self, writer: &mut dyn Write, timestamp: &DateTime<Tz>) -> Result<(), Error> {
         // write!(output, "'{}'", timestamp.format(TIMESTAMP_FORMAT))?;
         write!(
-            self.writer,
+            writer,
             "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
             timestamp.year(),
             timestamp.month(),
@@ -72,37 +70,37 @@ impl<W: Write> SqlFormat<W> {
         )?;
         let ns = timestamp.nanosecond();
         if ns != 0 {
-            write!(self.writer, ".{:06}", ns / 1000)?;
+            write!(writer, ".{:06}", ns / 1000)?;
         }
-        self.writer.write_all(b"'")
+        writer.write_all(b"'")
     }
 }
 
-impl<W: Write> Format for SqlFormat<W> {
-    fn write_value(&mut self, value: &Value) -> Result<(), Error> {
+impl Format for SqlFormat {
+    fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
         match value {
-            Value::Null => self.writer.write_all(b"NULL"),
-            Value::Number(number) => write!(self.writer, "{}", number),
-            Value::Bytes(bytes) => self.write_bytes(bytes),
-            Value::Timestamp(timestamp, tz) => self.write_timestamp(&tz.from_utc_datetime(&timestamp)),
-            Value::Interval(interval) => write!(self.writer, "INTERVAL {} MICROSECOND", interval),
+            Value::Null => writer.write_all(b"NULL"),
+            Value::Number(number) => write!(writer, "{}", number),
+            Value::Bytes(bytes) => self.write_bytes(writer, bytes),
+            Value::Timestamp(timestamp, tz) => self.write_timestamp(writer, &tz.from_utc_datetime(&timestamp)),
+            Value::Interval(interval) => write!(writer, "INTERVAL {} MICROSECOND", interval),
             Value::__NonExhaustive => Ok(()),
         }
     }
 
-    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), Error> {
-        write!(self.writer, "INSERT INTO {} VALUES\n(", qualified_table_name)
+    fn write_header(&self, writer: &mut dyn Write, qualified_table_name: &str) -> Result<(), Error> {
+        write!(writer, "INSERT INTO {} VALUES\n(", qualified_table_name)
     }
 
-    fn write_value_separator(&mut self) -> Result<(), Error> {
-        self.writer.write_all(b", ")
+    fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b", ")
     }
 
-    fn write_row_separator(&mut self) -> Result<(), Error> {
-        self.writer.write_all(b"),\n(")
+    fn write_row_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b"),\n(")
     }
 
-    fn write_trailer(&mut self) -> Result<(), Error> {
-        self.writer.write_all(b");\n")
+    fn write_trailer(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b");\n")
     }
 }

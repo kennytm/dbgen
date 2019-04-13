@@ -136,6 +136,16 @@ pub struct Args {
     /// Timezone
     #[structopt(long = "time-zone", help = "Time zone used for timestamps", default_value = "UTC")]
     pub time_zone: Tz,
+
+    /// Output format
+    #[structopt(
+        short = "f",
+        long = "format",
+        help = "Output format",
+        raw(possible_values = r#"&["sql", "csv"]"#),
+        default_value = "sql"
+    )]
+    pub format: FormatName,
 }
 
 /// The default implementation of the argument suitable for *testing*.
@@ -157,6 +167,7 @@ impl Default for Args {
             rng: RngName::Hc128,
             quiet: true,
             time_zone: Tz::UTC,
+            format: FormatName::Sql,
         }
     }
 }
@@ -230,6 +241,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         },
         rows_count: args.rows_count,
         escape_backslash: args.escape_backslash,
+        format: args.format,
     };
 
     env.write_schema(&template.content)?;
@@ -342,6 +354,44 @@ impl RngName {
     }
 }
 
+/// Names of output formats supported by `dbgen`.
+#[derive(Copy, Clone, Debug, Deserialize)]
+pub enum FormatName {
+    /// SQL
+    Sql,
+    /// Csv
+    Csv,
+}
+
+impl FromStr for FormatName {
+    type Err = Error;
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Ok(match name {
+            "sql" => FormatName::Sql,
+            "csv" => FormatName::Csv,
+            _ => failure::bail!("Unsupported format {}", name),
+        })
+    }
+}
+
+impl FormatName {
+    /// Obtains the file extension when using this format.
+    fn extension(self) -> &'static str {
+        match self {
+            FormatName::Sql => "sql",
+            FormatName::Csv => "csv",
+        }
+    }
+
+    /// Creates a formatter writer given the name.
+    fn create(self, escape_backslash: bool) -> Box<dyn Format> {
+        match self {
+            FormatName::Sql => Box::new(SqlFormat { escape_backslash }),
+            FormatName::Csv => unimplemented!(),
+        }
+    }
+}
+
 /// Wrapping of a [`Write`] which counts how many bytes are written.
 struct WriteCountWrapper<W: Write> {
     inner: W,
@@ -394,6 +444,7 @@ struct Env {
     qualified_name: String,
     rows_count: u32,
     escape_backslash: bool,
+    format: FormatName,
 }
 
 /// Information specific to a data file.
@@ -414,20 +465,20 @@ impl Env {
     /// Writes a single data file.
     fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), Error> {
         let path = self.out_dir.join(format!(
-            "{0}.{1:02$}.sql",
-            self.unique_name, info.file_index, self.file_num_digits
+            "{0}.{1:02$}.{3}",
+            self.unique_name,
+            info.file_index,
+            self.file_num_digits,
+            self.format.extension(),
         ));
         let mut file = WriteCountWrapper::new(BufWriter::new(File::create(&path).with_path(&path)?));
         file.skip_write = std::env::var("DBGEN_WRITE_TO_DEV_NULL")
             .map(|s| s == "1")
             .unwrap_or(false);
-        let mut format = SqlFormat {
-            writer: file,
-            escape_backslash: self.escape_backslash,
-        };
+        let format = self.format.create(self.escape_backslash);
 
         for i in 0..info.inserts_count {
-            format.write_header(&self.qualified_name).with_path(&path)?;
+            format.write_header(&mut file, &self.qualified_name).with_path(&path)?;
 
             let rows_count = if i == info.inserts_count - 1 {
                 info.last_insert_rows_count
@@ -436,20 +487,20 @@ impl Env {
             };
             for row_index in 0..rows_count {
                 if row_index != 0 {
-                    format.write_row_separator().with_path(&path)?;
+                    format.write_row_separator(&mut file).with_path(&path)?;
                 }
 
                 let values = self.row_gen.eval(state).with_path(&path)?;
                 for (col_index, value) in values.iter().enumerate() {
                     if col_index != 0 {
-                        format.write_value_separator().with_path(&path)?;
+                        format.write_value_separator(&mut file).with_path(&path)?;
                     }
-                    format.write_value(value).with_path(&path)?;
+                    format.write_value(&mut file, value).with_path(&path)?;
                 }
             }
 
-            format.write_trailer().with_path(&path)?;
-            format.writer.commit_bytes_written();
+            format.write_trailer(&mut file).with_path(&path)?;
+            file.commit_bytes_written();
             WRITE_PROGRESS.fetch_add(rows_count as usize, Ordering::Relaxed);
         }
         Ok(())

@@ -206,12 +206,12 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::format::{Format, SqlFormat};
 
-        let mut format = SqlFormat {
-            writer: Vec::new(),
+        let format = SqlFormat {
             escape_backslash: false,
         };
-        format.write_value(self).map_err(|_| fmt::Error)?;
-        let s = String::from_utf8(format.writer).map_err(|_| fmt::Error)?;
+        let mut writer = Vec::new();
+        format.write_value(&mut writer, self).map_err(|_| fmt::Error)?;
+        let s = String::from_utf8(writer).map_err(|_| fmt::Error)?;
         f.write_str(&s)
     }
 }
