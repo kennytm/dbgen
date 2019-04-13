@@ -3,8 +3,9 @@ use diff::{lines, Result as DiffResult};
 use failure::Error;
 use serde_json::from_reader;
 use std::{
-    fs::{read_dir, read_to_string, remove_file, File},
+    fs::{read, read_dir, remove_file, File},
     path::Path,
+    str::from_utf8,
 };
 use tempfile::tempdir;
 
@@ -35,19 +36,23 @@ fn main() -> Result<(), Error> {
             let expected_path = child_path.join(result_entry.file_name());
             let actual_path = result_entry.path();
             eprintln!("Comparing {} vs {} ...", expected_path.display(), actual_path.display());
-            let expected_content = read_to_string(expected_path)?;
-            let actual_content = read_to_string(&actual_path)?;
+            let expected_content = read(expected_path)?;
+            let actual_content = read(&actual_path)?;
             if expected_content != actual_content {
-                for diff in lines(&expected_content, &actual_content) {
-                    match diff {
-                        DiffResult::Left(missing) => {
-                            eprintln!("\x1b[31m- {}\x1b[0m", missing);
-                        }
-                        DiffResult::Right(unexpected) => {
-                            eprintln!("\x1b[32m+ {}\x1b[0m", unexpected);
-                        }
-                        DiffResult::Both(same, _) => {
-                            eprintln!("  {}", same);
+                if let (Ok(expected_string), Ok(actual_string)) =
+                    (from_utf8(&expected_content), from_utf8(&actual_content))
+                {
+                    for diff in lines(&expected_string, &actual_string) {
+                        match diff {
+                            DiffResult::Left(missing) => {
+                                eprintln!("\x1b[31m- {}\x1b[0m", missing);
+                            }
+                            DiffResult::Right(unexpected) => {
+                                eprintln!("\x1b[32m+ {}\x1b[0m", unexpected);
+                            }
+                            DiffResult::Both(same, _) => {
+                                eprintln!("  {}", same);
+                            }
                         }
                     }
                 }
