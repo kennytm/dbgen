@@ -30,7 +30,7 @@ num-traits = "0.2"
 rayon = "1.0"
 zipf = "5.0"
 chrono = { version = "0.4", default-features = false }
-chrono-tz = { version = "0.5", features = ["serde"] }
+chrono-tz = { version = "0.5.1", features = ["serde"] }
 ryu = "0.2"
 serde_derive = "1.0"
 serde = "1.0"
@@ -42,6 +42,9 @@ rand_chacha = "0.1"
 rand_hc = "0.1"
 rand_xorshift = "0.1"
 shlex = "0.1"
+flate2 = "1.0"
+xz2 = "0.1"
+zstd = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 regex = "1.1"

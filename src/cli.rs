@@ -9,6 +9,7 @@ use crate::{
 use chrono_tz::Tz;
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use failure::{Error, Fail, ResultExt};
+use flate2::write::GzEncoder;
 use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
 use rand::{
@@ -30,6 +31,7 @@ use std::{
     time::Duration,
 };
 use structopt::StructOpt;
+use xz2::write::XzEncoder;
 
 /// Arguments to the `dbgen` CLI program.
 #[derive(StructOpt, Debug, Deserialize)]
@@ -146,6 +148,23 @@ pub struct Args {
         default_value = "sql"
     )]
     pub format: FormatName,
+
+    /// Output compression
+    #[structopt(
+        short = "c",
+        long = "compress",
+        help = "Compress data output",
+        raw(possible_values = r#"&["gzip", "gz", "xz", "zstd", "zst"]"#)
+    )]
+    pub compression: Option<CompressionName>,
+
+    /// Output compression level
+    #[structopt(
+        long = "compress-level",
+        help = "Compression level (0-9 for gzip and xz, 1-21 for zstd)",
+        default_value = "6"
+    )]
+    pub compress_level: u8,
 }
 
 /// The default implementation of the argument suitable for *testing*.
@@ -168,6 +187,8 @@ impl Default for Args {
             quiet: true,
             time_zone: Tz::UTC,
             format: FormatName::Sql,
+            compression: None,
+            compress_level: 6,
         }
     }
 }
@@ -229,6 +250,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         time_zone: args.time_zone,
     };
 
+    let compress_level = args.compress_level;
     let env = Env {
         out_dir: args.out_dir,
         file_num_digits: args.files_count.to_string().len(),
@@ -242,6 +264,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         rows_count: args.rows_count,
         escape_backslash: args.escape_backslash,
         format: args.format,
+        compression: args.compression.map(|c| (c, compress_level)),
     };
 
     env.write_schema(&template.content)?;
@@ -392,6 +415,53 @@ impl FormatName {
     }
 }
 
+/// Names of the compression output formats supported by `dbgen`.
+#[derive(Copy, Clone, Debug, Deserialize)]
+pub enum CompressionName {
+    /// Compress as gzip format (`*.gz`).
+    Gzip,
+    /// Compress as xz format (`*.xz`).
+    Xz,
+    /// Compress as Zstandard format (`*.zst`).
+    Zstd,
+}
+
+impl FromStr for CompressionName {
+    type Err = Error;
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Ok(match name {
+            "gzip" | "gz" => CompressionName::Gzip,
+            "xz" => CompressionName::Xz,
+            "zstd" | "zst" => CompressionName::Zstd,
+            _ => failure::bail!("Unsupported format {}", name),
+        })
+    }
+}
+
+impl CompressionName {
+    /// Obtains the file extension when using this format.
+    fn extension(self) -> &'static str {
+        match self {
+            CompressionName::Gzip => "gz",
+            CompressionName::Xz => "xz",
+            CompressionName::Zstd => "zst",
+        }
+    }
+
+    /// Wraps a writer with a compression layer on top.
+    fn wrap<'a, W: Write + 'a>(self, inner: W, level: u8) -> Box<dyn Write + 'a> {
+        match self {
+            CompressionName::Gzip => Box::new(GzEncoder::new(inner, flate2::Compression::new(level.into()))),
+            CompressionName::Xz => Box::new(XzEncoder::new(inner, level.into())),
+            CompressionName::Zstd => Box::new(
+                zstd::Encoder::new(inner, level.into())
+                    .expect("valid zstd encoder")
+                    .auto_finish(),
+            ),
+        }
+    }
+}
+
 /// Wrapping of a [`Write`] which counts how many bytes are written.
 struct WriteCountWrapper<W: Write> {
     inner: W,
@@ -445,6 +515,7 @@ struct Env {
     rows_count: u32,
     escape_backslash: bool,
     format: FormatName,
+    compression: Option<(CompressionName, u8)>,
 }
 
 /// Information specific to a data file.
@@ -464,14 +535,25 @@ impl Env {
 
     /// Writes a single data file.
     fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), Error> {
-        let path = self.out_dir.join(format!(
+        let mut path = self.out_dir.join(format!(
             "{0}.{1:02$}.{3}",
             self.unique_name,
             info.file_index,
             self.file_num_digits,
             self.format.extension(),
         ));
-        let mut file = WriteCountWrapper::new(BufWriter::new(File::create(&path).with_path(&path)?));
+
+        let inner_writer = if let Some((compression, level)) = self.compression {
+            let mut path_string = path.into_os_string();
+            path_string.push(".");
+            path_string.push(compression.extension());
+            path = PathBuf::from(path_string);
+            compression.wrap(File::create(&path).with_path(&path)?, level)
+        } else {
+            Box::new(File::create(&path).with_path(&path)?)
+        };
+
+        let mut file = WriteCountWrapper::new(BufWriter::new(inner_writer));
         file.skip_write = std::env::var("DBGEN_WRITE_TO_DEV_NULL")
             .map(|s| s == "1")
             .unwrap_or(false);

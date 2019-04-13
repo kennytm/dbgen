@@ -113,11 +113,30 @@ More options
     * `sql`
     * `csv`
 
+* `-c «ALG»`, `--compress «ALG»` / `--compress-level «LEVEL»`
+
+    Compress the data output. Possible algorithms are:
+
+    | Algorithm | Levels |
+    |-----------|--------|
+    | [gzip]    | 0–9    |
+    | [xz]      | 0–9    |
+    | [zstd]    | 1–21   |
+
+    The compression level defaults to 6 if not specified.
+
+    Since the data are randomly generated, the compression ratio is typically not very high (around
+    70% of uncompressed input). We do not recommend using the algorithm "xz" here, nor using very
+    high compression levels.
+
 [ChaCha20]: https://cr.yp.to/chacha.html
 [HC-128]: https://www.ntu.edu.sg/home/wuhj/research/hc/index.html
 [ISAAC]: http://www.burtleburtle.net/bob/rand/isaacafa.html
 [Xorshift]: https://en.wikipedia.org/wiki/Xorshift
 [PCG32]: http://www.pcg-random.org/
+[gzip]: https://en.wikipedia.org/wiki/Gzip
+[xz]: https://en.wikipedia.org/wiki/Xz
+[zstd]: https://facebook.github.io/zstd/
 
 [`NO_BACKSLASH_ESCAPES`]: https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_backslash_escapes
 [`standard_conforming_strings`]: https://www.postgresql.org/docs/current/static/runtime-config-compatible.html#GUC-STANDARD-CONFORMING-STRINGS
