@@ -102,4 +102,9 @@ CREATE TABLE result (
     {{ round(123.456, 9) }}
     {{ round(123.456, -1) }}
     {{ round(123.456, -9) }}
+
+    {{ interval 0 microsecond }}
+    {{ interval 1234567890 microsecond }}
+    {{ interval -1234567890 microsecond }}
+    {{ interval 1234567890 second }}
 );

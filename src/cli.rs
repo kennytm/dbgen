@@ -2,7 +2,7 @@
 
 use crate::{
     eval::{CompileContext, Row, State},
-    format::{Format, SqlFormat},
+    format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
 };
 
@@ -387,7 +387,7 @@ impl FormatName {
     fn create(self, escape_backslash: bool) -> Box<dyn Format> {
         match self {
             FormatName::Sql => Box::new(SqlFormat { escape_backslash }),
-            FormatName::Csv => unimplemented!(),
+            FormatName::Csv => Box::new(CsvFormat { escape_backslash }),
         }
     }
 }

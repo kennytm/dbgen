@@ -35,6 +35,66 @@ pub struct SqlFormat {
     pub escape_backslash: bool,
 }
 
+/// CSV formatter.
+#[derive(Debug)]
+pub struct CsvFormat {
+    /// Whether to escapes backslashes when writing a string.
+    pub escape_backslash: bool,
+}
+
+/// Writes a timestamp in ISO 8601 format.
+fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &DateTime<Tz>) -> Result<(), Error> {
+    write!(
+        writer,
+        "{}{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        quote,
+        timestamp.year(),
+        timestamp.month(),
+        timestamp.day(),
+        timestamp.hour(),
+        timestamp.minute(),
+        timestamp.second(),
+    )?;
+    let ns = timestamp.nanosecond();
+    if ns != 0 {
+        write!(writer, ".{:06}", ns / 1000)?;
+    }
+    writer.write_all(quote.as_bytes())
+}
+
+/// Writes a time interval in the standard SQL format.
+fn write_interval(writer: &mut dyn Write, quote: &str, mut interval: i64) -> Result<(), Error> {
+    writer.write_all(quote.as_bytes())?;
+    if interval == i64::min_value() {
+        return write!(writer, "-106751991 04:00:54.775808{}", quote);
+    } else if interval < 0 {
+        interval = -interval;
+        writer.write_all(b"-")?;
+    }
+
+    let seconds = interval / 1_000_000;
+    let microseconds = interval % 1_000_000;
+
+    let minutes = seconds / 60;
+    let seconds = seconds % 60;
+
+    let hours = minutes / 60;
+    let minutes = minutes % 60;
+
+    let days = hours / 24;
+    let hours = hours % 24;
+
+    if days > 0 {
+        write!(writer, "{} ", days)?;
+    }
+    write!(writer, "{:02}:{:02}:{:02}", hours, minutes, seconds)?;
+    if microseconds > 0 {
+        write!(writer, ".{:06}", microseconds)?;
+    }
+
+    writer.write_all(quote.as_bytes())
+}
+
 impl SqlFormat {
     fn write_bytes(&self, writer: &mut dyn Write, bytes: &Bytes) -> Result<(), Error> {
         if bytes.is_binary() {
@@ -55,25 +115,6 @@ impl SqlFormat {
         }
         writer.write_all(b"'")
     }
-
-    fn write_timestamp(&self, writer: &mut dyn Write, timestamp: &DateTime<Tz>) -> Result<(), Error> {
-        // write!(output, "'{}'", timestamp.format(TIMESTAMP_FORMAT))?;
-        write!(
-            writer,
-            "'{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-            timestamp.year(),
-            timestamp.month(),
-            timestamp.day(),
-            timestamp.hour(),
-            timestamp.minute(),
-            timestamp.second(),
-        )?;
-        let ns = timestamp.nanosecond();
-        if ns != 0 {
-            write!(writer, ".{:06}", ns / 1000)?;
-        }
-        writer.write_all(b"'")
-    }
 }
 
 impl Format for SqlFormat {
@@ -82,8 +123,8 @@ impl Format for SqlFormat {
             Value::Null => writer.write_all(b"NULL"),
             Value::Number(number) => write!(writer, "{}", number),
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
-            Value::Timestamp(timestamp, tz) => self.write_timestamp(writer, &tz.from_utc_datetime(&timestamp)),
-            Value::Interval(interval) => write!(writer, "INTERVAL {} MICROSECOND", interval),
+            Value::Timestamp(timestamp, tz) => write_timestamp(writer, "'", &tz.from_utc_datetime(timestamp)),
+            Value::Interval(interval) => write_interval(writer, "'", *interval),
             Value::__NonExhaustive => Ok(()),
         }
     }
@@ -102,5 +143,48 @@ impl Format for SqlFormat {
 
     fn write_trailer(&self, writer: &mut dyn Write) -> Result<(), Error> {
         writer.write_all(b");\n")
+    }
+}
+
+impl CsvFormat {
+    fn write_bytes(&self, writer: &mut dyn Write, bytes: &Bytes) -> Result<(), Error> {
+        writer.write_all(b"\"")?;
+        for b in bytes.as_bytes() {
+            writer.write_all(match *b {
+                b'"' => b"\"\"",
+                b'\\' if self.escape_backslash => b"\\\\",
+                _ => slice::from_ref(b),
+            })?;
+        }
+        writer.write_all(b"\"")
+    }
+}
+
+impl Format for CsvFormat {
+    fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
+        match value {
+            Value::Null => writer.write_all(br"\N"),
+            Value::Number(number) => write!(writer, "{}", number),
+            Value::Bytes(bytes) => self.write_bytes(writer, bytes),
+            Value::Timestamp(timestamp, tz) => write_timestamp(writer, "", &tz.from_utc_datetime(timestamp)),
+            Value::Interval(interval) => write_interval(writer, "", *interval),
+            Value::__NonExhaustive => Ok(()),
+        }
+    }
+
+    fn write_header(&self, _: &mut dyn Write, _: &str) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b",")
+    }
+
+    fn write_row_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b"\n")
+    }
+
+    fn write_trailer(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b"\n")
     }
 }
