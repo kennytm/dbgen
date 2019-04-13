@@ -183,10 +183,9 @@ trait PathResultExt {
     fn with_path(self, path: &Path) -> Result<Self::Ok, Error>;
 }
 
-#[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // issue rust-clippy#1993
 impl<T, E: Fail> PathResultExt for Result<T, E> {
     type Ok = T;
-    fn with_path(self, path: &Path) -> Result<Self::Ok, Error> {
+    fn with_path(self, path: &Path) -> Result<T, Error> {
         Ok(self.with_context(|_| format!("with file {}...", path.display()))?)
     }
 }
