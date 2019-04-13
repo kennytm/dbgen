@@ -5,14 +5,14 @@ File syntax
 -----------
 
 The template file should consist of one CREATE TABLE statement, with expressions telling how a value
-should be generated inside `{{ … }}` blocks:
+should be generated inside `{{ … }}` or `/*{{ … }}*/` blocks:
 
 ```sql
 CREATE TABLE "database"."schema"."table" (
     column_1    COLUMN_TYPE_1,
         {{ value_1 }}
     column_2    COLUMN_TYPE_2,
-        {{ value_2 }}
+        /*{{ value_2 }}*/
     -- ...
     column_n    COLUMN_TYPE_N,
         {{ value_n }}

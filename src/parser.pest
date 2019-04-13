@@ -1,7 +1,8 @@
 WHITESPACE = _{ " "|"\t"|"\r"|"\n"|"\x0b"|"\x0c" }
 COMMENT = _{
     "--" ~ (!NEWLINE ~ ANY)* ~ NEWLINE |
-    "/*" ~ (!"*/" ~ ANY)* ~ "*/"
+    "/*" ~ !"{{" ~ (!"*/" ~ ANY)* ~ "*/" |
+    "/*{{" ~ (!"*/" ~ !"}}*/" ~ ANY)* ~ "*/"
 }
 
 back_quoted     = @{ "`" ~ (!"`" ~ ANY | "``")* ~ "`" }
@@ -75,13 +76,13 @@ qname = {
 }
 
 column_definition = {
-    (!"{{" ~ balanced)+
+    (!"{{" ~ !"/*{{" ~ balanced)+
 }
 table_options = {
     ")" ~ ANY*
 }
 create_table_content = _{
-    "(" ~ (column_definition | "{{" ~ expr ~ "}}")* ~ table_options
+    "(" ~ (column_definition | "{{" ~ expr ~ "}}" | "/*{{" ~ expr ~ "}}*/")* ~ table_options
 }
 
 create_table = _{

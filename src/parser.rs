@@ -205,7 +205,7 @@ impl Template {
                     if content.ends_with(is_ident_char) && s.starts_with(is_ident_char) {
                         content.push(' ');
                     }
-                    content.push_str(pair.as_str());
+                    content.push_str(s);
                 }
                 Rule::expr => {
                     exprs.push(alloc.expr_from_pairs(pair.into_inner())?);
