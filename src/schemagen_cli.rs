@@ -1,78 +1,55 @@
 //! CLI driver of `dbschemagen`.
 
 use crate::parser::QName;
+use anyhow::{bail, Error};
 use data_encoding::HEXLOWER_PERMISSIVE;
-use failure::Error;
 use rand::{
-    distributions::{Distribution, LogNormal, Pareto, WeightedIndex},
-    rngs::{EntropyRng, StdRng},
+    rngs::{OsRng, StdRng},
     seq::SliceRandom,
     Rng, RngCore, SeedableRng,
 };
+use rand_distr::{weighted::WeightedIndex, Distribution, LogNormal, Pareto};
 use std::{
     collections::{BTreeSet, HashSet},
     fmt::Write,
     iter::repeat_with,
     str::FromStr,
 };
-use structopt::StructOpt;
+use structopt::{clap::AppSettings, StructOpt};
 
 /// Arguments to the `dbschemagen` CLI program.
 #[derive(StructOpt, Debug)]
-#[structopt(raw(
-    setting = "structopt::clap::AppSettings::TrailingVarArg",
-    long_version = "::FULL_VERSION"
-))]
+#[structopt(setting(AppSettings::TrailingVarArg), long_version(crate::FULL_VERSION))]
 pub struct Args {
     /// Schema name.
-    #[structopt(short = "s", long = "schema-name", help = "Schema name")]
+    #[structopt(short, long)]
     pub schema_name: String,
 
     /// Estimated total database dump size in bytes.
-    #[structopt(short = "z", long = "size", help = "Estimated total database dump size in bytes")]
+    #[structopt(short = "z", long)]
     pub size: f64,
 
     /// Number of tables to generate
-    #[structopt(short = "t", long = "tables-count", help = "Number of tables to generate")]
+    #[structopt(short, long)]
     pub tables_count: u32,
 
     /// SQL dialect.
-    #[structopt(
-        short = "d",
-        long = "dialect",
-        help = "SQL dialect",
-        raw(possible_values = r#"&["mysql", "postgresql", "sqlite"]"#)
-    )]
+    #[structopt(short, long, possible_values(&["mysql", "postgresql", "sqlite"]))]
     pub dialect: Dialect,
 
     /// Number of INSERT statements per file.
-    #[structopt(
-        short = "n",
-        long = "inserts-count",
-        help = "Number of INSERT statements per file",
-        default_value = "1000"
-    )]
+    #[structopt(short = "n", long, default_value = "1000")]
     pub inserts_count: u64,
 
     /// Number of rows per INSERT statement.
-    #[structopt(
-        short = "r",
-        long = "rows-count",
-        help = "Number of rows per INSERT statement",
-        default_value = "100"
-    )]
+    #[structopt(short, long, default_value = "100")]
     pub rows_count: u64,
 
-    /// Random number generator seed.
-    #[structopt(
-        long = "seed",
-        help = "Random number generator seed (should have 64 hex digits)",
-        parse(try_from_str = "crate::cli::seed_from_str")
-    )]
+    /// Random number generator seed (should have 64 hex digits).
+    #[structopt(long, parse(try_from_str = crate::cli::seed_from_str))]
     pub seed: Option<<StdRng as SeedableRng>::Seed>,
 
     /// Additional arguments passed to every `dbgen` invocation
-    #[structopt(help = "Additional arguments passed to every `dbgen` invocation")]
     pub args: Vec<String>,
 }
 
@@ -94,7 +71,7 @@ impl FromStr for Dialect {
             "mysql" => Dialect::MySQL,
             "postgresql" => Dialect::PostgreSQL,
             "sqlite" => Dialect::SQLite,
-            _ => failure::bail!("Unsupported SQL dialect {}", dialect),
+            _ => bail!("Unsupported SQL dialect {}", dialect),
         })
     }
 }
@@ -311,7 +288,7 @@ fn gen_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
 }
 
 struct IndexAppender<'a> {
-    index_count_distr: Pareto,
+    index_count_distr: Pareto<f64>,
     index_distr: WeightedIndex<f64>,
     columns: &'a [Column],
     index_sets: HashSet<BTreeSet<usize>>,
@@ -320,7 +297,7 @@ struct IndexAppender<'a> {
 impl<'a> IndexAppender<'a> {
     fn new(columns: &'a [Column]) -> Self {
         Self {
-            index_count_distr: Pareto::new(1.0, 1.6),
+            index_count_distr: Pareto::new(1.0, 1.6).unwrap(),
             index_distr: WeightedIndex::new(columns.iter().map(|col| col.neg_log2_prob.min(32.0))).unwrap(),
             columns,
             index_sets: HashSet::new(),
@@ -337,8 +314,7 @@ impl<'a> IndexAppender<'a> {
         is_primary_key: bool,
     ) {
         let index_count = (self.index_count_distr.sample(rng) as usize).min(12);
-        let index_set = self
-            .index_distr
+        let index_set = (&self.index_distr)
             .sample_iter(&mut rng)
             .take(index_count)
             .collect::<BTreeSet<_>>();
@@ -385,7 +361,7 @@ struct Table {
 fn gen_table(dialect: Dialect, rng: &mut dyn RngCore, target_size: f64) -> Table {
     let mut schema = String::from("CREATE TABLE _ (\n");
 
-    let columns_count = (LogNormal::new(2.354_259_469_228_055, 0.75).sample(rng) as usize).max(1);
+    let columns_count = (LogNormal::new(2.354_259_469_228_055, 0.75).unwrap().sample(rng) as usize).max(1);
     let columns = {
         let rng2 = &mut *rng;
         repeat_with(move || gen_column(dialect, rng2))
@@ -431,7 +407,7 @@ fn gen_tables<'a>(
     total_target_size: f64,
     tables_count: u32,
 ) -> impl Iterator<Item = Table> + 'a {
-    let distr = Pareto::new(1.0, 1.16);
+    let distr = Pareto::new(1.0, 1.16).unwrap();
     let relative_sizes = distr
         .sample_iter(&mut rng)
         .take(tables_count as usize)
@@ -461,7 +437,7 @@ pub fn print_script(args: &Args) {
     let schema_name = QName::parse(&args.schema_name).expect("invalid schema name");
     let quoted_schema_name = shlex::quote(&args.schema_name);
 
-    let meta_seed = args.seed.unwrap_or_else(|| EntropyRng::new().gen());
+    let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
     println!(
         "#!/bin/sh\n\
          # generated by dbschemagen v{} ({}), using seed {}\n\n\
@@ -473,6 +449,8 @@ pub fn print_script(args: &Args) {
         quoted_schema_name,
         schema_name.unique_name(),
     );
+
+    let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
 
     let rng = StdRng::from_seed(meta_seed);
     let extra_args = args.args.iter().map(|s| shlex::quote(s)).collect::<Vec<_>>().join(" ");
@@ -494,12 +472,13 @@ pub fn print_script(args: &Args) {
         };
         println!(
             "# table: s{}, rows count: {}, estimated size: {}\n\
-             dbgen -i /dev/stdin -o . -s {} -t {}.s{} -n {} -r {} -k {} \
+             dbgen{} -i - -o . -s {} -t {}.s{} -n {} -r {} -k {} \
              --last-file-inserts-count {} --last-insert-rows-count {} \
              {} <<SCHEMAEOF\n{}\nSCHEMAEOF\n",
             i,
             table.rows_count,
             to_human_size(table.target_size),
+            exe_suffix,
             HEXLOWER_PERMISSIVE.encode(&table.seed),
             quoted_schema_name,
             i,

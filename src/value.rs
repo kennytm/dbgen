@@ -11,10 +11,7 @@ use std::{
     str::{from_utf8, from_utf8_unchecked},
 };
 
-use crate::{
-    error::{Error, ErrorKind},
-    parser::Function,
-};
+use crate::{error::Error, parser::Function};
 
 /// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
@@ -197,7 +194,7 @@ macro_rules! try_or_overflow {
         if let Some(e) = $e {
             e
         } else {
-            return Err(ErrorKind::IntegerOverflow(format!($($fmt)+)).into());
+            return Err(Error::IntegerOverflow(format!($($fmt)+)));
         }
     }
 }
@@ -238,11 +235,10 @@ impl Value {
             (Value::Timestamp(a, _), Value::Timestamp(b, _)) => a.partial_cmp(b),
             (Value::Interval(a), Value::Interval(b)) => a.partial_cmp(b),
             _ => {
-                return Err(ErrorKind::InvalidArguments {
+                return Err(Error::InvalidArguments {
                     name,
                     cause: format!("cannot compare {} with {}", self, other),
-                }
-                .into());
+                });
             }
         })
     }
@@ -266,11 +262,10 @@ impl Value {
                 Value::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
             }
             _ => {
-                return Err(ErrorKind::InvalidArguments {
+                return Err(Error::InvalidArguments {
                     name: Function::Add,
                     cause: format!("cannot add {} to {}", self, other),
-                }
-                .into());
+                });
             }
         })
     }
@@ -292,11 +287,10 @@ impl Value {
                 Value::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
             }
             _ => {
-                return Err(ErrorKind::InvalidArguments {
+                return Err(Error::InvalidArguments {
                     name: Function::Sub,
                     cause: format!("cannot subtract {} from {}", self, other),
-                }
-                .into());
+                });
             }
         })
     }
@@ -310,11 +304,10 @@ impl Value {
                 Value::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
             }
             _ => {
-                return Err(ErrorKind::InvalidArguments {
+                return Err(Error::InvalidArguments {
                     name: Function::Mul,
                     cause: format!("cannot multiply {} with {}", self, other),
-                }
-                .into());
+                });
             }
         })
     }
@@ -333,11 +326,10 @@ impl Value {
                 Value::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
             }
             _ => {
-                return Err(ErrorKind::InvalidArguments {
+                return Err(Error::InvalidArguments {
                     name: Function::FloatDiv,
                     cause: format!("cannot divide {} by {}", self, other),
-                }
-                .into());
+                });
             }
         })
     }

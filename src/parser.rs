@@ -1,12 +1,9 @@
 //! Template parser.
 
-use self::derived::{Rule, TemplateParser};
-use crate::{
-    error::{Error, ErrorKind},
-    value::Value,
-};
+pub(crate) use self::derived::Rule;
+use self::derived::TemplateParser;
+use crate::{error::Error, value::Value};
 
-use failure::ResultExt;
 use pest::{iterators::Pairs, Parser};
 use std::{collections::HashMap, fmt};
 
@@ -54,7 +51,7 @@ impl QName {
 
     /// Parses a qualified name
     pub fn parse(input: &str) -> Result<Self, Error> {
-        let mut pairs = TemplateParser::parse(Rule::qname, input).context(ErrorKind::ParseTemplate)?;
+        let mut pairs = TemplateParser::parse(Rule::qname, input)?;
         Ok(Self::from_pairs(pairs.next().unwrap().into_inner()))
     }
 
@@ -186,7 +183,7 @@ fn is_ident_char(c: char) -> bool {
 impl Template {
     /// Parses a raw string into a structured template.
     pub fn parse(input: &str) -> Result<Self, Error> {
-        let pairs = TemplateParser::parse(Rule::create_table, input).context(ErrorKind::ParseTemplate)?;
+        let pairs = TemplateParser::parse(Rule::create_table, input)?;
 
         let mut name = None;
         let mut alloc = Allocator::default();
@@ -521,8 +518,7 @@ impl Allocator {
 fn parse_number(input: &str) -> Result<Value, Error> {
     match input.get(..2) {
         Some("0x") | Some("0X") => {
-            let number =
-                u64::from_str_radix(&input[2..], 16).with_context(|_| ErrorKind::IntegerOverflow(input.to_owned()))?;
+            let number = u64::from_str_radix(&input[2..], 16).map_err(|_| Error::IntegerOverflow(input.to_owned()))?;
             return Ok(number.into());
         }
         _ => {}
@@ -568,7 +564,7 @@ macro_rules! define_function {
             fn from_name(name: String) -> Result<Self, Error> {
                 Ok(match &*name {
                     $($fs => $F::$fi,)*
-                    _ => return Err(ErrorKind::UnknownFunction(name).into()),
+                    _ => return Err(Error::UnknownFunction(name)),
                 })
             }
 

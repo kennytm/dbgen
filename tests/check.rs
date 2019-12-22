@@ -1,6 +1,6 @@
+use anyhow::Error;
 use dbgen::cli::{run, Args};
 use diff::{lines, Result as DiffResult};
-use failure::Error;
 use serde_json::from_reader;
 use std::{
     fs::{read, read_dir, remove_file, File},

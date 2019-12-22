@@ -6,14 +6,14 @@ use crate::{
     parser::{QName, Template},
 };
 
+use anyhow::{bail, Context, Error};
 use chrono_tz::Tz;
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
-use failure::{Error, Fail, ResultExt};
 use flate2::write::GzEncoder;
 use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
 use rand::{
-    rngs::{EntropyRng, StdRng},
+    rngs::{OsRng, StdRng},
     Rng, RngCore, SeedableRng,
 };
 use rayon::{
@@ -22,8 +22,9 @@ use rayon::{
 };
 use serde_derive::Deserialize;
 use std::{
+    error,
     fs::{create_dir_all, read_to_string, File},
-    io::{self, BufWriter, Write},
+    io::{self, stdin, BufWriter, Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -36,134 +37,78 @@ use xz2::write::XzEncoder;
 /// Arguments to the `dbgen` CLI program.
 #[derive(StructOpt, Debug, Deserialize)]
 #[serde(default)]
-#[structopt(raw(long_version = "::FULL_VERSION"))]
+#[structopt(long_version(crate::FULL_VERSION))]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
-    #[structopt(long = "qualified", help = "Keep the qualified name when writing the SQL statements")]
+    #[structopt(long)]
     pub qualified: bool,
 
     /// Override the table name.
-    #[structopt(short = "t", long = "table-name", help = "Override the table name")]
+    #[structopt(short, long)]
     pub table_name: Option<String>,
 
     /// Output directory.
-    #[structopt(short = "o", long = "out-dir", help = "Output directory", parse(from_os_str))]
+    #[structopt(short, long, parse(from_os_str))]
     pub out_dir: PathBuf,
 
     /// Number of files to generate.
-    #[structopt(
-        short = "k",
-        long = "files-count",
-        help = "Number of files to generate",
-        default_value = "1"
-    )]
+    #[structopt(short = "k", long, default_value = "1")]
     pub files_count: u32,
 
     /// Number of INSERT statements per file.
-    #[structopt(
-        short = "n",
-        long = "inserts-count",
-        help = "Number of INSERT statements per file",
-        default_value = "1"
-    )]
+    #[structopt(short = "n", long, default_value = "1")]
     pub inserts_count: u32,
 
     /// Number of rows per INSERT statement.
-    #[structopt(
-        short = "r",
-        long = "rows-count",
-        help = "Number of rows per INSERT statement",
-        default_value = "1"
-    )]
+    #[structopt(short, long, default_value = "1")]
     pub rows_count: u32,
 
     /// Number of INSERT statements in the last file.
-    #[structopt(
-        long = "last-file-inserts-count",
-        help = "Number of INSERT statements in the last file"
-    )]
+    #[structopt(long)]
     pub last_file_inserts_count: Option<u32>,
 
     /// Number of rows of the last INSERT statement of the last file.
-    #[structopt(
-        long = "last-insert-rows-count",
-        help = "Number of rows of the last INSERT statement of the last file"
-    )]
+    #[structopt(long)]
     pub last_insert_rows_count: Option<u32>,
 
-    /// Do not escape backslashes when writing a string.
-    #[structopt(long = "escape-backslash", help = "Escape backslashes when writing a string")]
+    /// Ecape backslashes when writing a string.
+    #[structopt(long)]
     pub escape_backslash: bool,
 
     /// Generation template file.
-    #[structopt(
-        short = "i",
-        long = "template",
-        help = "Generation template file",
-        parse(from_os_str)
-    )]
+    #[structopt(short = "i", long, parse(from_os_str))]
     pub template: PathBuf,
 
-    /// Random number generator seed.
-    #[structopt(
-        short = "s",
-        long = "seed",
-        help = "Random number generator seed (should have 64 hex digits)",
-        parse(try_from_str = "seed_from_str")
-    )]
+    /// Random number generator seed (should have 64 hex digits).
+    #[structopt(short, long, parse(try_from_str = seed_from_str))]
     pub seed: Option<<StdRng as SeedableRng>::Seed>,
 
     /// Number of jobs to run in parallel, default to number of CPUs.
-    #[structopt(
-        short = "j",
-        long = "jobs",
-        help = "Number of jobs to run in parallel, default to number of CPUs",
-        default_value = "0"
-    )]
+    #[structopt(short, long, default_value = "0")]
     pub jobs: usize,
 
     /// Random number generator engine
-    #[structopt(
-        long = "rng",
-        help = "Random number generator engine",
-        raw(possible_values = r#"&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32"]"#),
-        default_value = "hc128"
-    )]
+    #[structopt(long, possible_values(&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32"]), default_value = "hc128")]
     pub rng: RngName,
 
     /// Disable progress bar.
-    #[structopt(short = "q", long = "quiet", help = "Disable progress bar")]
+    #[structopt(short, long)]
     pub quiet: bool,
 
-    /// Timezone
-    #[structopt(long = "time-zone", help = "Time zone used for timestamps", default_value = "UTC")]
+    /// Time zone used for timestamps
+    #[structopt(long, default_value = "UTC")]
     pub time_zone: Tz,
 
     /// Output format
-    #[structopt(
-        short = "f",
-        long = "format",
-        help = "Output format",
-        raw(possible_values = r#"&["sql", "csv"]"#),
-        default_value = "sql"
-    )]
+    #[structopt(short, long, possible_values(&["sql", "csv"]), default_value = "sql")]
     pub format: FormatName,
 
-    /// Output compression
-    #[structopt(
-        short = "c",
-        long = "compress",
-        help = "Compress data output",
-        raw(possible_values = r#"&["gzip", "gz", "xz", "zstd", "zst"]"#)
-    )]
+    /// Compress data output
+    #[structopt(short, long, possible_values(&["gzip", "gz", "xz", "zstd", "zst"]))]
     pub compression: Option<CompressionName>,
 
-    /// Output compression level
-    #[structopt(
-        long = "compress-level",
-        help = "Compression level (0-9 for gzip and xz, 1-21 for zstd)",
-        default_value = "6"
-    )]
+    /// Compression level (0-9 for gzip and xz, 1-21 for zstd)
+    #[structopt(long, default_value = "6")]
     pub compress_level: u8,
 }
 
@@ -215,10 +160,10 @@ trait PathResultExt {
     fn with_path(self, path: &Path) -> Result<Self::Ok, Error>;
 }
 
-impl<T, E: Fail> PathResultExt for Result<T, E> {
+impl<T, E: error::Error + Send + Sync + 'static> PathResultExt for Result<T, E> {
     type Ok = T;
     fn with_path(self, path: &Path) -> Result<T, Error> {
-        Ok(self.with_context(|_| format!("with file {}...", path.display()))?)
+        self.with_context(|| format!("with file {}...", path.display()))
     }
 }
 
@@ -231,7 +176,13 @@ static WRITTEN_SIZE: AtomicUsize = AtomicUsize::new(0);
 
 /// Runs the CLI program.
 pub fn run(args: Args) -> Result<(), Error> {
-    let input = read_to_string(&args.template).context("failed to read template")?;
+    let input = if args.template != Path::new("-") {
+        read_to_string(&args.template)
+    } else {
+        let mut buf = String::new();
+        stdin().read_to_string(&mut buf).map(move |_| buf)
+    }
+    .context("failed to read template")?;
     let template = Template::parse(&input)?;
 
     let pool = ThreadPoolBuilder::new()
@@ -269,7 +220,7 @@ pub fn run(args: Args) -> Result<(), Error> {
 
     env.write_schema(&template.content)?;
 
-    let meta_seed = args.seed.unwrap_or_else(|| EntropyRng::new().gen());
+    let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
     let show_progress = !args.quiet;
     if show_progress {
         println!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&meta_seed));
@@ -358,7 +309,7 @@ impl FromStr for RngName {
             "isaac64" => RngName::Isaac64,
             "xorshift" => RngName::XorShift,
             "pcg32" => RngName::Pcg32,
-            _ => failure::bail!("Unsupported RNG {}", name),
+            _ => bail!("Unsupported RNG {}", name),
         })
     }
 }
@@ -392,7 +343,7 @@ impl FromStr for FormatName {
         Ok(match name {
             "sql" => FormatName::Sql,
             "csv" => FormatName::Csv,
-            _ => failure::bail!("Unsupported format {}", name),
+            _ => bail!("Unsupported output format {}", name),
         })
     }
 }
@@ -433,7 +384,7 @@ impl FromStr for CompressionName {
             "gzip" | "gz" => CompressionName::Gzip,
             "xz" => CompressionName::Xz,
             "zstd" | "zst" => CompressionName::Zstd,
-            _ => failure::bail!("Unsupported format {}", name),
+            _ => bail!("Unsupported compression format {}", name),
         })
     }
 }

@@ -1,17 +1,17 @@
 //! Evaluating compiled expressions into values.
 
 use crate::{
-    error::{Error, ErrorKind},
+    error::Error,
     parser::{Expr, Function},
     value::{Number, TryFromValue, Value, TIMESTAMP_FORMAT},
 };
 use chrono::{NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
-use failure::ResultExt;
 use rand::{
-    distributions::{self, Uniform},
+    distributions::{Bernoulli, BernoulliError},
     Rng, RngCore,
 };
+use rand_distr::{LogNormal, NormalError, Uniform};
 use std::{borrow::Cow, cmp::Ordering, fmt};
 use zipf::ZipfDistribution;
 
@@ -125,9 +125,9 @@ enum C {
     /// Zipfian distribution.
     RandZipf(ZipfDistribution),
     /// Log-normal distribution.
-    RandLogNormal(distributions::LogNormal),
+    RandLogNormal(LogNormal<f64>),
     /// Bernoulli distribution for `bool` (i.e. a weighted random boolean).
-    RandBool(distributions::Bernoulli),
+    RandBool(Bernoulli),
     /// Random f32 with uniform bit pattern
     RandFiniteF32(Uniform<u32>),
     /// Random f64 with uniform bit pattern
@@ -153,7 +153,7 @@ impl AsValue for Compiled {
 }
 
 /// Extracts a single argument in a specific type.
-fn arg<'a, T, E>(name: Function, args: &'a [E], index: usize, default: Option<T>) -> Result<T, ErrorKind>
+fn arg<'a, T, E>(name: Function, args: &'a [E], index: usize, default: Option<T>) -> Result<T, Error>
 where
     T: TryFromValue<'a>,
     E: AsValue,
@@ -161,14 +161,14 @@ where
     if let Some(arg) = args.get(index) {
         arg.as_value()
             .and_then(T::try_from_value)
-            .ok_or(ErrorKind::InvalidArgumentType {
+            .ok_or(Error::InvalidArgumentType {
                 name,
                 index,
                 expected: T::NAME,
             })
     } else {
-        #[cfg_attr(feature = "cargo-clippy", allow(clippy::or_fun_call))] // false positive, this is cheap
-        default.ok_or(ErrorKind::NotEnoughArguments(name))
+        #[allow(clippy::or_fun_call)] // false positive, this is cheap
+        default.ok_or(Error::NotEnoughArguments(name))
     }
 }
 
@@ -179,14 +179,13 @@ where
     E: AsValue,
 {
     args.iter().enumerate().map(move |(index, arg)| {
-        arg.as_value().and_then(T::try_from_value).ok_or_else(|| {
-            ErrorKind::InvalidArgumentType {
+        arg.as_value()
+            .and_then(T::try_from_value)
+            .ok_or(Error::InvalidArgumentType {
                 name,
                 index,
                 expected: T::NAME,
-            }
-            .into()
-        })
+            })
     })
 }
 
@@ -205,8 +204,8 @@ impl CompileContext {
                     .collect::<Result<Vec<_>, _>>()?;
                 match compile_function(self, name, &args) {
                     Ok(c) => c.0,
-                    Err(e) => match e.kind() {
-                        ErrorKind::InvalidArgumentType { .. } => C::RawFunction { name, args },
+                    Err(e) => match e {
+                        Error::InvalidArgumentType { .. } => C::RawFunction { name, args },
                         _ => return Err(e),
                     },
                 }
@@ -316,13 +315,10 @@ impl AsValue for Value {
 /// Compiles a function with some value-like objects as input.
 pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
     macro_rules! require {
-        (@false, $($fmt:tt)+) => {
-            return Err(ErrorKind::InvalidArguments { name, cause: format!($($fmt)+) }.into());
-        };
         ($e:expr, $($fmt:tt)+) => {
-            #[cfg_attr(feature = "cargo-clippy", allow(clippy::neg_cmp_op_on_partial_ord))] {
+            #[allow(clippy::neg_cmp_op_on_partial_ord)] {
                 if !$e {
-                    require!(@false, $($fmt)+);
+                    return Err(Error::InvalidArguments { name, cause: format!($($fmt)+) });
                 }
             }
         };
@@ -346,7 +342,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             } else if let (Some(a), Some(b)) = (lower.to::<i64>(), upper.to::<i64>()) {
                 Ok(Compiled(C::RandUniformI64(Uniform::new(a, b))))
             } else {
-                Err(ErrorKind::IntegerOverflow(format!("rand.range({}, {})", lower, upper)).into())
+                Err(Error::IntegerOverflow(format!("rand.range({}, {})", lower, upper)))
             }
         }
 
@@ -359,7 +355,10 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             } else if let (Some(a), Some(b)) = (lower.to::<i64>(), upper.to::<i64>()) {
                 Ok(Compiled(C::RandUniformI64(Uniform::new_inclusive(a, b))))
             } else {
-                Err(ErrorKind::IntegerOverflow(format!("rand.range_inclusive({}, {})", lower, upper)).into())
+                Err(Error::IntegerOverflow(format!(
+                    "rand.range_inclusive({}, {})",
+                    lower, upper
+                )))
             }
         }
 
@@ -388,13 +387,22 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         Function::RandLogNormal => {
             let mean = arg(name, args, 0, None)?;
             let std_dev = arg::<f64, _>(name, args, 1, None)?.abs();
-            Ok(Compiled(C::RandLogNormal(distributions::LogNormal::new(mean, std_dev))))
+            Ok(Compiled(C::RandLogNormal(LogNormal::new(mean, std_dev).map_err(
+                |NormalError::StdDevTooSmall| Error::InvalidArguments {
+                    name,
+                    cause: format!("{} (std_dev) >= 0", std_dev),
+                },
+            )?)))
         }
 
         Function::RandBool => {
             let p = arg(name, args, 0, None)?;
-            require!(0.0 <= p && p <= 1.0, "{} between 0 and 1", p);
-            Ok(Compiled(C::RandBool(distributions::Bernoulli::new(p))))
+            Ok(Compiled(C::RandBool(Bernoulli::new(p).map_err(
+                |BernoulliError::InvalidProbability| Error::InvalidArguments {
+                    name,
+                    cause: format!("0 <= {} (p) <= 1", p),
+                },
+            )?)))
         }
 
         Function::RandFiniteF32 => Ok(Compiled(C::RandFiniteF32(Uniform::new(0, 0xff00_0000)))),
@@ -486,7 +494,10 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             let tz = ctx.time_zone;
             let timestamp = tz
                 .datetime_from_str(input, TIMESTAMP_FORMAT)
-                .with_context(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?
+                .map_err(|source| Error::InvalidTimestampString {
+                    timestamp: input.to_owned(),
+                    source,
+                })?
                 .naive_utc();
             Ok(Compiled(C::Constant(Value::Timestamp(timestamp, tz))))
         }
@@ -498,14 +509,17 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
                 Some(i) => {
                     let tz = input[i..]
                         .parse::<Tz>()
-                        .map_err(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?;
+                        .map_err(|cause| Error::InvalidArguments { name, cause })?;
                     input = input[..i].trim_end();
                     tz
                 }
             };
             let timestamp = tz
                 .datetime_from_str(input, TIMESTAMP_FORMAT)
-                .with_context(|_| ErrorKind::InvalidTimestampString(input.to_owned()))?
+                .map_err(|source| Error::InvalidTimestampString {
+                    timestamp: input.to_owned(),
+                    source,
+                })?
                 .naive_utc();
             Ok(Compiled(C::Constant(Value::Timestamp(timestamp, tz))))
         }
@@ -549,15 +563,17 @@ fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<
             'm' => parser.multi_line(true),
             's' => parser.dot_matches_new_line(true),
             'U' => parser.swap_greed(true),
-            _ => return Err(ErrorKind::UnknownRegexFlag(flag).into()),
+            _ => return Err(Error::UnknownRegexFlag(flag)),
         };
     }
 
-    let hir = parser
-        .build()
-        .parse(regex)
-        .with_context(|_| ErrorKind::InvalidRegex(regex.to_owned()))?;
-    let gen =
-        rand_regex::Regex::with_hir(hir, max_repeat).with_context(|_| ErrorKind::InvalidRegex(regex.to_owned()))?;
+    let hir = parser.build().parse(regex).map_err(|source| Error::InvalidRegex {
+        pattern: regex.to_owned(),
+        source: source.into(),
+    })?;
+    let gen = rand_regex::Regex::with_hir(hir, max_repeat).map_err(|source| Error::InvalidRegex {
+        pattern: regex.to_owned(),
+        source,
+    })?;
     Ok(gen)
 }
