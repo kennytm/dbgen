@@ -125,7 +125,6 @@ impl Format for SqlFormat {
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
             Value::Timestamp(timestamp, tz) => write_timestamp(writer, "'", &tz.from_utc_datetime(timestamp)),
             Value::Interval(interval) => write_interval(writer, "'", *interval),
-            _ => unreachable!(),
         }
     }
 
@@ -168,7 +167,6 @@ impl Format for CsvFormat {
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
             Value::Timestamp(timestamp, tz) => write_timestamp(writer, "", &tz.from_utc_datetime(timestamp)),
             Value::Interval(interval) => write_interval(writer, "", *interval),
-            _ => unreachable!(),
         }
     }
 

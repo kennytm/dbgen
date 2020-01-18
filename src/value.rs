@@ -359,7 +359,6 @@ impl Value {
                 Value::Interval(interval) => {
                     write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval).unwrap();
                 }
-                _ => unreachable!(),
             }
         }
 
