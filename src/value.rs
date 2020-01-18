@@ -173,6 +173,7 @@ impl Bytes {
 
 /// A scalar value.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     /// Null.
     Null,
@@ -184,9 +185,6 @@ pub enum Value {
     Timestamp(NaiveDateTime, Tz),
     /// A time interval, as multiple of microseconds.
     Interval(i64),
-
-    #[doc(hidden)]
-    __NonExhaustive,
 }
 
 macro_rules! try_or_overflow {
@@ -367,7 +365,7 @@ impl Value {
                 Value::Interval(interval) => {
                     write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval).unwrap();
                 }
-                Value::__NonExhaustive => {}
+                _ => unreachable!(),
             }
         }
 
