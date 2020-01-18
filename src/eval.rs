@@ -12,7 +12,7 @@ use rand::{
     Rng, RngCore,
 };
 use rand_distr::{LogNormal, NormalError, Uniform};
-use std::{borrow::Cow, cmp::Ordering, fmt};
+use std::{borrow::Cow, cmp::Ordering, convert::TryInto, fmt, usize};
 use zipf::ZipfDistribution;
 
 /// Environment information shared by all compilations
@@ -164,7 +164,7 @@ where
             .ok_or(Error::InvalidArgumentType {
                 name,
                 index,
-                expected: T::NAME,
+                expected: T::name(),
             })
     } else {
         #[allow(clippy::or_fun_call)] // false positive, this is cheap
@@ -184,9 +184,22 @@ where
             .ok_or(Error::InvalidArgumentType {
                 name,
                 index,
-                expected: T::NAME,
+                expected: T::name(),
             })
     })
+}
+
+/// Extracts the arguments for the SQL SUBSTRING function.
+fn args_substring<E: AsValue>(name: Function, args: &[E], max: usize) -> Result<(usize, usize), Error> {
+    let start = arg::<i64, _>(name, args, 1, None)? - 1;
+    let length = arg::<Option<i64>, _>(name, args, 2, Some(None))?;
+    if let Some(length) = length {
+        let end = (start + length).try_into().unwrap_or(0);
+        let start = start.try_into().unwrap_or(0);
+        Ok((start.min(max), end.max(start).min(max)))
+    } else {
+        Ok((start.try_into().unwrap_or(0).min(max), max))
+    }
 }
 
 impl CompileContext {
@@ -447,7 +460,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             let identity_value = name == Function::And;
             let mut result = Some(identity_value);
 
-            for arg in iter_args(name, args) {
+            for arg in iter_args::<Option<bool>, _>(name, args) {
                 if let Some(v) = arg? {
                     if v == identity_value {
                         continue;
@@ -547,6 +560,20 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             let scale = 10.0_f64.powi(digits);
             let result = (value * scale).round() / scale;
             Ok(Compiled(C::Constant(result.into())))
+        }
+
+        Function::SubstringChars => {
+            let input = arg::<&str, _>(name, args, 0, None)?;
+            let (start, end) = args_substring(name, args, usize::MAX)?;
+            Ok(Compiled(C::Constant(
+                input.chars().take(end).skip(start).collect::<String>().into(),
+            )))
+        }
+
+        Function::SubstringBytes => {
+            let input = arg::<&[u8], _>(name, args, 0, None)?;
+            let (start, end) = args_substring(name, args, input.len())?;
+            Ok(Compiled(C::Constant(input[start..end].to_vec().into())))
         }
     }
 }

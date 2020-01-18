@@ -372,7 +372,7 @@ impl Value {
 /// Types which can be extracted out of a [`Value`].
 pub trait TryFromValue<'s>: Sized {
     /// The name of the type, used when an error happens.
-    const NAME: &'static str;
+    fn name() -> String;
     /// Converts a [`Value`] into the required type.
     fn try_from_value(value: &'s Value) -> Option<Self>;
 }
@@ -380,7 +380,9 @@ pub trait TryFromValue<'s>: Sized {
 macro_rules! impl_try_from_value {
     ($T:ty, $name:expr) => {
         impl<'s> TryFromValue<'s> for $T {
-            const NAME: &'static str = $name;
+            fn name() -> String {
+                $name.to_owned()
+            }
 
             fn try_from_value(value: &'s Value) -> Option<Self> {
                 Number::try_from_value(value)?.to::<Self>()
@@ -403,7 +405,9 @@ impl_try_from_value!(f32, "floating point number");
 impl_try_from_value!(f64, "floating point number");
 
 impl<'s> TryFromValue<'s> for Number {
-    const NAME: &'static str = "number";
+    fn name() -> String {
+        "number".to_owned()
+    }
 
     fn try_from_value(value: &'s Value) -> Option<Self> {
         match value {
@@ -414,7 +418,9 @@ impl<'s> TryFromValue<'s> for Number {
 }
 
 impl<'s> TryFromValue<'s> for &'s str {
-    const NAME: &'static str = "string";
+    fn name() -> String {
+        "string".to_owned()
+    }
 
     fn try_from_value(value: &'s Value) -> Option<Self> {
         match value {
@@ -427,8 +433,23 @@ impl<'s> TryFromValue<'s> for &'s str {
     }
 }
 
+impl<'s> TryFromValue<'s> for &'s [u8] {
+    fn name() -> String {
+        "byte".to_owned()
+    }
+
+    fn try_from_value(value: &'s Value) -> Option<Self> {
+        match value {
+            Value::Bytes(Bytes { bytes, .. }) => Some(bytes),
+            _ => None,
+        }
+    }
+}
+
 impl<'s> TryFromValue<'s> for &'s Value {
-    const NAME: &'static str = "value";
+    fn name() -> String {
+        "value".to_owned()
+    }
 
     fn try_from_value(value: &'s Value) -> Option<Self> {
         Some(value)
@@ -437,13 +458,29 @@ impl<'s> TryFromValue<'s> for &'s Value {
 
 #[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
 impl<'s> TryFromValue<'s> for Option<bool> {
-    const NAME: &'static str = "nullable boolean";
+    fn name() -> String {
+        "nullable boolean".to_owned()
+    }
 
     fn try_from_value(value: &'s Value) -> Option<Self> {
         match value {
             Value::Null => Some(None),
             Value::Number(n) => Some(n.to_sql_bool()),
             _ => None,
+        }
+    }
+}
+
+#[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
+impl<'s, T: TryFromValue<'s>> TryFromValue<'s> for Option<T> {
+    fn name() -> String {
+        format!("nullable {}", T::name())
+    }
+
+    fn try_from_value(value: &'s Value) -> Option<Self> {
+        match value {
+            Value::Null => Some(None),
+            _ => T::try_from_value(value).map(Some),
         }
     }
 }

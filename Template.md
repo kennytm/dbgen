@@ -281,3 +281,13 @@ From highest to lowest precedence:
     powers of 10, e.g. `round(456.789, -2) = 500.0`. In case of break-even (e.g. `round(3.5)`), this
     function will round half away from zero.
 
+* **substring('input' FROM 2 FOR 3 USING OCTETS)**
+
+    Extracts a substring from byte 2 with length of 3 bytes. Following SQL standard, the byte
+    position is 1-based, so this function call returns `'npu'`.
+
+* **substring('ⓘⓝⓟⓤⓣ' FROM 2 FOR 3 USING CHARACTERS)**
+
+    Extracts a substring from character 2 with length of 3 characters. "Character" means a Unicode
+    codepoint here. Following SQL standard, the character position is 1-based, so this function call
+    returns `'ⓝⓟⓤ'`.

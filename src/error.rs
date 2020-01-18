@@ -62,7 +62,7 @@ pub enum Error {
         /// Argument index.
         index: usize,
         /// The expected type.
-        expected: &'static str,
+        expected: String,
     },
 
     /// Invalid arguments.
