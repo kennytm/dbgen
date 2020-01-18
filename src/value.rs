@@ -60,26 +60,23 @@ impl Number {
 
 macro_rules! impl_from_int_for_number {
     ($($ty:ty),*) => {
-        $(#[allow(clippy::use_self, /*reason = "FIXME: Rust issue #57523"*/)]
-        impl From<$ty> for Number {
+        $(impl From<$ty> for Number {
             fn from(value: $ty) -> Self {
-                Number(N::Int(value.into()))
+                Self(N::Int(value.into()))
             }
         })*
     }
 }
 impl_from_int_for_number!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
 
-#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl From<f32> for Number {
     fn from(value: f32) -> Self {
-        Number(N::Float(value.into()))
+        Self(N::Float(value.into()))
     }
 }
-#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl From<f64> for Number {
     fn from(value: f64) -> Self {
-        Number(N::Float(value))
+        Self(N::Float(value))
     }
 }
 impl From<N> for f64 {
@@ -92,11 +89,10 @@ impl From<N> for f64 {
     }
 }
 
-#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl ops::Neg for Number {
     type Output = Self;
     fn neg(self) -> Self {
-        Number(match self.0 {
+        Self(match self.0 {
             N::Int(i) => N::Int(i.wrapping_neg()),
             N::Float(f) => N::Float(-f),
         })
@@ -105,16 +101,15 @@ impl ops::Neg for Number {
 
 macro_rules! impl_number_bin_op {
     ($trait:ident, $fname:ident, $checked:ident) => {
-        #[allow(clippy::use_self, /*reason = "FIXME: Rust issue #57523"*/)]
         impl ops::$trait for Number {
             type Output = Self;
             fn $fname(self, other: Self) -> Self {
                 if let (N::Int(a), N::Int(b)) = (self.0, other.0) {
                     if let Some(c) = a.$checked(b) {
-                        return Number(N::Int(c));
+                        return Self(N::Int(c));
                     }
                 }
-                Number(N::Float(f64::from(self.0).$fname(f64::from(other.0))))
+                Self(N::Float(f64::from(self.0).$fname(f64::from(other.0))))
             }
         }
     };
@@ -124,11 +119,10 @@ impl_number_bin_op!(Add, add, checked_add);
 impl_number_bin_op!(Sub, sub, checked_sub);
 impl_number_bin_op!(Mul, mul, checked_mul);
 
-#[allow(clippy::use_self, /*reason = "FIXME: Wait until 1.32 is stable"*/)]
 impl ops::Div for Number {
     type Output = Self;
     fn div(self, other: Self) -> Self {
-        Number(N::Float(f64::from(self.0) / f64::from(other.0)))
+        Self(N::Float(f64::from(self.0) / f64::from(other.0)))
     }
 }
 
