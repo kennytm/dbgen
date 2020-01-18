@@ -71,7 +71,7 @@ pub struct Args {
     #[structopt(long)]
     pub last_insert_rows_count: Option<u32>,
 
-    /// Ecape backslashes when writing a string.
+    /// Escape backslashes when writing a string.
     #[structopt(long)]
     pub escape_backslash: bool,
 
