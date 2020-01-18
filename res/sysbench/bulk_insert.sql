@@ -1,7 +1,7 @@
 CREATE TABLE sbtest1 (
     id INTEGER NOT NULL,
-        {{ rownum }}
+        /*{{ rownum }}*/
     k  INTEGER DEFAULT '0' NOT NULL,
-        {{ rownum }}
+        /*{{ rownum }}*/
     PRIMARY KEY (id)
 );
