@@ -110,6 +110,10 @@ pub struct Args {
     /// Compression level (0-9 for gzip and xz, 1-21 for zstd)
     #[structopt(long, default_value = "6")]
     pub compress_level: u8,
+
+    /// Do not generate schema files (the CREATE TABLE *.sql files)
+    #[structopt(long)]
+    pub no_schemas: bool,
 }
 
 /// The default implementation of the argument suitable for *testing*.
@@ -134,6 +138,7 @@ impl Default for Args {
             format: FormatName::Sql,
             compression: None,
             compress_level: 6,
+            no_schemas: false,
         }
     }
 }
@@ -218,7 +223,9 @@ pub fn run(args: Args) -> Result<(), Error> {
         compression: args.compression.map(|c| (c, compress_level)),
     };
 
-    env.write_schema(&template.content)?;
+    if !args.no_schemas {
+        env.write_schema(&template.content)?;
+    }
 
     let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
     let show_progress = !args.quiet;

@@ -129,6 +129,10 @@ More options
     70% of uncompressed input). We do not recommend using the algorithm "xz" here, nor using very
     high compression levels.
 
+* `--no-schemas`
+
+    Do not generate any `CREATE TABLE` SQL files.
+
 [ChaCha20]: https://cr.yp.to/chacha.html
 [HC-128]: https://www.ntu.edu.sg/home/wuhj/research/hc/index.html
 [ISAAC]: http://www.burtleburtle.net/bob/rand/isaacafa.html
