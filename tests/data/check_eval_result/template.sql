@@ -107,4 +107,11 @@ CREATE TABLE result (
     {{ interval 1234567890 microsecond }}
     {{ interval -1234567890 microsecond }}
     {{ interval 1234567890 second }}
+
+    {{ true and true and false }}
+    {{ false or false or true }}
+    {{ 5 + 6 + 7 }}
+    {{ 5 * 6 * 7 }}
+    {{ 5 - 6 - 7 }}
+    {{ 7 / 4 / 2 }}
 );

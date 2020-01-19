@@ -659,3 +659,21 @@ define_function! {
         SubstringBytes = "substring using octets",
     }
 }
+
+#[test]
+fn test_parse_template_error() {
+    let test_cases = [
+        "create table a ({{ 4 = 4 = 4 }});",
+        "create table a ({{ 4 is 4 is 4 }});",
+        "create table a ({{ 4 <> 4 <> 4 }});",
+        "create table a ({{ 4 is not 4 is not 4 }});",
+        "create table a ({{ 4 < 4 < 4 }});",
+        "create table a ({{ 4 <= 4 <= 4 }});",
+        "create table a ({{ 4 > 4 > 4 }});",
+        "create table a ({{ 4 >= 4 >= 4 }});",
+    ];
+    for tc in &test_cases {
+        let res = Template::parse(tc);
+        assert!(res.is_err(), "unexpected for case {}:\n{:#?}", tc, res);
+    }
+}
