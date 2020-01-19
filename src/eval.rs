@@ -12,7 +12,12 @@ use rand::{
     Rng, RngCore,
 };
 use rand_distr::{LogNormal, NormalError, Uniform};
-use std::{borrow::Cow, cmp::Ordering, convert::TryInto, fmt, usize};
+use std::{
+    borrow::Cow,
+    cmp::Ordering,
+    convert::{TryFrom, TryInto},
+    fmt, usize,
+};
 use zipf::ZipfDistribution;
 
 /// Environment information shared by all compilations
@@ -140,58 +145,51 @@ enum C {
 #[derive(Clone, Debug)]
 pub struct Compiled(C);
 
-impl AsValue for Compiled {
-    fn as_value(&self) -> Option<&Value> {
-        match &self.0 {
-            C::Constant(value) => Some(value),
-            _ => None,
+impl TryFrom<Compiled> for Value {
+    type Error = ();
+
+    fn try_from(compiled: Compiled) -> Result<Self, Self::Error> {
+        match compiled.0 {
+            C::Constant(value) => Ok(value),
+            _ => Err(()),
         }
-    }
-    fn to_compiled(&self) -> Compiled {
-        self.clone()
     }
 }
 
 /// Extracts a single argument in a specific type.
-fn arg<'a, T, E>(name: Function, args: &'a [E], index: usize, default: Option<T>) -> Result<T, Error>
+fn arg<'a, T>(name: Function, args: &'a [Value], index: usize, default: Option<T>) -> Result<T, Error>
 where
     T: TryFromValue<'a>,
-    E: AsValue,
 {
     if let Some(arg) = args.get(index) {
-        arg.as_value()
-            .and_then(T::try_from_value)
-            .ok_or(Error::InvalidArgumentType {
-                name,
-                index,
-                expected: T::name(),
-            })
+        T::try_from_value(arg).ok_or(Error::InvalidArgumentType {
+            name,
+            index,
+            expected: T::name(),
+        })
     } else {
         default.ok_or(Error::NotEnoughArguments(name))
     }
 }
 
 /// Converts a slice of arguments all into a specific type.
-fn iter_args<'a, T, E>(name: Function, args: &'a [E]) -> impl Iterator<Item = Result<T, Error>> + 'a
+fn iter_args<'a, T>(name: Function, args: &'a [Value]) -> impl Iterator<Item = Result<T, Error>> + 'a
 where
     T: TryFromValue<'a>,
-    E: AsValue,
 {
     args.iter().enumerate().map(move |(index, arg)| {
-        arg.as_value()
-            .and_then(T::try_from_value)
-            .ok_or(Error::InvalidArgumentType {
-                name,
-                index,
-                expected: T::name(),
-            })
+        T::try_from_value(arg).ok_or(Error::InvalidArgumentType {
+            name,
+            index,
+            expected: T::name(),
+        })
     })
 }
 
 /// Extracts the arguments for the SQL SUBSTRING function.
-fn args_substring<E: AsValue>(name: Function, args: &[E], max: usize) -> Result<(usize, usize), Error> {
-    let start = arg::<i64, _>(name, args, 1, None)? - 1;
-    let length = arg::<Option<i64>, _>(name, args, 2, Some(None))?;
+fn args_substring(name: Function, args: &[Value], max: usize) -> Result<(usize, usize), Error> {
+    let start = arg::<i64>(name, args, 1, None)? - 1;
+    let length = arg::<Option<i64>>(name, args, 2, Some(None))?;
     if let Some(length) = length {
         let end = (start + length).try_into().unwrap_or(0);
         let start = start.try_into().unwrap_or(0);
@@ -214,12 +212,11 @@ impl CompileContext {
                     .into_iter()
                     .map(|e| self.compile(e))
                     .collect::<Result<Vec<_>, _>>()?;
-                match compile_function(self, name, &args) {
-                    Ok(c) => c.0,
-                    Err(e) => match e {
-                        Error::InvalidArgumentType { .. } => C::RawFunction { name, args },
-                        _ => return Err(e),
-                    },
+                if args.iter().all(|c| c.is_constant()) {
+                    let args = args.into_iter().map(|c| c.try_into().unwrap()).collect::<Vec<Value>>();
+                    compile_function(self, name, &args)?.0
+                } else {
+                    C::RawFunction { name, args }
                 }
             }
             Expr::CaseValueWhen {
@@ -248,6 +245,13 @@ impl CompileContext {
 }
 
 impl Compiled {
+    pub fn is_constant(&self) -> bool {
+        match self.0 {
+            C::Constant(_) => true,
+            _ => false,
+        }
+    }
+
     /// Evaluates a compiled expression and updates the state. Returns the evaluated value.
     pub fn eval(&self, state: &mut State) -> Result<Value, Error> {
         Ok(match &self.0 {
@@ -305,27 +309,8 @@ impl Compiled {
     }
 }
 
-/// Types which can be treated like a [`Value`].
-pub trait AsValue {
-    /// Borrows a [`Value`] out of this instance. Returns `None` if this instance does not contain
-    /// any `Value`s.
-    fn as_value(&self) -> Option<&Value>;
-
-    /// Converts this instance into an owned compiled expression.
-    fn to_compiled(&self) -> Compiled;
-}
-
-impl AsValue for Value {
-    fn as_value(&self) -> Option<&Value> {
-        Some(self)
-    }
-    fn to_compiled(&self) -> Compiled {
-        Compiled(C::Constant(self.clone()))
-    }
-}
-
 /// Compiles a function with some value-like objects as input.
-pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsValue]) -> Result<Compiled, Error> {
+pub fn compile_function(ctx: &CompileContext, name: Function, args: &[Value]) -> Result<Compiled, Error> {
     macro_rules! require {
         ($e:expr, $($fmt:tt)+) => {
             #[allow(clippy::neg_cmp_op_on_partial_ord)] {
@@ -346,8 +331,8 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::RandRange => {
-            let lower = arg::<Number, _>(name, args, 0, None)?;
-            let upper = arg::<Number, _>(name, args, 1, None)?;
+            let lower = arg::<Number>(name, args, 0, None)?;
+            let upper = arg::<Number>(name, args, 1, None)?;
             require!(lower < upper, "{} < {}", lower, upper);
             if let (Some(a), Some(b)) = (lower.to::<u64>(), upper.to::<u64>()) {
                 Ok(Compiled(C::RandUniformU64(Uniform::new(a, b))))
@@ -359,8 +344,8 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::RandRangeInclusive => {
-            let lower = arg::<Number, _>(name, args, 0, None)?;
-            let upper = arg::<Number, _>(name, args, 1, None)?;
+            let lower = arg::<Number>(name, args, 0, None)?;
+            let upper = arg::<Number>(name, args, 1, None)?;
             require!(lower <= upper, "{} <= {}", lower, upper);
             if let (Some(a), Some(b)) = (lower.to::<u64>(), upper.to::<u64>()) {
                 Ok(Compiled(C::RandUniformU64(Uniform::new_inclusive(a, b))))
@@ -375,15 +360,15 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::RandUniform => {
-            let lower = arg::<f64, _>(name, args, 0, None)?;
-            let upper = arg::<f64, _>(name, args, 1, None)?;
+            let lower = arg::<f64>(name, args, 0, None)?;
+            let upper = arg::<f64>(name, args, 1, None)?;
             require!(lower < upper, "{} < {}", lower, upper);
             Ok(Compiled(C::RandUniformF64(Uniform::new(lower, upper))))
         }
 
         Function::RandUniformInclusive => {
-            let lower = arg::<f64, _>(name, args, 0, None)?;
-            let upper = arg::<f64, _>(name, args, 1, None)?;
+            let lower = arg::<f64>(name, args, 0, None)?;
+            let upper = arg::<f64>(name, args, 1, None)?;
             require!(lower <= upper, "{} <= {}", lower, upper);
             Ok(Compiled(C::RandUniformF64(Uniform::new_inclusive(lower, upper))))
         }
@@ -398,7 +383,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
 
         Function::RandLogNormal => {
             let mean = arg(name, args, 0, None)?;
-            let std_dev = arg::<f64, _>(name, args, 1, None)?.abs();
+            let std_dev = arg::<f64>(name, args, 1, None)?.abs();
             Ok(Compiled(C::RandLogNormal(LogNormal::new(mean, std_dev).map_err(
                 |NormalError::StdDevTooSmall| Error::InvalidArguments {
                     name,
@@ -424,13 +409,13 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         Function::RandU31Timestamp => Ok(Compiled(C::RandU31Timestamp(Uniform::new(1, 0x8000_0000)))),
 
         Function::Neg => {
-            let inner = arg::<Number, _>(name, args, 0, None)?;
+            let inner = arg::<Number>(name, args, 0, None)?;
             Ok(Compiled(C::Constant((-inner).into())))
         }
 
         Function::Eq | Function::Ne | Function::Lt | Function::Le | Function::Gt | Function::Ge => {
-            let lhs = arg::<&Value, _>(name, args, 0, None)?;
-            let rhs = arg::<&Value, _>(name, args, 1, None)?;
+            let lhs = arg::<&Value>(name, args, 0, None)?;
+            let rhs = arg::<&Value>(name, args, 1, None)?;
             let answer = match lhs.sql_cmp(rhs, name)? {
                 None => Value::Null,
                 Some(Ordering::Less) => (name == Function::Ne || name == Function::Lt || name == Function::Le).into(),
@@ -443,15 +428,15 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::Is | Function::IsNot => {
-            let lhs = arg::<&Value, _>(name, args, 0, None)?;
-            let rhs = arg::<&Value, _>(name, args, 1, None)?;
+            let lhs = arg::<&Value>(name, args, 0, None)?;
+            let rhs = arg::<&Value>(name, args, 1, None)?;
             let is_eq = lhs == rhs;
             let should_eq = name == Function::Is;
             Ok(Compiled(C::Constant((is_eq == should_eq).into())))
         }
 
         Function::Not => {
-            let inner = arg::<Option<bool>, _>(name, args, 0, None)?;
+            let inner = arg::<Option<bool>>(name, args, 0, None)?;
             Ok(Compiled(C::Constant(inner.map(|b| !b).into())))
         }
 
@@ -459,7 +444,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             let identity_value = name == Function::And;
             let mut result = Some(identity_value);
 
-            for arg in iter_args::<Option<bool>, _>(name, args) {
+            for arg in iter_args::<Option<bool>>(name, args) {
                 if let Some(v) = arg? {
                     if v == identity_value {
                         continue;
@@ -474,7 +459,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::Concat => {
-            let result = Value::try_sql_concat(iter_args::<&Value, _>(name, args).map(|item| item.map(Value::clone)))?;
+            let result = Value::try_sql_concat(iter_args::<&Value>(name, args).map(|item| item.map(Value::clone)))?;
             Ok(Compiled(C::Constant(result)))
         }
 
@@ -488,7 +473,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
             };
 
             let result =
-                iter_args::<&Value, _>(name, args).try_fold(None::<Cow<'_, Value>>, |accum, cur| -> Result<_, Error> {
+                iter_args::<&Value>(name, args).try_fold(None::<Cow<'_, Value>>, |accum, cur| -> Result<_, Error> {
                     let cur = cur?;
                     Ok(Some(if let Some(prev) = accum {
                         Cow::Owned(func(&*prev, cur)?)
@@ -515,7 +500,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::TimestampTz => {
-            let mut input = arg::<&str, _>(name, args, 0, None)?;
+            let mut input = arg::<&str>(name, args, 0, None)?;
             let tz = match input.find(|c: char| c.is_ascii_alphabetic()) {
                 None => ctx.time_zone,
                 Some(i) => {
@@ -538,7 +523,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
 
         Function::Greatest | Function::Least => {
             let mut res = &Value::Null;
-            for value in iter_args::<&Value, _>(name, args) {
+            for value in iter_args::<&Value>(name, args) {
                 let value = value?;
                 let should_replace = match value.sql_cmp(res, name)? {
                     Some(Ordering::Greater) => name == Function::Greatest,
@@ -554,15 +539,15 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::Round => {
-            let value = arg::<f64, _>(name, args, 0, None)?;
-            let digits = arg::<i32, _>(name, args, 1, Some(0))?;
+            let value = arg::<f64>(name, args, 0, None)?;
+            let digits = arg::<i32>(name, args, 1, Some(0))?;
             let scale = 10.0_f64.powi(digits);
             let result = (value * scale).round() / scale;
             Ok(Compiled(C::Constant(result.into())))
         }
 
         Function::SubstringChars => {
-            let input = arg::<&str, _>(name, args, 0, None)?;
+            let input = arg::<&str>(name, args, 0, None)?;
             #[allow(clippy::replace_consts)] // FIXME: allow this lint until usize::MAX becomes an assoc const
             let (start, end) = args_substring(name, args, usize::MAX)?;
             Ok(Compiled(C::Constant(
@@ -571,7 +556,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
         }
 
         Function::SubstringBytes => {
-            let input = arg::<&[u8], _>(name, args, 0, None)?;
+            let input = arg::<&[u8]>(name, args, 0, None)?;
             let (start, end) = args_substring(name, args, input.len())?;
             Ok(Compiled(C::Constant(input[start..end].to_vec().into())))
         }
