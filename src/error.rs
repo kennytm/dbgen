@@ -10,6 +10,7 @@ pub enum Error {
     /// Failed to parse template.
     #[error("failed to parse template")]
     ParseTemplate {
+        /// Cause of template error.
         #[from]
         source: pest::error::Error<Rule>,
     },

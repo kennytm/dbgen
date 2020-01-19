@@ -167,7 +167,6 @@ where
                 expected: T::name(),
             })
     } else {
-        #[allow(clippy::or_fun_call)] // false positive, this is cheap
         default.ok_or(Error::NotEnoughArguments(name))
     }
 }
@@ -564,6 +563,7 @@ pub fn compile_function(ctx: &CompileContext, name: Function, args: &[impl AsVal
 
         Function::SubstringChars => {
             let input = arg::<&str, _>(name, args, 0, None)?;
+            #[allow(clippy::replace_consts)] // FIXME: allow this lint until usize::MAX becomes an assoc const
             let (start, end) = args_substring(name, args, usize::MAX)?;
             Ok(Compiled(C::Constant(
                 input.chars().take(end).skip(start).collect::<String>().into(),

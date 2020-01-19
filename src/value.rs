@@ -80,7 +80,7 @@ impl From<f64> for Number {
     }
 }
 impl From<N> for f64 {
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_precision_loss))]
+    #[allow(clippy::cast_precision_loss)]
     fn from(n: N) -> Self {
         match n {
             N::Int(i) => i as Self,
@@ -208,7 +208,7 @@ impl fmt::Display for Value {
 impl Value {
     /// Creates a timestamp value.
     pub fn new_timestamp(ts: NaiveDateTime, tz: Tz) -> Self {
-        Value::Timestamp(ts, tz)
+        Self::Timestamp(ts, tz)
     }
 
     /// Compares two values using the rules common among SQL implementations.
@@ -221,11 +221,11 @@ impl Value {
     ///     engines, thus this function will just error with `InvalidArguments`.
     pub fn sql_cmp(&self, other: &Self, name: Function) -> Result<Option<Ordering>, Error> {
         Ok(match (self, other) {
-            (Value::Null, _) | (_, Value::Null) => None,
-            (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
-            (Value::Bytes(a), Value::Bytes(b)) => a.bytes.partial_cmp(&b.bytes),
-            (Value::Timestamp(a, _), Value::Timestamp(b, _)) => a.partial_cmp(b),
-            (Value::Interval(a), Value::Interval(b)) => a.partial_cmp(b),
+            (Self::Null, _) | (_, Self::Null) => None,
+            (Self::Number(a), Self::Number(b)) => a.partial_cmp(b),
+            (Self::Bytes(a), Self::Bytes(b)) => a.bytes.partial_cmp(&b.bytes),
+            (Self::Timestamp(a, _), Self::Timestamp(b, _)) => a.partial_cmp(b),
+            (Self::Interval(a), Self::Interval(b)) => a.partial_cmp(b),
             _ => {
                 return Err(Error::InvalidArguments {
                     name,
@@ -238,9 +238,9 @@ impl Value {
     /// Adds two values using the rules common among SQL implementations.
     pub fn sql_add(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Value::Number(lhs), Value::Number(rhs)) => (*lhs + *rhs).into(),
-            (Value::Timestamp(ts, tz), Value::Interval(dur)) | (Value::Interval(dur), Value::Timestamp(ts, tz)) => {
-                Value::Timestamp(
+            (Self::Number(lhs), Self::Number(rhs)) => (*lhs + *rhs).into(),
+            (Self::Timestamp(ts, tz), Self::Interval(dur)) | (Self::Interval(dur), Self::Timestamp(ts, tz)) => {
+                Self::Timestamp(
                     try_or_overflow!(
                         ts.checked_add_signed(Duration::microseconds(*dur)),
                         "{} + {}us",
@@ -250,8 +250,8 @@ impl Value {
                     *tz,
                 )
             }
-            (Value::Interval(a), Value::Interval(b)) => {
-                Value::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
+            (Self::Interval(a), Self::Interval(b)) => {
+                Self::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
             }
             _ => {
                 return Err(Error::InvalidArguments {
@@ -265,8 +265,8 @@ impl Value {
     /// Subtracts two values using the rules common among SQL implementations.
     pub fn sql_sub(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Value::Number(lhs), Value::Number(rhs)) => (*lhs - *rhs).into(),
-            (Value::Timestamp(ts, tz), Value::Interval(dur)) => Value::Timestamp(
+            (Self::Number(lhs), Self::Number(rhs)) => (*lhs - *rhs).into(),
+            (Self::Timestamp(ts, tz), Self::Interval(dur)) => Self::Timestamp(
                 try_or_overflow!(
                     ts.checked_sub_signed(Duration::microseconds(*dur)),
                     "{} - {}us",
@@ -275,8 +275,8 @@ impl Value {
                 ),
                 *tz,
             ),
-            (Value::Interval(a), Value::Interval(b)) => {
-                Value::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
+            (Self::Interval(a), Self::Interval(b)) => {
+                Self::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
             }
             _ => {
                 return Err(Error::InvalidArguments {
@@ -290,10 +290,10 @@ impl Value {
     /// Multiplies two values using the rules common among SQL implementations.
     pub fn sql_mul(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Value::Number(lhs), Value::Number(rhs)) => (*lhs * *rhs).into(),
-            (Value::Number(m), Value::Interval(dur)) | (Value::Interval(dur), Value::Number(m)) => {
+            (Self::Number(lhs), Self::Number(rhs)) => (*lhs * *rhs).into(),
+            (Self::Number(m), Self::Interval(dur)) | (Self::Interval(dur), Self::Number(m)) => {
                 let mult_res = *m * Number::from(*dur);
-                Value::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
+                Self::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
             }
             _ => {
                 return Err(Error::InvalidArguments {
@@ -307,15 +307,15 @@ impl Value {
     /// Divides two values using the rules common among SQL implementations.
     pub fn sql_float_div(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Value::Number(_), Value::Number(rhs)) | (Value::Interval(_), Value::Number(rhs))
+            (Self::Number(_), Self::Number(rhs)) | (Self::Interval(_), Self::Number(rhs))
                 if rhs.to_sql_bool() == Some(false) =>
             {
-                Value::Null
+                Self::Null
             }
-            (Value::Number(lhs), Value::Number(rhs)) => (*lhs / *rhs).into(),
-            (Value::Interval(dur), Value::Number(d)) => {
+            (Self::Number(lhs), Self::Number(rhs)) => (*lhs / *rhs).into(),
+            (Self::Interval(dur), Self::Number(d)) => {
                 let mult_res = Number::from(*dur) / *d;
-                Value::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
+                Self::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
             }
             _ => {
                 return Err(Error::InvalidArguments {
@@ -332,13 +332,13 @@ impl Value {
         let mut should_check_binary = false;
         for item in values {
             match item? {
-                Value::Null => {
-                    return Ok(Value::Null);
+                Self::Null => {
+                    return Ok(Self::Null);
                 }
-                Value::Number(n) => {
+                Self::Number(n) => {
                     write!(&mut res.bytes, "{}", n).unwrap();
                 }
-                Value::Bytes(mut b) => {
+                Self::Bytes(mut b) => {
                     res.bytes.append(&mut b.bytes);
                     if b.is_binary {
                         if res.is_binary {
@@ -348,7 +348,7 @@ impl Value {
                         }
                     }
                 }
-                Value::Timestamp(timestamp, tz) => {
+                Self::Timestamp(timestamp, tz) => {
                     write!(
                         &mut res.bytes,
                         "{}",
@@ -356,7 +356,7 @@ impl Value {
                     )
                     .unwrap();
                 }
-                Value::Interval(interval) => {
+                Self::Interval(interval) => {
                     write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval).unwrap();
                 }
             }
@@ -365,7 +365,7 @@ impl Value {
         if should_check_binary {
             res.is_binary = from_utf8(&res.bytes).is_err();
         }
-        Ok(Value::Bytes(res))
+        Ok(Self::Bytes(res))
     }
 }
 
@@ -456,7 +456,6 @@ impl<'s> TryFromValue<'s> for &'s Value {
     }
 }
 
-#[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
 impl<'s> TryFromValue<'s> for Option<bool> {
     fn name() -> String {
         "nullable boolean".to_owned()
@@ -471,7 +470,6 @@ impl<'s> TryFromValue<'s> for Option<bool> {
     }
 }
 
-#[cfg_attr(feature = "cargo-clippy", allow(clippy::use_self))] // rust-lang-nursery/rust-clippy#1993
 impl<'s, T: TryFromValue<'s>> TryFromValue<'s> for Option<T> {
     fn name() -> String {
         format!("nullable {}", T::name())
@@ -487,13 +485,13 @@ impl<'s, T: TryFromValue<'s>> TryFromValue<'s> for Option<T> {
 
 impl<T: Into<Number>> From<T> for Value {
     fn from(value: T) -> Self {
-        Value::Number(value.into())
+        Self::Number(value.into())
     }
 }
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Value::Bytes(Bytes {
+        Self::Bytes(Bytes {
             is_binary: false,
             bytes: value.into_bytes(),
         })
@@ -502,7 +500,7 @@ impl From<String> for Value {
 
 impl From<Vec<u8>> for Value {
     fn from(bytes: Vec<u8>) -> Self {
-        Value::Bytes(Bytes {
+        Self::Bytes(Bytes {
             is_binary: from_utf8(&bytes).is_err(),
             bytes,
         })
@@ -511,12 +509,12 @@ impl From<Vec<u8>> for Value {
 
 impl From<Bytes> for Value {
     fn from(b: Bytes) -> Self {
-        Value::Bytes(b)
+        Self::Bytes(b)
     }
 }
 
 impl<T: Into<Value>> From<Option<T>> for Value {
     fn from(value: Option<T>) -> Self {
-        value.map_or(Value::Null, T::into)
+        value.map_or(Self::Null, T::into)
     }
 }

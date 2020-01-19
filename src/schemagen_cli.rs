@@ -68,9 +68,9 @@ impl FromStr for Dialect {
     type Err = Error;
     fn from_str(dialect: &str) -> Result<Self, Self::Err> {
         Ok(match dialect {
-            "mysql" => Dialect::MySQL,
-            "postgresql" => Dialect::PostgreSQL,
-            "sqlite" => Dialect::SQLite,
+            "mysql" => Self::MySQL,
+            "postgresql" => Self::PostgreSQL,
+            "sqlite" => Self::SQLite,
             _ => bail!("Unsupported SQL dialect {}", dialect),
         })
     }

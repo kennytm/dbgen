@@ -176,11 +176,11 @@ static WRITTEN_SIZE: AtomicUsize = AtomicUsize::new(0);
 
 /// Runs the CLI program.
 pub fn run(args: Args) -> Result<(), Error> {
-    let input = if args.template != Path::new("-") {
-        read_to_string(&args.template)
-    } else {
+    let input = if args.template == Path::new("-") {
         let mut buf = String::new();
         stdin().read_to_string(&mut buf).map(move |_| buf)
+    } else {
+        read_to_string(&args.template)
     }
     .context("failed to read template")?;
     let template = Template::parse(&input)?;
@@ -303,12 +303,12 @@ impl FromStr for RngName {
     type Err = Error;
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Ok(match name {
-            "chacha" => RngName::ChaCha,
-            "hc128" => RngName::Hc128,
-            "isaac" => RngName::Isaac,
-            "isaac64" => RngName::Isaac64,
-            "xorshift" => RngName::XorShift,
-            "pcg32" => RngName::Pcg32,
+            "chacha" => Self::ChaCha,
+            "hc128" => Self::Hc128,
+            "isaac" => Self::Isaac,
+            "isaac64" => Self::Isaac64,
+            "xorshift" => Self::XorShift,
+            "pcg32" => Self::Pcg32,
             _ => bail!("Unsupported RNG {}", name),
         })
     }
@@ -318,12 +318,12 @@ impl RngName {
     /// Creates an RNG engine given the name. The RNG engine instance will be seeded from `src`.
     fn create(self, src: &mut StdRng) -> Box<dyn RngCore + Send> {
         match self {
-            RngName::ChaCha => Box::new(rand_chacha::ChaChaRng::from_seed(src.gen())),
-            RngName::Hc128 => Box::new(rand_hc::Hc128Rng::from_seed(src.gen())),
-            RngName::Isaac => Box::new(rand_isaac::IsaacRng::from_seed(src.gen())),
-            RngName::Isaac64 => Box::new(rand_isaac::Isaac64Rng::from_seed(src.gen())),
-            RngName::XorShift => Box::new(rand_xorshift::XorShiftRng::from_seed(src.gen())),
-            RngName::Pcg32 => Box::new(rand_pcg::Pcg32::from_seed(src.gen())),
+            Self::ChaCha => Box::new(rand_chacha::ChaChaRng::from_seed(src.gen())),
+            Self::Hc128 => Box::new(rand_hc::Hc128Rng::from_seed(src.gen())),
+            Self::Isaac => Box::new(rand_isaac::IsaacRng::from_seed(src.gen())),
+            Self::Isaac64 => Box::new(rand_isaac::Isaac64Rng::from_seed(src.gen())),
+            Self::XorShift => Box::new(rand_xorshift::XorShiftRng::from_seed(src.gen())),
+            Self::Pcg32 => Box::new(rand_pcg::Pcg32::from_seed(src.gen())),
         }
     }
 }
@@ -341,8 +341,8 @@ impl FromStr for FormatName {
     type Err = Error;
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Ok(match name {
-            "sql" => FormatName::Sql,
-            "csv" => FormatName::Csv,
+            "sql" => Self::Sql,
+            "csv" => Self::Csv,
             _ => bail!("Unsupported output format {}", name),
         })
     }
@@ -352,16 +352,16 @@ impl FormatName {
     /// Obtains the file extension when using this format.
     fn extension(self) -> &'static str {
         match self {
-            FormatName::Sql => "sql",
-            FormatName::Csv => "csv",
+            Self::Sql => "sql",
+            Self::Csv => "csv",
         }
     }
 
     /// Creates a formatter writer given the name.
     fn create(self, escape_backslash: bool) -> Box<dyn Format> {
         match self {
-            FormatName::Sql => Box::new(SqlFormat { escape_backslash }),
-            FormatName::Csv => Box::new(CsvFormat { escape_backslash }),
+            Self::Sql => Box::new(SqlFormat { escape_backslash }),
+            Self::Csv => Box::new(CsvFormat { escape_backslash }),
         }
     }
 }
@@ -381,9 +381,9 @@ impl FromStr for CompressionName {
     type Err = Error;
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Ok(match name {
-            "gzip" | "gz" => CompressionName::Gzip,
-            "xz" => CompressionName::Xz,
-            "zstd" | "zst" => CompressionName::Zstd,
+            "gzip" | "gz" => Self::Gzip,
+            "xz" => Self::Xz,
+            "zstd" | "zst" => Self::Zstd,
             _ => bail!("Unsupported compression format {}", name),
         })
     }
@@ -393,18 +393,18 @@ impl CompressionName {
     /// Obtains the file extension when using this format.
     fn extension(self) -> &'static str {
         match self {
-            CompressionName::Gzip => "gz",
-            CompressionName::Xz => "xz",
-            CompressionName::Zstd => "zst",
+            Self::Gzip => "gz",
+            Self::Xz => "xz",
+            Self::Zstd => "zst",
         }
     }
 
     /// Wraps a writer with a compression layer on top.
     fn wrap<'a, W: Write + 'a>(self, inner: W, level: u8) -> Box<dyn Write + 'a> {
         match self {
-            CompressionName::Gzip => Box::new(GzEncoder::new(inner, flate2::Compression::new(level.into()))),
-            CompressionName::Xz => Box::new(XzEncoder::new(inner, level.into())),
-            CompressionName::Zstd => Box::new(
+            Self::Gzip => Box::new(GzEncoder::new(inner, flate2::Compression::new(level.into()))),
+            Self::Xz => Box::new(XzEncoder::new(inner, level.into())),
+            Self::Zstd => Box::new(
                 zstd::Encoder::new(inner, level.into())
                     .expect("valid zstd encoder")
                     .auto_finish(),
@@ -545,7 +545,7 @@ impl Env {
 /// This function will loop and update the progress bar every 0.5 seconds, until [`WRITE_FINISHED`]
 /// becomes `true`.
 fn run_progress_thread(total_rows: u64) {
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::non_ascii_literal))]
+    #[allow(clippy::non_ascii_literal)]
     const TICK_FORMAT: &str = "🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛";
 
     let mut mb = MultiBar::new();

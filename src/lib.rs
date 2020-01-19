@@ -1,17 +1,14 @@
-#![cfg_attr(
-    feature = "cargo-clippy",
-    warn(
-        clippy::pedantic,
-        missing_debug_implementations,
-        trivial_casts,
-        trivial_numeric_casts,
-        unreachable_pub,
-        variant_size_differences,
-        missing_docs,
-        rust_2018_idioms
-    )
+#![warn(
+    clippy::pedantic,
+    missing_debug_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unreachable_pub,
+    variant_size_differences,
+    missing_docs,
+    rust_2018_idioms
 )]
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::module_name_repetitions))]
+#![allow(clippy::module_name_repetitions, clippy::must_use_candidate)]
 
 //! The reusable library powering `dbgen`.
 
