@@ -31,13 +31,16 @@ use std::{
     thread::{sleep, spawn},
     time::Duration,
 };
-use structopt::StructOpt;
+use structopt::{
+    clap::AppSettings::{NextLineHelp, UnifiedHelpMessage},
+    StructOpt,
+};
 use xz2::write::XzEncoder;
 
 /// Arguments to the `dbgen` CLI program.
 #[derive(StructOpt, Debug, Deserialize)]
 #[serde(default)]
-#[structopt(long_version(crate::FULL_VERSION))]
+#[structopt(long_version(crate::FULL_VERSION), settings(&[NextLineHelp, UnifiedHelpMessage]))]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
     #[structopt(long)]

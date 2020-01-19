@@ -15,11 +15,14 @@ use std::{
     iter::repeat_with,
     str::FromStr,
 };
-use structopt::{clap::AppSettings, StructOpt};
+use structopt::{
+    clap::AppSettings::{NextLineHelp, TrailingVarArg, UnifiedHelpMessage},
+    StructOpt,
+};
 
 /// Arguments to the `dbschemagen` CLI program.
 #[derive(StructOpt, Debug)]
-#[structopt(setting(AppSettings::TrailingVarArg), long_version(crate::FULL_VERSION))]
+#[structopt(settings(&[NextLineHelp, TrailingVarArg, UnifiedHelpMessage]), long_version(crate::FULL_VERSION))]
 pub struct Args {
     /// Schema name.
     #[structopt(short, long)]
