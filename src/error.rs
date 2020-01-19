@@ -1,6 +1,6 @@
 //! Error types for the `dbgen` library.
 
-use crate::parser::{Function, Rule};
+use crate::parser::Rule;
 use thiserror::Error as ThisError;
 
 /// Errors produced by the `dbgen` library.
@@ -33,7 +33,7 @@ pub enum Error {
     #[error("not enough arguments to function {0}")]
     NotEnoughArguments(
         /// The SQL function causing the error.
-        Function,
+        &'static str,
     ),
 
     /// Invalid regex.
@@ -59,7 +59,7 @@ pub enum Error {
     #[error("invalid argument type: in function {name}, argument #{index} should be a {expected}")]
     InvalidArgumentType {
         /// The SQL function causing the error.
-        name: Function,
+        name: &'static str,
         /// Argument index.
         index: usize,
         /// The expected type.
@@ -70,7 +70,7 @@ pub enum Error {
     #[error("invalid arguments: in function {name}, assertion failed: {cause}")]
     InvalidArguments {
         /// The SQL function causing the error.
-        name: Function,
+        name: &'static str,
         /// Cause of the error.
         cause: String,
     },

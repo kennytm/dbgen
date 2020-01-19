@@ -26,6 +26,7 @@ pub mod cli;
 pub mod error;
 pub mod eval;
 pub mod format;
+pub mod functions;
 pub mod parser;
 pub mod schemagen_cli;
 pub mod value;

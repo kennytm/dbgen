@@ -11,7 +11,7 @@ use std::{
     str::{from_utf8, from_utf8_unchecked},
 };
 
-use crate::{error::Error, parser::Function};
+use crate::error::Error;
 
 /// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
@@ -219,7 +219,7 @@ impl Value {
     /// * Strings are ordered by UTF-8 binary collation.
     /// * Comparing between different types are inconsistent among database
     ///     engines, thus this function will just error with `InvalidArguments`.
-    pub fn sql_cmp(&self, other: &Self, name: Function) -> Result<Option<Ordering>, Error> {
+    pub fn sql_cmp(&self, other: &Self, name: &'static str) -> Result<Option<Ordering>, Error> {
         Ok(match (self, other) {
             (Self::Null, _) | (_, Self::Null) => None,
             (Self::Number(a), Self::Number(b)) => a.partial_cmp(b),
@@ -255,7 +255,7 @@ impl Value {
             }
             _ => {
                 return Err(Error::InvalidArguments {
-                    name: Function::Add,
+                    name: "+",
                     cause: format!("cannot add {} to {}", self, other),
                 });
             }
@@ -280,7 +280,7 @@ impl Value {
             }
             _ => {
                 return Err(Error::InvalidArguments {
-                    name: Function::Sub,
+                    name: "-",
                     cause: format!("cannot subtract {} from {}", self, other),
                 });
             }
@@ -297,7 +297,7 @@ impl Value {
             }
             _ => {
                 return Err(Error::InvalidArguments {
-                    name: Function::Mul,
+                    name: "*",
                     cause: format!("cannot multiply {} with {}", self, other),
                 });
             }
@@ -319,7 +319,7 @@ impl Value {
             }
             _ => {
                 return Err(Error::InvalidArguments {
-                    name: Function::FloatDiv,
+                    name: "/",
                     cause: format!("cannot divide {} by {}", self, other),
                 });
             }

@@ -2,10 +2,14 @@
 
 pub(crate) use self::derived::Rule;
 use self::derived::TemplateParser;
-use crate::{error::Error, value::Value};
+use crate::{
+    error::Error,
+    functions::{self, Function},
+    value::Value,
+};
 
 use pest::{iterators::Pairs, Parser};
-use std::{collections::HashMap, fmt};
+use std::{cmp::Ordering, collections::HashMap};
 
 mod derived {
     use pest_derive::Parser;
@@ -160,8 +164,8 @@ pub enum Expr {
     SetVariable(usize, Box<Expr>),
     /// A function call.
     Function {
-        /// Function name.
-        name: Function,
+        /// The function.
+        function: &'static dyn Function,
         /// Function arguments.
         args: Vec<Expr>,
     },
@@ -294,7 +298,7 @@ impl Allocator {
                     match op {
                         Some(o) if o != rule => {
                             args = vec![Expr::Function {
-                                name: Function::from_rule(o),
+                                function: function_from_rule(o),
                                 args,
                             }];
                         }
@@ -308,7 +312,7 @@ impl Allocator {
 
         Ok(if let Some(o) = op {
             Expr::Function {
-                name: Function::from_rule(o),
+                function: function_from_rule(o),
                 args,
             }
         } else {
@@ -329,7 +333,7 @@ impl Allocator {
                     let expr = self.expr_binary_from_pairs(pair.into_inner())?;
                     return Ok(if has_not {
                         Expr::Function {
-                            name: Function::Not,
+                            function: &functions::ops::Not,
                             args: vec![expr],
                         }
                     } else {
@@ -372,14 +376,14 @@ impl Allocator {
 
     /// Creates a function call expression `x.y.z(a, b, c)`.
     fn expr_function_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut name = None;
+        let mut function = None;
         let mut args = Vec::new();
 
         for pair in pairs {
             match pair.as_rule() {
                 Rule::qname => {
                     let q_name = QName::from_pairs(pair.into_inner());
-                    name = Some(Function::from_name(q_name.unique_name())?);
+                    function = Some(function_from_name(q_name.unique_name())?);
                 }
                 Rule::expr => {
                     args.push(self.expr_from_pairs(pair.into_inner())?);
@@ -389,7 +393,7 @@ impl Allocator {
         }
 
         Ok(Expr::Function {
-            name: name.unwrap(),
+            function: function.unwrap(),
             args,
         })
     }
@@ -418,7 +422,7 @@ impl Allocator {
                     let expr = self.expr_primary_from_pairs(pair.into_inner())?;
                     return Ok(if has_neg {
                         Expr::Function {
-                            name: Function::Neg,
+                            function: &functions::ops::Neg,
                             args: vec![expr],
                         }
                     } else {
@@ -468,16 +472,16 @@ impl Allocator {
 
     /// Creates a `TIMESTAMP` expression.
     fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut name = Function::Timestamp;
+        let mut function: &dyn Function = &functions::time::Timestamp;
         for pair in pairs {
             match pair.as_rule() {
                 Rule::kw_timestamp => {}
                 Rule::kw_with | Rule::kw_time | Rule::kw_zone => {
-                    name = Function::TimestampTz;
+                    function = &functions::time::TimestampWithTimeZone;
                 }
                 Rule::expr_primary => {
                     return Ok(Expr::Function {
-                        name,
+                        function,
                         args: vec![self.expr_primary_from_pairs(pair.into_inner())?],
                     });
                 }
@@ -509,14 +513,14 @@ impl Allocator {
         }
 
         Ok(Expr::Function {
-            name: Function::Mul,
+            function: &functions::ops::Arith::Mul,
             args: vec![expr.unwrap(), Expr::Value(Value::Interval(unit))],
         })
     }
 
     /// Creates a `SUBSTRING` function expression.
     fn expr_substring_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut name = Function::SubstringChars;
+        let mut function: &dyn Function = &functions::string::SubstringUsingCharacters;
         let mut input = None;
         let mut from = None;
         let mut length = None;
@@ -525,8 +529,8 @@ impl Allocator {
             let rule = pair.as_rule();
             match rule {
                 Rule::kw_substring | Rule::kw_from | Rule::kw_for | Rule::kw_using => {}
-                Rule::kw_octets => name = Function::SubstringBytes,
-                Rule::kw_characters => name = Function::SubstringChars,
+                Rule::kw_octets => function = &functions::string::SubstringUsingOctets,
+                Rule::kw_characters => function = &functions::string::SubstringUsingCharacters,
                 Rule::substring_input | Rule::substring_from | Rule::substring_for => {
                     let target = match rule {
                         Rule::substring_input => &mut input,
@@ -544,7 +548,7 @@ impl Allocator {
         if let Some(length) = length {
             args.push(length);
         }
-        Ok(Expr::Function { name, args })
+        Ok(Expr::Function { function, args })
     }
 }
 
@@ -564,99 +568,72 @@ fn parse_number(input: &str) -> Result<Value, Error> {
     })
 }
 
-macro_rules! define_function {
-    (
-        $(#[$meta:meta])*
-        pub enum $F:ident {
-        'function:
-            $($fi:ident = $fs:tt,)*
-        'rule:
-            $($ri:ident = $rs:tt / $rr:ident,)*
-        'else:
-            $($ei:ident = $es:tt,)*
-        }
-    ) => {
-        $(#[$meta])*
-        #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-        pub enum $F {
-            $($fi,)*
-            $($ri,)*
-            $($ei,)*
-        }
-
-        impl fmt::Display for $F {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(match self {
-                    $($F::$fi => $fs,)*
-                    $($F::$ri => $rs,)*
-                    $($F::$ei => $es,)*
-                })
-            }
-        }
-
-        impl $F {
-            fn from_name(name: String) -> Result<Self, Error> {
-                Ok(match &*name {
-                    $($fs => $F::$fi,)*
-                    _ => return Err(Error::UnknownFunction(name)),
-                })
-            }
-
-            fn from_rule(rule: Rule) -> Self {
-                match rule {
-                    $(Rule::$rr => $F::$ri,)*
-                    r => unreachable!("Unexpected operator rule {:?}", r),
-                }
-            }
-        }
-    }
+/// Obtains a function from its name.
+fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
+    Ok(match &*name {
+        "rand.regex" => &functions::rand::Regex,
+        "rand.range" => &functions::rand::Range,
+        "rand.range_inclusive" => &functions::rand::RangeInclusive,
+        "rand.uniform" => &functions::rand::Uniform,
+        "rand.uniform_inclusive" => &functions::rand::UniformInclusive,
+        "rand.zipf" => &functions::rand::Zipf,
+        "rand.log_normal" => &functions::rand::LogNormal,
+        "rand.bool" => &functions::rand::Bool,
+        "rand.finite_f32" => &functions::rand::FiniteF32,
+        "rand.finite_f64" => &functions::rand::FiniteF64,
+        "rand.u31_timestamp" => &functions::rand::U31Timestamp,
+        "greatest" => &functions::ops::Extremum {
+            order: Ordering::Greater,
+        },
+        "least" => &functions::ops::Extremum { order: Ordering::Less },
+        "round" => &functions::ops::Round,
+        _ => return Err(Error::UnknownFunction(name)),
+    })
 }
 
-define_function! {
-    /// Built-in function names.
-    #[allow(missing_docs)]
-    pub enum Function {
-    'function:
-        RandRegex = "rand.regex",
-        RandRange = "rand.range",
-        RandRangeInclusive = "rand.range_inclusive",
-        RandUniform = "rand.uniform",
-        RandUniformInclusive = "rand.uniform_inclusive",
-        RandZipf = "rand.zipf",
-        RandLogNormal = "rand.log_normal",
-        RandBool = "rand.bool",
-        RandFiniteF32 = "rand.finite_f32",
-        RandFiniteF64 = "rand.finite_f64",
-        RandU31Timestamp = "rand.u31_timestamp",
-
-        Greatest = "greatest",
-        Least = "least",
-        Round = "round",
-
-    'rule:
-        Eq = "=" / op_eq,
-        Lt = "<" / op_lt,
-        Gt = ">" / op_gt,
-        Le = "<=" / op_le,
-        Ge = ">=" / op_ge,
-        Ne = "<>" / op_ne,
-        Add = "+" / op_add,
-        Sub = "-" / op_sub,
-        Mul = "*" / op_mul,
-        FloatDiv = "/" / op_float_div,
-        Concat = "||" / op_concat,
-        Is = "is" / kw_is,
-        IsNot = "is not" / is_not,
-        Or = "or" / kw_or,
-        And = "and" / kw_and,
-
-    'else:
-        Not = "not",
-        Neg = "neg",
-        Timestamp = "timestamp",
-        TimestampTz = "timestamp with time zone",
-        SubstringChars = "substring using characters",
-        SubstringBytes = "substring using octets",
+/// Obtains a function from the parser rule.
+fn function_from_rule(rule: Rule) -> &'static dyn Function {
+    match rule {
+        Rule::op_lt => &functions::ops::Compare {
+            lt: true,
+            eq: false,
+            gt: false,
+        },
+        Rule::op_eq => &functions::ops::Compare {
+            lt: false,
+            eq: true,
+            gt: false,
+        },
+        Rule::op_gt => &functions::ops::Compare {
+            lt: false,
+            eq: false,
+            gt: true,
+        },
+        Rule::op_le => &functions::ops::Compare {
+            lt: true,
+            eq: true,
+            gt: false,
+        },
+        Rule::op_ne => &functions::ops::Compare {
+            lt: true,
+            eq: false,
+            gt: true,
+        },
+        Rule::op_ge => &functions::ops::Compare {
+            lt: false,
+            eq: true,
+            gt: true,
+        },
+        Rule::op_add => &functions::ops::Arith::Add,
+        Rule::op_sub => &functions::ops::Arith::Sub,
+        Rule::op_mul => &functions::ops::Arith::Mul,
+        Rule::op_float_div => &functions::ops::Arith::FloatDiv,
+        Rule::op_concat => &functions::string::Concat,
+        Rule::kw_is => &functions::ops::Identical { eq: true },
+        Rule::is_not => &functions::ops::Identical { eq: false },
+        Rule::kw_and => &functions::ops::Logic { identity: true },
+        Rule::kw_or => &functions::ops::Logic { identity: false },
+        r => unreachable!("Unexpected operator rule {:?}", r),
     }
 }
 
