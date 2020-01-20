@@ -1,12 +1,12 @@
 //! Numerical and logical functions.
 
-use super::{arg, iter_args, Function};
+use super::{args_1, args_2, iter_args, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
     value::{Number, Value},
 };
-use std::{borrow::Cow, cmp::Ordering};
+use std::cmp::Ordering;
 
 //------------------------------------------------------------------------------
 
@@ -15,8 +15,8 @@ use std::{borrow::Cow, cmp::Ordering};
 pub struct Neg;
 
 impl Function for Neg {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
-        let inner = arg::<Number>("neg", args, 0, None)?;
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let inner = args_1::<Number>("neg", args, None)?;
         Ok(Compiled(C::Constant((-inner).into())))
     }
 }
@@ -49,9 +49,9 @@ impl Compare {
 }
 
 impl Function for Compare {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
         let name = self.name();
-        if let [lhs, rhs] = args {
+        if let [lhs, rhs] = &*args {
             Ok(Compiled(C::Constant(match lhs.sql_cmp(rhs, name)? {
                 None => Value::Null,
                 Some(Ordering::Less) => self.lt.into(),
@@ -74,8 +74,8 @@ pub struct Identical {
 }
 
 impl Function for Identical {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
-        if let [lhs, rhs] = args {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        if let [lhs, rhs] = &*args {
             let is_eq = lhs == rhs;
             Ok(Compiled(C::Constant((is_eq == self.eq).into())))
         } else {
@@ -91,8 +91,8 @@ impl Function for Identical {
 pub struct Not;
 
 impl Function for Not {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
-        let inner = arg::<Option<bool>>("not", args, 0, None)?;
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let inner = args_1::<Option<bool>>("not", args, None)?;
         Ok(Compiled(C::Constant(inner.map(|b| !b).into())))
     }
 }
@@ -117,7 +117,7 @@ impl Logic {
 }
 
 impl Function for Logic {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
         let name = self.name();
         let mut result = Some(self.identity);
 
@@ -151,19 +151,8 @@ pub enum Arith {
     FloatDiv,
 }
 
-impl Arith {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Add => "+",
-            Self::Sub => "-",
-            Self::Mul => "*",
-            Self::FloatDiv => "/",
-        }
-    }
-}
-
 impl Function for Arith {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
         let func = match self {
             Self::Add => Value::sql_add,
             Self::Sub => Value::sql_sub,
@@ -171,18 +160,16 @@ impl Function for Arith {
             Self::FloatDiv => Value::sql_float_div,
         };
 
-        let result =
-            iter_args::<&Value>(self.name(), args).try_fold(None::<Cow<'_, Value>>, |accum, cur| -> Result<_, Error> {
-                let cur = cur?;
+        let result = args
+            .into_iter()
+            .try_fold(None::<Value>, |accum, cur| -> Result<_, Error> {
                 Ok(Some(if let Some(prev) = accum {
-                    Cow::Owned(func(&*prev, cur)?)
+                    func(&prev, &cur)?
                 } else {
-                    Cow::Borrowed(cur)
+                    cur
                 }))
             });
-        Ok(Compiled(C::Constant(
-            result?.expect("at least 1 argument").into_owned(),
-        )))
+        Ok(Compiled(C::Constant(result?.expect("at least 1 argument"))))
     }
 }
 
@@ -206,15 +193,14 @@ impl Extremum {
 }
 
 impl Function for Extremum {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
         let name = self.name();
-        let mut res = &Value::Null;
-        for value in iter_args::<&Value>(name, args) {
-            let value = value?;
-            let should_replace = if let Some(order) = value.sql_cmp(res, name)? {
+        let mut res = Value::Null;
+        for value in args {
+            let should_replace = if let Some(order) = value.sql_cmp(&res, name)? {
                 order == self.order
             } else {
-                res == &Value::Null
+                res == Value::Null
             };
             if should_replace {
                 res = value;
@@ -231,10 +217,8 @@ impl Function for Extremum {
 pub struct Round;
 
 impl Function for Round {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
-        let name = "round";
-        let value = arg::<f64>(name, args, 0, None)?;
-        let digits = arg::<i32>(name, args, 1, Some(0))?;
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let (value, digits) = args_2::<f64, i32>("round", args, None, Some(0))?;
         let scale = 10.0_f64.powi(digits);
         let result = (value * scale).round() / scale;
         Ok(Compiled(C::Constant(result.into())))

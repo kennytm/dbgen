@@ -169,7 +169,7 @@ impl CompileContext {
                     .collect::<Result<Vec<_>, _>>()?;
                 if args.iter().all(|c| c.is_constant()) {
                     let args = args.into_iter().map(|c| c.try_into().unwrap()).collect::<Vec<Value>>();
-                    function.compile(self, &args)?.0
+                    function.compile(self, args)?.0
                 } else {
                     C::RawFunction { function, args }
                 }
@@ -215,7 +215,7 @@ impl Compiled {
             C::Constant(v) => v.clone(),
             C::RawFunction { function, args } => {
                 let args = args.iter().map(|c| c.eval(state)).collect::<Result<Vec<_>, _>>()?;
-                let compiled = (*function).compile(&state.compile_context, &args)?;
+                let compiled = (*function).compile(&state.compile_context, args)?;
                 compiled.eval(state)?
             }
             C::GetVariable(index) => state.variables[*index].clone(),

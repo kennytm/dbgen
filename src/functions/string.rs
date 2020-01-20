@@ -1,6 +1,6 @@
 //! String functions.
 
-use super::{arg, iter_args, Function};
+use super::{args_3, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
@@ -11,15 +11,14 @@ use std::{convert::TryInto, usize};
 //------------------------------------------------------------------------------
 
 /// Extracts the arguments for the `substring` SQL functions.
-fn args_substring(name: &'static str, args: &[Value], max: usize) -> Result<(usize, usize), Error> {
-    let start = arg::<i64>(name, args, 1, None)? - 1;
-    let length = arg::<Option<i64>>(name, args, 2, Some(None))?;
+fn sql_to_range(start: i64, length: Option<i64>, max: usize) -> (usize, usize) {
+    let start = start - 1;
     if let Some(length) = length {
         let end = (start + length).try_into().unwrap_or(0);
         let start = start.try_into().unwrap_or(0);
-        Ok((start.min(max), end.max(start).min(max)))
+        (start.min(max), end.max(start).min(max))
     } else {
-        Ok((start.try_into().unwrap_or(0).min(max), max))
+        (start.try_into().unwrap_or(0).min(max), max)
     }
 }
 
@@ -28,11 +27,11 @@ fn args_substring(name: &'static str, args: &[Value], max: usize) -> Result<(usi
 pub struct SubstringUsingCharacters;
 
 impl Function for SubstringUsingCharacters {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
         let name = "substring using characters";
-        let input = arg::<&str>(name, args, 0, None)?;
+        let (input, start, length) = args_3::<String, i64, Option<i64>>(name, args, None, None, Some(None))?;
         #[allow(clippy::replace_consts)] // FIXME: allow this lint until usize::MAX becomes an assoc const
-        let (start, end) = args_substring(name, args, usize::MAX)?;
+        let (start, end) = sql_to_range(start, length, usize::MAX);
         Ok(Compiled(C::Constant(
             input.chars().take(end).skip(start).collect::<String>().into(),
         )))
@@ -44,11 +43,16 @@ impl Function for SubstringUsingCharacters {
 pub struct SubstringUsingOctets;
 
 impl Function for SubstringUsingOctets {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
         let name = "substring using octets";
-        let input = arg::<&[u8]>(name, args, 0, None)?;
-        let (start, end) = args_substring(name, args, input.len())?;
-        Ok(Compiled(C::Constant(input[start..end].to_vec().into())))
+        let (mut input, start, length) = args_3::<Vec<u8>, i64, Option<i64>>(name, args, None, None, Some(None))?;
+        let (start, end) = sql_to_range(start, length, input.len());
+        if start != 0 {
+            input = input[start..end].to_vec();
+        } else {
+            input.truncate(end);
+        }
+        Ok(Compiled(C::Constant(input.into())))
     }
 }
 
@@ -59,8 +63,8 @@ impl Function for SubstringUsingOctets {
 pub struct Concat;
 
 impl Function for Concat {
-    fn compile(&self, _: &CompileContext, args: &[Value]) -> Result<Compiled, Error> {
-        let result = Value::try_sql_concat(iter_args::<&Value>("||", args).map(|item| item.map(Value::clone)))?;
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let result = Value::sql_concat(args.into_iter())?;
         Ok(Compiled(C::Constant(result)))
     }
 }

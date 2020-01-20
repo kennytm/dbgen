@@ -3,13 +3,7 @@
 use chrono::{Duration, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use num_traits::FromPrimitive;
-use std::{
-    cmp::Ordering,
-    fmt,
-    io::Write,
-    ops,
-    str::{from_utf8, from_utf8_unchecked},
-};
+use std::{cmp::Ordering, convert::TryFrom, fmt, io::Write, ops, str::from_utf8};
 
 use crate::error::Error;
 
@@ -327,11 +321,11 @@ impl Value {
     }
 
     /// Concatenates multiple values into a string.
-    pub fn try_sql_concat(values: impl Iterator<Item = Result<Self, Error>>) -> Result<Self, Error> {
+    pub fn sql_concat(values: impl Iterator<Item = Self>) -> Result<Self, Error> {
         let mut res = Bytes::default();
         let mut should_check_binary = false;
         for item in values {
-            match item? {
+            match item {
                 Self::Null => {
                     return Ok(Self::Null);
                 }
@@ -369,23 +363,42 @@ impl Value {
     }
 }
 
-/// Types which can be extracted out of a [`Value`].
-pub trait TryFromValue<'s>: Sized {
-    /// The name of the type, used when an error happens.
-    fn name() -> String;
-    /// Converts a [`Value`] into the required type.
-    fn try_from_value(value: &'s Value) -> Option<Self>;
+/// The error indicating the expected type.
+#[derive(Debug)]
+pub struct TryFromValueError(&'static str);
+
+impl fmt::Display for TryFromValueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
 }
 
 macro_rules! impl_try_from_value {
     ($T:ty, $name:expr) => {
-        impl<'s> TryFromValue<'s> for $T {
-            fn name() -> String {
-                $name.to_owned()
-            }
+        impl TryFrom<Value> for $T {
+            type Error = TryFromValueError;
 
-            fn try_from_value(value: &'s Value) -> Option<Self> {
-                Number::try_from_value(value)?.to::<Self>()
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                Number::try_from(value)?
+                    .to::<Self>()
+                    .ok_or(TryFromValueError($name))
+            }
+        }
+
+        impl TryFrom<Value> for Option<$T> {
+            type Error = TryFromValueError;
+
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                match value {
+                    Value::Null => return Ok(None),
+                    Value::Number(n) => {
+                        if let Some(v) = n.to::<$T>() {
+                            return Ok(Some(v));
+                        }
+                    }
+                    _ => {}
+                }
+                Err(TryFromValueError(concat!("nullable ", $name)))
             }
         }
     };
@@ -404,81 +417,50 @@ impl_try_from_value!(isize, "signed integer");
 impl_try_from_value!(f32, "floating point number");
 impl_try_from_value!(f64, "floating point number");
 
-impl<'s> TryFromValue<'s> for Number {
-    fn name() -> String {
-        "number".to_owned()
-    }
+impl TryFrom<Value> for Number {
+    type Error = TryFromValueError;
 
-    fn try_from_value(value: &'s Value) -> Option<Self> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Number(n) => Some(*n),
-            _ => None,
+            Value::Number(n) => Ok(n),
+            _ => Err(TryFromValueError("number")),
         }
     }
 }
 
-impl<'s> TryFromValue<'s> for &'s str {
-    fn name() -> String {
-        "string".to_owned()
-    }
+impl TryFrom<Value> for String {
+    type Error = TryFromValueError;
 
-    fn try_from_value(value: &'s Value) -> Option<Self> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Bytes(Bytes {
                 is_binary: false,
                 bytes,
-            }) => Some(unsafe { from_utf8_unchecked(bytes) }),
-            _ => None,
+            }) => Ok(unsafe { String::from_utf8_unchecked(bytes) }),
+            _ => Err(TryFromValueError("string")),
         }
     }
 }
 
-impl<'s> TryFromValue<'s> for &'s [u8] {
-    fn name() -> String {
-        "byte".to_owned()
-    }
+impl TryFrom<Value> for Vec<u8> {
+    type Error = TryFromValueError;
 
-    fn try_from_value(value: &'s Value) -> Option<Self> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Bytes(Bytes { bytes, .. }) => Some(bytes),
-            _ => None,
+            Value::Bytes(Bytes { bytes, .. }) => Ok(bytes),
+            _ => Err(TryFromValueError("bytes string")),
         }
     }
 }
 
-impl<'s> TryFromValue<'s> for &'s Value {
-    fn name() -> String {
-        "value".to_owned()
-    }
+impl TryFrom<Value> for Option<bool> {
+    type Error = TryFromValueError;
 
-    fn try_from_value(value: &'s Value) -> Option<Self> {
-        Some(value)
-    }
-}
-
-impl<'s> TryFromValue<'s> for Option<bool> {
-    fn name() -> String {
-        "nullable boolean".to_owned()
-    }
-
-    fn try_from_value(value: &'s Value) -> Option<Self> {
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Null => Some(None),
-            Value::Number(n) => Some(n.to_sql_bool()),
-            _ => None,
-        }
-    }
-}
-
-impl<'s, T: TryFromValue<'s>> TryFromValue<'s> for Option<T> {
-    fn name() -> String {
-        format!("nullable {}", T::name())
-    }
-
-    fn try_from_value(value: &'s Value) -> Option<Self> {
-        match value {
-            Value::Null => Some(None),
-            _ => T::try_from_value(value).map(Some),
+            Value::Null => Ok(None),
+            Value::Number(n) => Ok(n.to_sql_bool()),
+            _ => Err(TryFromValueError("nullable boolean")),
         }
     }
 }
