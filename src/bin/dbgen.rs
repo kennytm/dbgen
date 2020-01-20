@@ -1,14 +1,26 @@
+use anyhow::Error;
 use dbgen::cli::{run, Args};
-use std::process::exit;
+use std::fmt;
 use structopt::StructOpt;
 
-fn main() {
-    let args = Args::from_args();
-    if let Err(err) = run(args) {
-        eprintln!("{}\n", err);
-        for (e, i) in err.chain().zip(1..) {
-            eprintln!("{:=^80}\n{}\n", format!(" ERROR CAUSE #{} ", i), e);
+fn main() -> Result<(), DisplayError> {
+    Ok(run(Args::from_args())?)
+}
+
+struct DisplayError(Error);
+
+impl From<Error> for DisplayError {
+    fn from(e: Error) -> Self {
+        Self(e)
+    }
+}
+
+impl fmt::Debug for DisplayError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}\n", self.0)?;
+        for (e, i) in self.0.chain().zip(1..) {
+            writeln!(f, "{:=^80}\n{}\n", format!(" ERROR CAUSE #{} ", i), e)?;
         }
-        exit(1);
+        Ok(())
     }
 }
