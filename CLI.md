@@ -66,6 +66,7 @@ More options
     | `isaac64`         | [ISAAC-64][ISAAC] |
     | `xorshift`        | [Xorshift]        |
     | `pcg32`           | [PCG32]           |
+    | `step`            | Step sequence     |
 
 * `-j «N»`, `--jobs «N»`
 

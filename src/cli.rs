@@ -13,7 +13,7 @@ use flate2::write::GzEncoder;
 use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
 use rand::{
-    rngs::{OsRng, StdRng},
+    rngs::{mock::StepRng, OsRng, StdRng},
     Rng, RngCore, SeedableRng,
 };
 use rayon::{
@@ -91,7 +91,7 @@ pub struct Args {
     pub jobs: usize,
 
     /// Random number generator engine
-    #[structopt(long, possible_values(&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32"]), default_value = "hc128")]
+    #[structopt(long, possible_values(&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "step"]), default_value = "hc128")]
     pub rng: RngName,
 
     /// Disable progress bar.
@@ -313,6 +313,8 @@ pub enum RngName {
     XorShift,
     /// PCG32
     Pcg32,
+    /// Mock RNG which steps by a constant.
+    Step,
 }
 
 impl FromStr for RngName {
@@ -325,6 +327,7 @@ impl FromStr for RngName {
             "isaac64" => Self::Isaac64,
             "xorshift" => Self::XorShift,
             "pcg32" => Self::Pcg32,
+            "step" => Self::Step,
             _ => bail!("Unsupported RNG {}", name),
         })
     }
@@ -340,6 +343,7 @@ impl RngName {
             Self::Isaac64 => Box::new(rand_isaac::Isaac64Rng::from_seed(src.gen())),
             Self::XorShift => Box::new(rand_xorshift::XorShiftRng::from_seed(src.gen())),
             Self::Pcg32 => Box::new(rand_pcg::Pcg32::from_seed(src.gen())),
+            Self::Step => Box::new(StepRng::new(src.next_u64(), src.next_u64() | 1)),
         }
     }
 }
