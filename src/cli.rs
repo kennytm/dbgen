@@ -24,7 +24,7 @@ use serde_derive::Deserialize;
 use std::{
     error,
     fs::{create_dir_all, read_to_string, File},
-    io::{self, stdin, BufWriter, Read, Write},
+    io::{self, sink, stdin, BufWriter, Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -117,6 +117,10 @@ pub struct Args {
     /// Do not generate schema files (the CREATE TABLE *.sql files)
     #[structopt(long)]
     pub no_schemas: bool,
+
+    /// Do not generate data files (only useful for benchmarking and fuzzing)
+    #[structopt(long, hidden(true))]
+    pub no_data: bool,
 }
 
 /// The default implementation of the argument suitable for *testing*.
@@ -142,6 +146,7 @@ impl Default for Args {
             compression: None,
             compress_level: 6,
             no_schemas: false,
+            no_data: false,
         }
     }
 }
@@ -224,6 +229,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         escape_backslash: args.escape_backslash,
         format: args.format,
         compression: args.compression.map(|c| (c, compress_level)),
+        no_data: args.no_data,
     };
 
     if !args.no_schemas {
@@ -427,16 +433,11 @@ impl CompressionName {
 struct WriteCountWrapper<W: Write> {
     inner: W,
     count: usize,
-    skip_write: bool,
 }
 impl<W: Write> WriteCountWrapper<W> {
     /// Creates a new [`WriteCountWrapper`] by wrapping another [`Write`].
     fn new(inner: W) -> Self {
-        Self {
-            inner,
-            count: 0,
-            skip_write: false,
-        }
+        Self { inner, count: 0 }
     }
 
     /// Commits the number of bytes written into the [`WRITTEN_SIZE`] global variable, then resets
@@ -449,20 +450,12 @@ impl<W: Write> WriteCountWrapper<W> {
 
 impl<W: Write> Write for WriteCountWrapper<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let bytes_written = if self.skip_write {
-            buf.len()
-        } else {
-            self.inner.write(buf)?
-        };
+        let bytes_written = self.inner.write(buf)?;
         self.count += bytes_written;
         Ok(bytes_written)
     }
     fn flush(&mut self) -> io::Result<()> {
-        if self.skip_write {
-            Ok(())
-        } else {
-            self.inner.flush()
-        }
+        self.inner.flush()
     }
 }
 
@@ -477,6 +470,7 @@ struct Env {
     escape_backslash: bool,
     format: FormatName,
     compression: Option<(CompressionName, u8)>,
+    no_data: bool,
 }
 
 /// Information specific to a data file.
@@ -504,7 +498,9 @@ impl Env {
             self.format.extension(),
         ));
 
-        let inner_writer = if let Some((compression, level)) = self.compression {
+        let inner_writer = if self.no_data {
+            Box::new(sink())
+        } else if let Some((compression, level)) = self.compression {
             let mut path_string = path.into_os_string();
             path_string.push(".");
             path_string.push(compression.extension());
@@ -515,9 +511,6 @@ impl Env {
         };
 
         let mut file = WriteCountWrapper::new(BufWriter::new(inner_writer));
-        file.skip_write = std::env::var("DBGEN_WRITE_TO_DEV_NULL")
-            .map(|s| s == "1")
-            .unwrap_or(false);
         let format = self.format.create(self.escape_backslash);
 
         for i in 0..info.inserts_count {

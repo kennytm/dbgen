@@ -1,2 +1,2 @@
 #!/bin/sh
-cargo fuzz run fuzz_target_1
+cargo +nightly fuzz run fuzz_target_1
