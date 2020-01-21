@@ -119,7 +119,10 @@ expr_add = {
     expr_mul ~ ((op_add | op_sub | op_concat) ~ expr_mul)*
 }
 expr_mul = {
-    expr_primary ~ ((op_mul | op_float_div) ~ expr_primary)*
+    expr_subscript ~ ((op_mul | op_float_div) ~ expr_subscript)*
+}
+expr_subscript = {
+    expr_primary ~ ("[" ~ expr ~ "]")*
 }
 
 expr_primary = {

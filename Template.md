@@ -55,7 +55,7 @@ row generated.
 
 From highest to lowest precedence:
 
-1. unary `-`, unary `+`, function call
+1. unary `-`, unary `+`, function call, array subscript
 2. `*`, `/`
 3. `+`, `-`, `||`
 4. `=`, `<>`, `<`, `>`, `<=`, `>=`, `IS`, `IS NOT`
@@ -342,6 +342,11 @@ From highest to lowest precedence:
 * **ARRAY['X', 'Y', 'Z']**
 
     Constructs an array with content 'X', 'Y', 'Z'.
+
+* ***arr*[3]**
+
+    Extracts the 3rd element from the array *arr*. Following the SQL standard, the index is 1-based,
+    i.e. *arr*[1] returns the first element. Returns NULL if the index is out of range of the array.
 
 ### Miscellaneous
 

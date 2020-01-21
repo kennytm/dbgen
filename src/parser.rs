@@ -279,8 +279,8 @@ impl Allocator {
                 Rule::expr_not => {
                     args.push(self.expr_not_from_pairs(pair.into_inner())?);
                 }
-                Rule::expr_primary => {
-                    args.push(self.expr_primary_from_pairs(pair.into_inner())?);
+                Rule::expr_subscript => {
+                    args.push(self.expr_subscript_from_pairs(pair.into_inner())?);
                 }
                 Rule::kw_or
                 | Rule::kw_and
@@ -321,6 +321,27 @@ impl Allocator {
             debug_assert_eq!(args.len(), 1);
             args.swap_remove(0)
         })
+    }
+
+    /// Creates an array subscript expression `p[i][j][k]`
+    fn expr_subscript_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut base = Expr::Value(Value::Null);
+
+        for pair in pairs {
+            let rule = pair.as_rule();
+            match rule {
+                Rule::expr_primary => base = self.expr_primary_from_pairs(pair.into_inner())?,
+                Rule::expr => {
+                    base = Expr::Function {
+                        function: &functions::array::Subscript,
+                        args: vec![base, self.expr_from_pairs(pair.into_inner())?],
+                    }
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok(base)
     }
 
     /// Creates a NOT expression `NOT NOT NOT x`.

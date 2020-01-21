@@ -9,4 +9,10 @@ CREATE TABLE result (
     {{ array[3, 6] < array[3] }}
     {{ array[3, 6] < array[3, 6] }}
     {{ array[3, 6] < array[3, 6, 9] }}
+
+    {{ array[10, 20, 30][1] }}
+    {{ array[10, 20, 30][3] }}
+    {{ array[10, 20, 30][0] }}
+    {{ array[10, 20, 30][999] }}
+    {{ array[array[13]][1][1] }}
 );
