@@ -4,6 +4,7 @@ use crate::{
     eval::{CompileContext, Row, State},
     format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
+    value::Value,
 };
 
 use anyhow::{bail, Context, Error};
@@ -220,9 +221,10 @@ pub fn run(args: Args) -> Result<(), Error> {
 
     create_dir_all(&args.out_dir).context("failed to create output directory")?;
 
-    let ctx = CompileContext {
+    let mut ctx = CompileContext {
         time_zone: args.time_zone,
         current_timestamp: args.now.unwrap_or_else(|| Utc::now().naive_utc()),
+        variables: vec![Value::Null; template.variables_count],
     };
 
     let compress_level = args.compress_level;
@@ -255,13 +257,20 @@ pub fn run(args: Args) -> Result<(), Error> {
     let mut seeding_rng = StdRng::from_seed(meta_seed);
 
     let files_count = args.files_count;
-    let variables_count = template.variables_count;
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
     let rng_name = args.rng;
     let inserts_count = args.inserts_count;
     let rows_count = args.rows_count;
     let last_file_inserts_count = args.last_file_inserts_count.unwrap_or(inserts_count);
     let last_insert_rows_count = args.last_insert_rows_count.unwrap_or(rows_count);
+
+    // Evaluate the global expressions if necessary.
+    if !template.global_exprs.is_empty() {
+        let row_gen = ctx.compile_row(template.global_exprs)?;
+        let mut state = State::new(0, rng_name.create(&mut seeding_rng), ctx);
+        row_gen.eval(&mut state)?;
+        ctx = state.into_compile_context();
+    }
 
     let progress_bar_thread = spawn(move || {
         if show_progress {
@@ -297,7 +306,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         .collect::<Vec<_>>();
     let res = pool.install(move || {
         iv.into_par_iter().try_for_each(|(seed, file_info, row_num)| {
-            let mut state = State::new(row_num, seed, variables_count, ctx.clone());
+            let mut state = State::new(row_num, seed, ctx.clone());
             env.write_data_file(&file_info, &mut state)
         })
     });

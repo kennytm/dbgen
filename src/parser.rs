@@ -147,7 +147,12 @@ pub struct Template {
     /// The expressions to populate the table.
     pub exprs: Vec<Expr>,
 
-    /// Number of variables involved in the expressions.
+    /// The expressions shared among all rows.
+    ///
+    /// These should be evaluated only once.
+    pub global_exprs: Vec<Expr>,
+
+    /// Number of variables involved in the expressions (including globals).
     pub variables_count: usize,
 }
 
@@ -194,6 +199,7 @@ impl Template {
         let mut name = None;
         let mut alloc = Allocator::default();
         let mut exprs = Vec::new();
+        let mut global_exprs = Vec::new();
         let mut content = String::from("(");
 
         for pair in pairs {
@@ -213,6 +219,9 @@ impl Template {
                 Rule::expr => {
                     exprs.push(alloc.expr_from_pairs(pair.into_inner())?);
                 }
+                Rule::global_content => {
+                    global_exprs.push(alloc.expr_group_from_pairs(pair.into_inner())?);
+                }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
@@ -221,6 +230,7 @@ impl Template {
             name: name.unwrap(),
             content,
             exprs,
+            global_exprs,
             variables_count: alloc.map.len(),
         })
     }

@@ -91,12 +91,18 @@ column_definition = {
 table_options = {
     ")" ~ ANY*
 }
+content = _{
+    "{{" ~ expr ~ "}}" | "/*{{" ~ expr ~ "}}*/"
+}
 create_table_content = _{
-    "(" ~ (column_definition | "{{" ~ expr ~ "}}" | "/*{{" ~ expr ~ "}}*/")* ~ table_options
+    "(" ~ (column_definition | content)* ~ table_options
+}
+global_content = {
+    content
 }
 
 create_table = _{
-    SOI ~ kw_create ~ kw_table ~ qname ~ create_table_content
+    SOI ~ global_content* ~ kw_create ~ kw_table ~ qname ~ create_table_content
 }
 
 expr = {

@@ -4,6 +4,7 @@ use dbgen::{
     eval::{CompileContext, State},
     format::{Format, SqlFormat},
     parser::Template,
+    value::Value,
 };
 use rand::SeedableRng;
 use rand_hc::Hc128Rng;
@@ -14,14 +15,12 @@ use std::{
 
 fn run_benchmark(b: &mut Bencher<'_>, path: &str) -> Result<(), Error> {
     let template = Template::parse(&read_to_string(path)?)?;
-    let ctx = CompileContext::default();
+    let ctx = CompileContext {
+        variables: vec![Value::Null; template.variables_count],
+        .. CompileContext::default()
+    };
     let row = ctx.compile_row(template.exprs)?;
-    let mut state = State::new(
-        1,
-        Box::new(Hc128Rng::from_seed([0x41; 32])),
-        template.variables_count,
-        ctx,
-    );
+    let mut state = State::new(1, Box::new(Hc128Rng::from_seed([0x41; 32])), ctx);
     let format = SqlFormat {
         escape_backslash: false,
     };

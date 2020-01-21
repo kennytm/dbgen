@@ -5,20 +5,42 @@ File syntax
 -----------
 
 The template file should consist of one CREATE TABLE statement, with expressions telling how a value
-should be generated inside `{{ … }}` or `/*{{ … }}*/` blocks:
+should be generated inside `{{ … }}` or `/*{{ … }}*/` blocks, e.g.
 
 ```sql
 CREATE TABLE "database"."schema"."table" (
-    column_1    COLUMN_TYPE_1,
-        {{ value_1 }}
-    column_2    COLUMN_TYPE_2,
-        /*{{ value_2 }}*/
-    -- ...
-    column_n    COLUMN_TYPE_N,
-        {{ value_n }}
-    INDEX(some_index),
-    INDEX(more_index)
-) OPTION_1 = 1 /*, ... */;
+    "id"        INTEGER,
+        /*{{ rownum }}*/
+    "name"      CHAR(40),
+        /*{{ rand.regex('[a-zA-Z ]{40}') }}*/
+    UNIQUE KEY "some_index"("id")
+);
+```
+
+Each `{{ … }}` block appearing alongside the column definitions represent one value in every
+generated row. The example above may produce output like
+
+```sql
+INSERT INTO "table" VALUES
+(1, 'cHvkcFSMq YbERjjeBUzLaOG TOYvDrHhfymyQeP'),
+(2, 'kBAQlctdPLAlYZPyvYoBRIhYiEtOONCZQVpxpbbw'),
+(3, 'ILqyqKYi jTqXaUjsgdFqYxFasnUMzXaFRvqJDdx'),
+…
+```
+
+### Global expressions
+
+The `{{ … }}` can also be placed before the CREATE TABLE statement. These expressions would be
+evaluated once, and will not be written into the generated file. This is useful to define global
+constants shared among all rows.
+
+```sql
+{{ @dirs := array['North', 'West', 'East', 'South'] }}
+CREATE TABLE cardinals (
+    t INTEGER       {{ rownum }},
+    d1 VARCHAR(5)   {{ @dirs[rand.zipf(4, 0.8)] }},
+    d2 VARCHAR(5)   {{ @dirs[rand.zipf(4, 0.8)] }}
+);
 ```
 
 Expression syntax
