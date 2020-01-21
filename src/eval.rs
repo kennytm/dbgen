@@ -17,11 +17,16 @@ use zipf::ZipfDistribution;
 pub struct CompileContext {
     /// The time zone used to interpret strings into timestamps.
     pub time_zone: Tz,
+    /// The current timestamp in UTC.
+    pub current_timestamp: NaiveDateTime,
 }
 
 impl Default for CompileContext {
     fn default() -> Self {
-        Self { time_zone: Tz::UTC }
+        Self {
+            time_zone: Tz::UTC,
+            current_timestamp: NaiveDateTime::from_timestamp(0, 0),
+        }
     }
 }
 
@@ -159,6 +164,7 @@ impl CompileContext {
     pub fn compile(&self, expr: Expr) -> Result<Compiled, Error> {
         Ok(Compiled(match expr {
             Expr::RowNum => C::RowNum,
+            Expr::CurrentTimestamp => C::Constant(Value::Timestamp(self.current_timestamp, self.time_zone)),
             Expr::Value(v) => C::Constant(v),
             Expr::GetVariable(index) => C::GetVariable(index),
             Expr::SetVariable(index, e) => C::SetVariable(index, Box::new(self.compile(*e)?)),

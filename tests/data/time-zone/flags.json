@@ -1,5 +1,6 @@
 {
     "inserts_count": 1,
     "rows_count": 10,
-    "time_zone": "Europe/London"
+    "time_zone": "Europe/London",
+    "now": "2020-04-01T03:30:00"
 }

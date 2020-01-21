@@ -143,6 +143,7 @@ From highest to lowest precedence:
 ### Symbols
 
 * **rownum**: The current row number. The first row has value 1.
+* **current_timestamp**: The timestamp when `dbgen` was started. This can be overridden using the `--now` parameter.
 * **NULL**: The null value.
 * **TRUE**: Equals to 1.
 * **FALSE**: Equals to 0.

@@ -7,6 +7,7 @@ use crate::{
 };
 
 use anyhow::{bail, Context, Error};
+use chrono::{NaiveDateTime, ParseResult, Utc};
 use chrono_tz::Tz;
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use flate2::write::GzEncoder;
@@ -102,6 +103,10 @@ pub struct Args {
     #[structopt(long, default_value = "UTC")]
     pub time_zone: Tz,
 
+    /// Override the current timestamp (always in UTC), in the format "YYYY-mm-dd HH:MM:SS.fff".
+    #[structopt(long, parse(try_from_str = now_from_str))]
+    pub now: Option<NaiveDateTime>,
+
     /// Output format
     #[structopt(short, long, possible_values(&["sql", "csv"]), default_value = "sql")]
     pub format: FormatName,
@@ -142,6 +147,7 @@ impl Default for Args {
             rng: RngName::Hc128,
             quiet: true,
             time_zone: Tz::UTC,
+            now: None,
             format: FormatName::Sql,
             compression: None,
             compress_level: 6,
@@ -165,6 +171,10 @@ pub(crate) fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, De
         Ok(_) => Ok(seed),
         Err(e) => Err(e.error),
     }
+}
+
+fn now_from_str(s: &str) -> ParseResult<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
 }
 
 /// Extension trait for `Result` to annotate it with a file path.
@@ -212,6 +222,7 @@ pub fn run(args: Args) -> Result<(), Error> {
 
     let ctx = CompileContext {
         time_zone: args.time_zone,
+        current_timestamp: args.now.unwrap_or_else(|| Utc::now().naive_utc()),
     };
 
     let compress_level = args.compress_level;

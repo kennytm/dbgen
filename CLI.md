@@ -107,6 +107,12 @@ More options
     The time zone used to parse and format timestamps. Defaults to `UTC`, regardless of system time
     zone. Any `tz` database time zone name (e.g. `America/New_York`) can be used.
 
+* `--now «TIMESTAMP»`
+
+    Override the timestamp reported by `current_timestamp`. Defaults to the time when `dbgen` was
+    started. The timestamp must be written in the format `YYYY-mm-dd HH:MM:SS.fff`, and it is always
+    in UTC, regardless of the `--time-zone` setting.
+
 * `-f «FORMAT»`, `--format «FORMAT»`
 
     Output format. Could be one of:

@@ -197,7 +197,7 @@ pub enum Value {
     Number(Number),
     /// A string or byte string.
     Bytes(Bytes),
-    /// A timestamp.
+    /// A timestamp. The `NaiveDateTime` field must be in the UTC time zone.
     Timestamp(NaiveDateTime, Tz),
     /// A time interval, as multiple of microseconds.
     Interval(i64),

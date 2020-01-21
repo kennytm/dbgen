@@ -156,6 +156,8 @@ pub struct Template {
 pub enum Expr {
     /// The `rownum` symbol.
     RowNum,
+    /// The `current_timestamp` symbol.
+    CurrentTimestamp,
     /// A constant value.
     Value(Value),
     /// Symbol of a local variable `@x`.
@@ -351,6 +353,7 @@ impl Allocator {
         let pair = pairs.next().unwrap();
         Ok(match pair.as_rule() {
             Rule::kw_rownum => Expr::RowNum,
+            Rule::kw_current_timestamp => Expr::CurrentTimestamp,
             Rule::kw_null => Expr::Value(Value::Null),
             Rule::kw_true => Expr::Value(1_u64.into()),
             Rule::kw_false => Expr::Value(0_u64.into()),
