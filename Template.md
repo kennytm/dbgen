@@ -64,6 +64,11 @@ From highest to lowest precedence:
 7. `OR`
 8. `:=`
 
+* **Division `/`**
+
+    The division operator always result in a floating-point number (i.e. `3 / 2 = 1.5`). Use the
+    `div` function for integer division.
+
 * **Concatenation `||`**
 
     The `||` will concatenate two strings together. If either side is not a string, they will first
@@ -292,6 +297,44 @@ From highest to lowest precedence:
     The `FOR` and `USING` parts are optional. The `FOR` part defaults to the length of the
     replacement string.
 
+### Numbers
+
+* **greatest(*x*, *y*, *z*)**
+
+    Returns the largest of all given values. NULL values are ignored.
+
+* **least(*x*, *y*, *z*)**
+
+    Returns the smallest of all given values. NULL values are ignored.
+
+* **round(456.789, 2)**
+
+    Rounds the number 456.789 to 2 decimal places (i.e. returns 456.79).
+
+    The decimal place argument is optional, and defaults to 0. It can also be negative to round by
+    powers of 10, e.g. `round(456.789, -2) = 500.0`. In case of break-even (e.g. `round(3.5)`), this
+    function will round half away from zero.
+
+* **div(9, 4)**, **mod(9, 4)**
+
+    Computes the quotient and remainder respectively when 9 is divided by 4 (i.e. 2). These two
+    functions are related by
+
+    ```sql
+    n = div(n, d)*d + mod(n, d)
+    ```
+
+    The `div(n, d)` function is equivalent to `n / d` truncated towards 0.
+
+    The result of `mod(n, d)` has the same sign as the numerator `n`.
+
+    When the denominator `d` is 0, both of these functions return NULL.
+
+* **mod(9, 4)**
+
+    Computes the remainder when 9 is divided by 4 (i.e. 1). The result has the same sign as the
+    numerator (+9).
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**
@@ -312,19 +355,3 @@ From highest to lowest precedence:
 * **@local**
 
     Gets the previous assigned local variable. If the variable was undefined, this will return NULL.
-
-* **greatest(*x*, *y*, *z*)**
-
-    Returns the largest of all given values. NULL values are ignored.
-
-* **least(*x*, *y*, *z*)**
-
-    Returns the smallest of all given values. NULL values are ignored.
-
-* **round(456.789, 2)**
-
-    Rounds the number 456.789 to 2 decimal places (i.e. returns 456.79).
-
-    The decimal place argument is optional, and defaults to 0. It can also be negative to round by
-    powers of 10, e.g. `round(456.789, -2) = 500.0`. In case of break-even (e.g. `round(3.5)`), this
-    function will round half away from zero.

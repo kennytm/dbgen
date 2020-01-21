@@ -224,3 +224,27 @@ impl Function for Round {
         Ok(Compiled(C::Constant(result.into())))
     }
 }
+
+//------------------------------------------------------------------------------
+
+/// The `div` SQL function.
+#[derive(Debug)]
+pub struct Div;
+
+impl Function for Div {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let (n, d) = args_2::<Number, Number>("div", args, None, None)?;
+        Ok(Compiled(C::Constant(n.div(&d).into())))
+    }
+}
+
+/// The `mod` SQL function.
+#[derive(Debug)]
+pub struct Mod;
+
+impl Function for Mod {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let (n, d) = args_2::<Number, Number>("mod", args, None, None)?;
+        Ok(Compiled(C::Constant(n.rem(&d).into())))
+    }
+}

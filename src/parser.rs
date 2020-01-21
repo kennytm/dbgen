@@ -632,6 +632,8 @@ fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
         },
         "least" => &ops::Extremum { order: Ordering::Less },
         "round" => &ops::Round,
+        "div" => &ops::Div,
+        "mod" => &ops::Mod,
         "char_length" | "character_length" => &string::Length(Unit::Characters),
         "octet_length" => &string::Length(Unit::Octets),
         _ => return Err(Error::UnknownFunction(name)),

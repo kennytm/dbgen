@@ -50,6 +50,34 @@ impl Number {
             N::Float(v) => Some(v != 0.0),
         }
     }
+
+    /// Divides this number by the other number, and truncates towards zero.
+    pub fn div(&self, other: &Self) -> Option<Self> {
+        Some(Self(match (self.0, other.0) {
+            (N::Int(n), N::Int(d)) => N::Int(n.checked_div(d)?),
+            (n, d) => {
+                let d = f64::from(d);
+                if d == 0.0 || d.is_nan() {
+                    return None;
+                }
+                N::Float((f64::from(n) / d).trunc())
+            }
+        }))
+    }
+
+    /// Computes the remainder when this number is divided by the other number.
+    pub fn rem(&self, other: &Self) -> Option<Self> {
+        Some(Self(match (self.0, other.0) {
+            (N::Int(n), N::Int(d)) => N::Int(n.checked_rem(d)?),
+            (n, d) => {
+                let d = f64::from(d);
+                if d == 0.0 || d.is_nan() {
+                    return None;
+                }
+                N::Float(f64::from(n) % d)
+            }
+        }))
+    }
 }
 
 macro_rules! impl_from_int_for_number {
