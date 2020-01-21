@@ -275,6 +275,15 @@ From highest to lowest precedence:
     Both the `FROM` and `FOR` parts are optional. The `FROM` part defaults to 1 (start of string),
     and `FOR` part defaults to length of the string.
 
+* **octet_length('input')**
+
+    Computes the byte length of the input string.
+
+* **char_length('ⓘⓝⓟⓤⓣ')**, **character_length('ⓘⓝⓟⓤⓣ')**
+
+    Computes the character length of the input string. "Character" means a Unicode codepoint here.
+    `character_length` is an alias of `char_length`; the two functions are equivalent.
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**

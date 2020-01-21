@@ -1,6 +1,6 @@
 //! String functions.
 
-use super::{args_3, Function};
+use super::{args_1, args_3, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
@@ -51,6 +51,14 @@ impl Unit {
                     (byte_start, byte_end)
                 }
             }
+        }
+    }
+
+    /// Computes the length of the input using this unit.
+    fn length_of(self, input: &[u8]) -> usize {
+        match self {
+            Self::Octets => input.len(),
+            Self::Characters => input.iter().filter(|b| is_utf8_leading_byte(**b)).count(),
         }
     }
 }
@@ -117,6 +125,26 @@ impl Function for Substring {
             input.drain(..start);
         }
         Ok(Compiled(C::Constant(input.into())))
+    }
+}
+
+//------------------------------------------------------------------------------
+
+/// The `char_length` and `octet_length` SQL functions.
+#[derive(Debug)]
+pub struct Length(
+    /// The string unit used by the function.
+    pub Unit,
+);
+
+impl Function for Length {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let name = match self.0 {
+            Unit::Characters => "char_length",
+            Unit::Octets => "octet_length",
+        };
+        let input = args_1::<Vec<u8>>(name, args, None)?;
+        Ok(Compiled(C::Constant(self.0.length_of(&input).into())))
     }
 }
 

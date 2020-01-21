@@ -114,4 +114,8 @@ CREATE TABLE result (
     {{ 5 * 6 * 7 }}
     {{ 5 - 6 - 7 }}
     {{ 7 / 4 / 2 }}
+
+    {{ char_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
+    {{ character_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
+    {{ octet_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
 );

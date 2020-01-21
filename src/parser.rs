@@ -572,23 +572,30 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 
 /// Obtains a function from its name.
 fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
+    use functions::{
+        ops, rand,
+        string::{self, Unit},
+    };
+
     Ok(match &*name {
-        "rand.regex" => &functions::rand::Regex,
-        "rand.range" => &functions::rand::Range,
-        "rand.range_inclusive" => &functions::rand::RangeInclusive,
-        "rand.uniform" => &functions::rand::Uniform,
-        "rand.uniform_inclusive" => &functions::rand::UniformInclusive,
-        "rand.zipf" => &functions::rand::Zipf,
-        "rand.log_normal" => &functions::rand::LogNormal,
-        "rand.bool" => &functions::rand::Bool,
-        "rand.finite_f32" => &functions::rand::FiniteF32,
-        "rand.finite_f64" => &functions::rand::FiniteF64,
-        "rand.u31_timestamp" => &functions::rand::U31Timestamp,
-        "greatest" => &functions::ops::Extremum {
+        "rand.regex" => &rand::Regex,
+        "rand.range" => &rand::Range,
+        "rand.range_inclusive" => &rand::RangeInclusive,
+        "rand.uniform" => &rand::Uniform,
+        "rand.uniform_inclusive" => &rand::UniformInclusive,
+        "rand.zipf" => &rand::Zipf,
+        "rand.log_normal" => &rand::LogNormal,
+        "rand.bool" => &rand::Bool,
+        "rand.finite_f32" => &rand::FiniteF32,
+        "rand.finite_f64" => &rand::FiniteF64,
+        "rand.u31_timestamp" => &rand::U31Timestamp,
+        "greatest" => &ops::Extremum {
             order: Ordering::Greater,
         },
-        "least" => &functions::ops::Extremum { order: Ordering::Less },
-        "round" => &functions::ops::Round,
+        "least" => &ops::Extremum { order: Ordering::Less },
+        "round" => &ops::Round,
+        "char_length" | "character_length" => &string::Length(Unit::Characters),
+        "octet_length" => &string::Length(Unit::Octets),
         _ => return Err(Error::UnknownFunction(name)),
     })
 }
