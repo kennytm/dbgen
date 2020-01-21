@@ -387,6 +387,10 @@ From highest to lowest precedence:
     If *p1* is true, then the expression's value is *r1*, etc. If all of the listed conditions are
     false or NULL, the value *ro* will be returned. If the ELSE branch is missing, returns NULL.
 
+* **coalesce(*v1*, *v2*, *v3*)**
+
+    Returns the first non-NULL value. If all of *v1*, *v2*, *v3* are NULL, returns NULL.
+
 * **@local**
 
     Gets the previous assigned local variable. If the variable was undefined, this will return NULL.

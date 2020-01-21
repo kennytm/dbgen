@@ -248,3 +248,16 @@ impl Function for Mod {
         Ok(Compiled(C::Constant(n.rem(&d).into())))
     }
 }
+
+//------------------------------------------------------------------------------
+
+/// The `coalesce` SQL function.
+#[derive(Debug)]
+pub struct Coalesce;
+
+impl Function for Coalesce {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let res = args.into_iter().find(|v| *v != Value::Null).unwrap_or(Value::Null);
+        Ok(Compiled(C::Constant(res)))
+    }
+}

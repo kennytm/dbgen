@@ -687,6 +687,7 @@ fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
         "mod" => &ops::Mod,
         "char_length" | "character_length" => &string::Length(Unit::Characters),
         "octet_length" => &string::Length(Unit::Octets),
+        "coalesce" => &ops::Coalesce,
         _ => return Err(Error::UnknownFunction(name)),
     })
 }
