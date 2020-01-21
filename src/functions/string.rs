@@ -46,10 +46,9 @@ impl Function for SubstringUsingOctets {
         let name = "substring using octets";
         let (mut input, start, length) = args_3::<Vec<u8>, i64, Option<i64>>(name, args, None, None, Some(None))?;
         let (start, end) = sql_to_range(start, length, input.len());
-        if start != 0 {
-            input = input[start..end].to_vec();
-        } else {
-            input.truncate(end);
+        input.truncate(end);
+        if start > 0 {
+            input.drain(..start);
         }
         Ok(Compiled(C::Constant(input.into())))
     }

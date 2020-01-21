@@ -206,7 +206,7 @@ impl Function for Extremum {
                 res = value;
             }
         }
-        Ok(Compiled(C::Constant(res.clone())))
+        Ok(Compiled(C::Constant(res)))
     }
 }
 

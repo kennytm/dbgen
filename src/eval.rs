@@ -167,7 +167,7 @@ impl CompileContext {
                     .into_iter()
                     .map(|e| self.compile(e))
                     .collect::<Result<Vec<_>, _>>()?;
-                if args.iter().all(|c| c.is_constant()) {
+                if args.iter().all(Compiled::is_constant) {
                     let args = args.into_iter().map(|c| c.try_into().unwrap()).collect::<Vec<Value>>();
                     function.compile(self, args)?.0
                 } else {

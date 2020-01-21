@@ -436,7 +436,7 @@ impl TryFrom<Value> for String {
             Value::Bytes(Bytes {
                 is_binary: false,
                 bytes,
-            }) => Ok(unsafe { String::from_utf8_unchecked(bytes) }),
+            }) => Ok(unsafe { Self::from_utf8_unchecked(bytes) }),
             _ => Err(TryFromValueError("string")),
         }
     }
