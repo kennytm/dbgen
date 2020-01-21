@@ -30,8 +30,7 @@ impl Function for SubstringUsingCharacters {
     fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
         let name = "substring using characters";
         let (input, start, length) = args_3::<String, i64, Option<i64>>(name, args, None, None, Some(None))?;
-        #[allow(clippy::replace_consts)] // FIXME: allow this lint until usize::MAX becomes an assoc const
-        let (start, end) = sql_to_range(start, length, usize::MAX);
+        let (start, end) = sql_to_range(start, length, input.len());
         Ok(Compiled(C::Constant(
             input.chars().take(end).skip(start).collect::<String>().into(),
         )))
