@@ -363,6 +363,7 @@ impl Allocator {
             Rule::expr_timestamp => self.expr_timestamp_from_pairs(pair.into_inner())?,
             Rule::expr_interval => self.expr_interval_from_pairs(pair.into_inner())?,
             Rule::expr_get_variable => self.expr_get_variable_from_pairs(pair.into_inner())?,
+            Rule::expr_array => self.expr_array_from_pairs(pair.into_inner())?,
             Rule::expr_function => self.expr_function_from_pairs(pair.into_inner())?,
             Rule::expr_substring_function => self.expr_substring_from_pairs(pair.into_inner())?,
             Rule::expr_overlay_function => self.expr_overlay_from_pairs(pair.into_inner())?,
@@ -389,15 +390,31 @@ impl Allocator {
                     let q_name = QName::from_pairs(pair.into_inner());
                     function = Some(function_from_name(q_name.unique_name())?);
                 }
-                Rule::expr => {
-                    args.push(self.expr_from_pairs(pair.into_inner())?);
-                }
+                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
         Ok(Expr::Function {
             function: function.unwrap(),
+            args,
+        })
+    }
+
+    /// Creates an array expression `ARRAY[a, b, c]`.
+    fn expr_array_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        let mut args = Vec::new();
+
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::kw_array => {}
+                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok(Expr::Function {
+            function: &functions::array::Array,
             args,
         })
     }

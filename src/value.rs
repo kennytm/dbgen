@@ -3,7 +3,7 @@
 use chrono::{Duration, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use num_traits::FromPrimitive;
-use std::{cmp::Ordering, convert::TryFrom, fmt, io::Write, ops, str::from_utf8};
+use std::{cmp::Ordering, convert::TryFrom, fmt, io::Write, ops, str::from_utf8, sync::Arc};
 
 use crate::error::Error;
 
@@ -201,6 +201,8 @@ pub enum Value {
     Timestamp(NaiveDateTime, Tz),
     /// A time interval, as multiple of microseconds.
     Interval(i64),
+    /// An array of values.
+    Array(Arc<[Value]>),
 }
 
 macro_rules! try_or_overflow {
@@ -209,6 +211,25 @@ macro_rules! try_or_overflow {
             e
         } else {
             return Err(Error::IntegerOverflow(format!($($fmt)+)));
+        }
+    }
+}
+
+fn try_partial_cmp_by<I, J, F>(a: I, b: J, mut f: F) -> Result<Option<Ordering>, Error>
+where
+    I: IntoIterator,
+    J: IntoIterator<Item = I::Item>,
+    F: FnMut(I::Item, I::Item) -> Result<Option<Ordering>, Error>,
+{
+    let mut a = a.into_iter();
+    let mut b = b.into_iter();
+    loop {
+        match (a.next(), b.next()) {
+            (Some(aa), Some(bb)) => match f(aa, bb) {
+                Ok(Some(Ordering::Equal)) => {}
+                res => return res,
+            },
+            (aa, bb) => return Ok(aa.is_some().partial_cmp(&bb.is_some())),
         }
     }
 }
@@ -239,6 +260,7 @@ impl Value {
     /// * Numbers and intervals are ordered by value.
     /// * Timestamps are ordered by its UTC value, ignoring time zone.
     /// * Strings are ordered by UTF-8 binary collation.
+    /// * Arrays are ordered lexicographically.
     /// * Comparing between different types are inconsistent among database
     ///     engines, thus this function will just error with `InvalidArguments`.
     pub fn sql_cmp(&self, other: &Self, name: &'static str) -> Result<Option<Ordering>, Error> {
@@ -248,6 +270,7 @@ impl Value {
             (Self::Bytes(a), Self::Bytes(b)) => a.bytes.partial_cmp(&b.bytes),
             (Self::Timestamp(a, _), Self::Timestamp(b, _)) => a.partial_cmp(b),
             (Self::Interval(a), Self::Interval(b)) => a.partial_cmp(b),
+            (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), |a, b| a.sql_cmp(b, name))?,
             _ => {
                 return Err(Error::InvalidArguments {
                     name,
@@ -381,6 +404,12 @@ impl Value {
                 Self::Interval(interval) => {
                     write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval).unwrap();
                 }
+                Self::Array(_) => {
+                    return Err(Error::InvalidArguments {
+                        name: "||",
+                        cause: format!("cannot concatenate arrays using || operator"),
+                    });
+                }
             }
         }
 
@@ -504,6 +533,17 @@ impl TryFrom<Value> for Option<bool> {
             Value::Null => Ok(None),
             Value::Number(n) => Ok(n.to_sql_bool()),
             _ => Err(TryFromValueError("nullable boolean")),
+        }
+    }
+}
+
+impl TryFrom<Value> for Arc<[Value]> {
+    type Error = TryFromValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Array(v) => Ok(v),
+            _ => Err(TryFromValueError("array")),
         }
     }
 }

@@ -125,6 +125,16 @@ impl Format for SqlFormat {
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
             Value::Timestamp(timestamp, tz) => write_timestamp(writer, "'", &tz.from_utc_datetime(timestamp)),
             Value::Interval(interval) => write_interval(writer, "'", *interval),
+            Value::Array(array) => {
+                writer.write_all(b"ARRAY[")?;
+                for (i, item) in array.iter().enumerate() {
+                    if i != 0 {
+                        writer.write_all(b", ")?;
+                    }
+                    self.write_value(writer, item)?;
+                }
+                writer.write_all(b"]")
+            }
         }
     }
 
@@ -167,6 +177,16 @@ impl Format for CsvFormat {
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
             Value::Timestamp(timestamp, tz) => write_timestamp(writer, "", &tz.from_utc_datetime(timestamp)),
             Value::Interval(interval) => write_interval(writer, "", *interval),
+            Value::Array(array) => {
+                writer.write_all(b"{")?;
+                for (i, item) in array.iter().enumerate() {
+                    if i != 0 {
+                        writer.write_all(b",")?;
+                    }
+                    self.write_value(writer, item)?;
+                }
+                writer.write_all(b"}")
+            }
         }
     }
 

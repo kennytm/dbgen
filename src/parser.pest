@@ -57,6 +57,7 @@ kw_octets   = @{ ^"octets" ~ b }
 kw_overlay  = @{ ^"overlay" ~ b }
 kw_placing  = @{ ^"placing" ~ b }
 kw_current_timestamp = @{ ^"current_timestamp" ~ b }
+kw_array    = @{ ^"array" ~ b }
 
 op_le       = @{ "<=" }
 op_lt       = @{ "<" }
@@ -131,6 +132,7 @@ expr_primary = {
     expr_timestamp |
     expr_interval |
     expr_get_variable |
+    expr_array |
     expr_substring_function |
     expr_overlay_function |
     expr_function
@@ -163,6 +165,10 @@ expr_interval = {
 
 expr_get_variable = {
     "@" ~ ident ~ !":="
+}
+
+expr_array = {
+    kw_array ~ "[" ~ (expr ~ ("," ~ expr)*)? ~ "]"
 }
 
 expr_substring_function = {

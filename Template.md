@@ -71,8 +71,8 @@ From highest to lowest precedence:
 
 * **Concatenation `||`**
 
-    The `||` will concatenate two strings together. If either side is not a string, they will first
-    be converted into a string.
+    The `||` operator concatenates two strings together. If either side is not a string, they will
+    first be converted into a string. This operator cannot be used to concatenate arrays.
 
 * **Comparison `=`, `<>`, `<`, `>`, `<=`, `>=`**
 
@@ -82,6 +82,7 @@ From highest to lowest precedence:
     - Comparing with NULL always return NULL.
     - Numbers are ordered by values.
     - Strings are ordered lexicographically in the UTF-8 binary collation.
+    - Arrays are ordered lexicographically by their elements.
     - Comparing two values with different types (e.g. `'4' < 5`) will abort the program.
 
 * **Identity `IS`, `IS NOT`**
@@ -335,6 +336,12 @@ From highest to lowest precedence:
 
     Computes the remainder when 9 is divided by 4 (i.e. 1). The result has the same sign as the
     numerator (+9).
+
+### Arrays
+
+* **ARRAY['X', 'Y', 'Z']**
+
+    Constructs an array with content 'X', 'Y', 'Z'.
 
 ### Miscellaneous
 

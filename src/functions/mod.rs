@@ -6,6 +6,7 @@ use crate::value::Value;
 
 use std::{convert::TryFrom, fmt::Debug};
 
+pub mod array;
 pub mod ops;
 pub mod rand;
 pub mod string;

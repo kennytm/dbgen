@@ -1,0 +1,2 @@
+INSERT INTO result VALUES
+(ARRAY[], ARRAY[1], ARRAY[1, 2], ARRAY[ARRAY[], ARRAY[3], ARRAY[4, 5]], 1, 0, 0, 0, 1);
