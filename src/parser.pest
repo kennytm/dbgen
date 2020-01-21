@@ -163,7 +163,7 @@ expr_get_variable = {
 
 expr_substring_function = {
     kw_substring ~ "(" ~ substring_input ~
-        kw_from ~ substring_from ~
+        (kw_from ~ substring_from)? ~
         (kw_for ~ substring_for)? ~
         (kw_using ~ (kw_octets | kw_characters))? ~
     ")"

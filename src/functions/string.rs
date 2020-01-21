@@ -6,47 +6,113 @@ use crate::{
     eval::{CompileContext, Compiled, C},
     value::Value,
 };
-use std::{convert::TryInto, usize};
+use std::{convert::TryInto, isize};
 
 //------------------------------------------------------------------------------
 
-/// Extracts the arguments for the `substring` SQL functions.
-fn sql_to_range(start: i64, length: Option<i64>, max: usize) -> (usize, usize) {
-    let start = start - 1;
-    if let Some(length) = length {
-        let end = (start + length).try_into().unwrap_or(0);
-        let start = start.try_into().unwrap_or(0);
-        (start.min(max), end.max(start).min(max))
-    } else {
-        (start.try_into().unwrap_or(0).min(max), max)
+/// The unit used to index a (byte) string.
+#[derive(Debug, Copy, Clone)]
+pub enum Unit {
+    /// Index the string using characters (code points).
+    Characters,
+    /// Index the string using bytes (code units).
+    Octets,
+}
+
+/// Whether the byte is a leading byte in UTF-8 (`0x00..=0x7F`, `0xC0..=0xFF`).
+#[allow(clippy::cast_possible_wrap)] // the wrap is intentional.
+fn is_utf8_leading_byte(b: u8) -> bool {
+    (b as i8) >= -0x40
+}
+
+impl Unit {
+    /// Extracts the arguments for the `substring` SQL functions.
+    fn parse_sql_range(self, input: &[u8], mut start: isize, length: isize) -> (usize, usize) {
+        // first convert SQL indices into Rust indices.
+        start -= 1;
+        let end = start.saturating_add(length.max(0));
+        let start = start.try_into().unwrap_or(0_usize);
+        let end = end.try_into().unwrap_or(start);
+
+        // Translate character index into byte index
+        match self {
+            Self::Octets => (start.min(input.len()), end.min(input.len())),
+            Self::Characters => {
+                let len = (end - start).checked_sub(1);
+                let mut it = input
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, b)| if is_utf8_leading_byte(*b) { Some(i) } else { None })
+                    .fuse();
+                #[allow(clippy::or_fun_call)]
+                {
+                    let byte_start = it.nth(start).unwrap_or(input.len());
+                    let byte_end = len.map_or(byte_start, |len| it.nth(len).unwrap_or(input.len()));
+                    (byte_start, byte_end)
+                }
+            }
+        }
     }
 }
 
-/// The `substring(… using characters)` SQL function.
-#[derive(Debug)]
-pub struct SubstringUsingCharacters;
+#[test]
+fn test_parse_sql_range() {
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 1, isize::MAX), (0, 9));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 0, isize::MAX), (0, 9));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", -100, isize::MAX), (0, 9));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 3, isize::MAX), (2, 9));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 9, isize::MAX), (8, 9));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 100, isize::MAX), (9, 9));
 
-impl Function for SubstringUsingCharacters {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
-        let name = "substring using characters";
-        let (input, start, length) = args_3::<String, i64, Option<i64>>(name, args, None, None, Some(None))?;
-        let (start, end) = sql_to_range(start, length, input.len());
-        Ok(Compiled(C::Constant(
-            input.chars().take(end).skip(start).collect::<String>().into(),
-        )))
-    }
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 1, 1), (0, 1));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 3, 5), (2, 7));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 5, 99), (4, 9));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 7, 0), (6, 6));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 9, -99), (8, 8));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 0, 5), (0, 4));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", -70, 77), (0, 6));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 70, 77), (9, 9));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", -70, -77), (0, 0));
+    assert_eq!(Unit::Octets.parse_sql_range(b"123456789", 70, -77), (9, 9));
+
+    let b = "ßs≠🥰".as_bytes();
+    assert_eq!(Unit::Characters.parse_sql_range(b, 1, isize::MAX), (0, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 2, isize::MAX), (2, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 3, isize::MAX), (3, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 4, isize::MAX), (6, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 5, isize::MAX), (10, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 0, isize::MAX), (0, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 100, isize::MAX), (10, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, -100, isize::MAX), (0, 10));
+
+    assert_eq!(Unit::Characters.parse_sql_range(b, 1, 1), (0, 2));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 2, 2), (2, 6));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 3, 99), (3, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 4, 0), (6, 6));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 5, -99), (10, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, -70, 77), (0, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 70, 77), (10, 10));
+    assert_eq!(Unit::Characters.parse_sql_range(b, -70, -77), (0, 0));
+    assert_eq!(Unit::Characters.parse_sql_range(b, 70, -77), (10, 10));
 }
 
-/// The `substring(… using octets)` SQL function.
-#[derive(Debug)]
-pub struct SubstringUsingOctets;
+//------------------------------------------------------------------------------
 
-impl Function for SubstringUsingOctets {
+/// The `substring` SQL function.
+#[derive(Debug)]
+pub struct Substring(
+    /// The string unit used by the function.
+    pub Unit,
+);
+
+impl Function for Substring {
     fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
-        let name = "substring using octets";
-        let (mut input, start, length) = args_3::<Vec<u8>, i64, Option<i64>>(name, args, None, None, Some(None))?;
-        let (start, end) = sql_to_range(start, length, input.len());
-        input.truncate(end);
+        let name = "substring";
+        let (mut input, start, length) = args_3::<Vec<u8>, isize, Option<isize>>(name, args, None, None, Some(None))?;
+        let (start, end) = self.0.parse_sql_range(&input, start, length.unwrap_or(0));
+        if length.is_some() {
+            input.truncate(end);
+        }
         if start > 0 {
             input.drain(..start);
         }

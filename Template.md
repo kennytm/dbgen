@@ -251,6 +251,30 @@ From highest to lowest precedence:
     Generates a random timestamp distributed uniformly between 1970-01-01 00:00:01 and
     2038-01-19 03:14:07 (UTC). There are exactly 2<sup>31</sup>−1 seconds between these two time.
 
+### Strings
+
+* **substring('ⓘⓝⓟⓤⓣ' FROM 2 FOR 3 USING CHARACTERS)**
+
+    Extracts a substring from character 2 with length of 3 characters. "Character" means a Unicode
+    codepoint here. Following SQL standard, the character position is 1-based, so this function call
+    returns `'ⓝⓟⓤ'`.
+
+    All of `FROM`, `FOR` and `USING` parts are optional. The `FROM` part defaults to 1 (start of
+    string), and `FOR` part defaults to length of the string, e.g.
+
+    ```sql
+    substring('ⓘⓝⓟⓤⓣ' FOR 3) = 'ⓘⓝⓟ';
+    substring('ⓘⓝⓟⓤⓣ' FROM 3) = 'ⓟⓤⓣ';
+    ```
+
+* **substring('input' FROM 2 FOR 3 USING OCTETS)**
+
+    Extracts a substring from byte 2 with length of 3 bytes. Following SQL standard, the byte
+    position is 1-based, so this function call returns `'npu'`.
+
+    Both the `FROM` and `FOR` parts are optional. The `FROM` part defaults to 1 (start of string),
+    and `FOR` part defaults to length of the string.
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**
@@ -280,14 +304,3 @@ From highest to lowest precedence:
     The decimal place argument is optional, and defaults to 0. It can also be negative to round by
     powers of 10, e.g. `round(456.789, -2) = 500.0`. In case of break-even (e.g. `round(3.5)`), this
     function will round half away from zero.
-
-* **substring('input' FROM 2 FOR 3 USING OCTETS)**
-
-    Extracts a substring from byte 2 with length of 3 bytes. Following SQL standard, the byte
-    position is 1-based, so this function call returns `'npu'`.
-
-* **substring('ⓘⓝⓟⓤⓣ' FROM 2 FOR 3 USING CHARACTERS)**
-
-    Extracts a substring from character 2 with length of 3 characters. "Character" means a Unicode
-    codepoint here. Following SQL standard, the character position is 1-based, so this function call
-    returns `'ⓝⓟⓤ'`.

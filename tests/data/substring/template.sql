@@ -13,4 +13,6 @@ create table result (
     {{ substring('🥰' from -1 for 3 using octets) }}
     {{ substring('🥰' from 99 using octets) }}
     {{ substring('🥰' from 99 for 99 using octets) }}
+    {{ substring('🥰😘😍' for 2) }}
+    {{ substring('🥰😘😍' for 2 using octets) }}
 );

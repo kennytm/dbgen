@@ -56,12 +56,12 @@ macro_rules! impl_from_int_for_number {
     ($($ty:ty),*) => {
         $(impl From<$ty> for Number {
             fn from(value: $ty) -> Self {
-                Self(N::Int(value.into()))
+                Self(N::Int(value as _))
             }
         })*
     }
 }
-impl_from_int_for_number!(u8, u16, u32, u64, i8, i16, i32, i64, bool);
+impl_from_int_for_number!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, bool);
 
 impl From<f32> for Number {
     fn from(value: f32) -> Self {

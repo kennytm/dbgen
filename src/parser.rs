@@ -520,7 +520,9 @@ impl Allocator {
 
     /// Creates a `SUBSTRING` function expression.
     fn expr_substring_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut function: &dyn Function = &functions::string::SubstringUsingCharacters;
+        use functions::string::{Substring, Unit};
+
+        let mut function = &Substring(Unit::Characters);
         let mut input = None;
         let mut from = None;
         let mut length = None;
@@ -529,8 +531,8 @@ impl Allocator {
             let rule = pair.as_rule();
             match rule {
                 Rule::kw_substring | Rule::kw_from | Rule::kw_for | Rule::kw_using => {}
-                Rule::kw_octets => function = &functions::string::SubstringUsingOctets,
-                Rule::kw_characters => function = &functions::string::SubstringUsingCharacters,
+                Rule::kw_octets => function = &Substring(Unit::Octets),
+                Rule::kw_characters => function = &Substring(Unit::Characters),
                 Rule::substring_input | Rule::substring_from | Rule::substring_for => {
                     let target = match rule {
                         Rule::substring_input => &mut input,
@@ -544,7 +546,7 @@ impl Allocator {
             }
         }
 
-        let mut args = vec![input.unwrap(), from.unwrap()];
+        let mut args = vec![input.unwrap(), from.unwrap_or_else(|| Expr::Value(1.into()))];
         if let Some(length) = length {
             args.push(length);
         }
