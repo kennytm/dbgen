@@ -362,6 +362,7 @@ impl Allocator {
             Rule::expr_get_variable => self.expr_get_variable_from_pairs(pair.into_inner())?,
             Rule::expr_function => self.expr_function_from_pairs(pair.into_inner())?,
             Rule::expr_substring_function => self.expr_substring_from_pairs(pair.into_inner())?,
+            Rule::expr_overlay_function => self.expr_overlay_from_pairs(pair.into_inner())?,
             Rule::expr_case_value_when => self.expr_case_value_when_from_pairs(pair.into_inner())?,
 
             Rule::single_quoted => {
@@ -518,7 +519,7 @@ impl Allocator {
         })
     }
 
-    /// Creates a `SUBSTRING` function expression.
+    /// Creates a `substring` function expression.
     fn expr_substring_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         use functions::string::{Substring, Unit};
 
@@ -547,6 +548,43 @@ impl Allocator {
         }
 
         let mut args = vec![input.unwrap(), from.unwrap_or_else(|| Expr::Value(1.into()))];
+        if let Some(length) = length {
+            args.push(length);
+        }
+        Ok(Expr::Function { function, args })
+    }
+
+    /// Creates an `overlay` function expression.
+    fn expr_overlay_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        use functions::string::{Overlay, Unit};
+
+        let mut function = &Overlay(Unit::Characters);
+        let mut input = None;
+        let mut placing = None;
+        let mut from = None;
+        let mut length = None;
+
+        for pair in pairs {
+            let rule = pair.as_rule();
+            match rule {
+                Rule::kw_overlay | Rule::kw_placing | Rule::kw_from | Rule::kw_for | Rule::kw_using => {}
+                Rule::kw_octets => function = &Overlay(Unit::Octets),
+                Rule::kw_characters => function = &Overlay(Unit::Characters),
+                Rule::substring_input | Rule::substring_from | Rule::substring_for | Rule::overlay_placing => {
+                    let target = match rule {
+                        Rule::substring_input => &mut input,
+                        Rule::substring_from => &mut from,
+                        Rule::substring_for => &mut length,
+                        Rule::overlay_placing => &mut placing,
+                        _ => unreachable!(),
+                    };
+                    *target = Some(self.expr_group_from_pairs(pair.into_inner())?);
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        let mut args = vec![input.unwrap(), placing.unwrap(), from.unwrap()];
         if let Some(length) = length {
             args.push(length);
         }

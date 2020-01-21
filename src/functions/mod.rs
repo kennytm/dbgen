@@ -61,6 +61,10 @@ declare_arg_fn! {
     /// Extracts three values from the list of arguments.
     fn args_3(d1: T1, d2: T2, d3: T3);
 }
+declare_arg_fn! {
+    /// Extracts four values from the list of arguments.
+    fn args_4(d1: T1, d2: T2, d3: T3, d4: T4);
+}
 
 /// Converts a slice of arguments all into a specific type.
 fn iter_args<T>(name: &'static str, args: Vec<Value>) -> impl Iterator<Item = Result<T, Error>>

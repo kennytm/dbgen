@@ -1,6 +1,6 @@
 //! String functions.
 
-use super::{args_1, args_3, Function};
+use super::{args_1, args_3, args_4, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
@@ -145,6 +145,28 @@ impl Function for Length {
         };
         let input = args_1::<Vec<u8>>(name, args, None)?;
         Ok(Compiled(C::Constant(self.0.length_of(&input).into())))
+    }
+}
+
+//------------------------------------------------------------------------------
+
+/// The `overlay` SQL function.
+#[derive(Debug)]
+pub struct Overlay(
+    /// The string unit used by the function.
+    pub Unit,
+);
+
+impl Function for Overlay {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let name = "overlay";
+        let (mut input, placing, start, length) =
+            args_4::<Vec<u8>, Vec<u8>, isize, Option<isize>>(name, args, None, None, None, Some(None))?;
+        #[allow(clippy::cast_possible_wrap)] // length will never > isize::MAX.
+        let length = length.unwrap_or_else(|| self.0.length_of(&placing) as isize);
+        let (start, end) = self.0.parse_sql_range(&input, start, length);
+        input.splice(start..end, placing);
+        Ok(Compiled(C::Constant(input.into())))
     }
 }
 
