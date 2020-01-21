@@ -172,7 +172,7 @@ pub enum Expr {
     /// A `CASE … WHEN` expression.
     CaseValueWhen {
         /// The expression to match against.
-        value: Box<Expr>,
+        value: Option<Box<Expr>>,
         /// The conditions and their corresponding results.
         conditions: Vec<(Expr, Expr)>,
         /// The result when all conditions failed.
@@ -465,7 +465,7 @@ impl Allocator {
         }
 
         Ok(Expr::CaseValueWhen {
-            value: value.unwrap(),
+            value,
             conditions,
             otherwise,
         })

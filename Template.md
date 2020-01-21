@@ -284,15 +284,30 @@ From highest to lowest precedence:
     Computes the character length of the input string. "Character" means a Unicode codepoint here.
     `character_length` is an alias of `char_length`; the two functions are equivalent.
 
+* **overlay('input' PLACING 'replacement' FROM 2 FOR 3 USING CHARACTERS)**
+
+    Replaces the substring of `'input'` by the `'replacement'`. The meaning of `FROM`, `FOR` and
+    `USING` when specified are equivalent to the `substring()` function.
+
+    The `FOR` and `USING` parts are optional. The `FOR` part defaults to the length of the
+    replacement string.
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**
 
-    Equivalent to the SQL `CASE … WHEN` expression.
+    Equivalent to the SQL simple `CASE … WHEN` expression.
 
     If *value* equals to *p1* (i.e. `(value = p1) IS TRUE`), then the expression's value is *r1*,
     etc. If the *value* does not equal to any of the listed pattern, the value *ro* will be
     returned. If the ELSE branch is missing, returns NULL.
+
+* **CASE WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**
+
+    Equivalent to the SQL searched `CASE WHEN` expression.
+
+    If *p1* is true, then the expression's value is *r1*, etc. If all of the listed conditions are
+    false or NULL, the value *ro* will be returned. If the ELSE branch is missing, returns NULL.
 
 * **@local**
 

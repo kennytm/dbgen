@@ -110,7 +110,7 @@ pub(crate) enum C {
     /// The `CASE … WHEN` expression.
     CaseValueWhen {
         /// The value to match against.
-        value: Box<Compiled>,
+        value: Option<Box<Compiled>>,
         /// The conditions and their corresponding results.
         conditions: Vec<(Compiled, Compiled)>,
         /// The result when all conditions failed.
@@ -179,7 +179,7 @@ impl CompileContext {
                 conditions,
                 otherwise,
             } => {
-                let value = Box::new(self.compile(*value)?);
+                let value = value.map(|v| Ok::<_, Error>(Box::new(self.compile(*v)?))).transpose()?;
                 let conditions = conditions
                     .into_iter()
                     .map(|(p, r)| Ok((self.compile(p)?, self.compile(r)?)))
@@ -224,8 +224,9 @@ impl Compiled {
                 state.variables[*index] = value.clone();
                 value
             }
+
             C::CaseValueWhen {
-                value,
+                value: Some(value),
                 conditions,
                 otherwise,
             } => {
@@ -233,6 +234,19 @@ impl Compiled {
                 for (p, r) in conditions {
                     let p = p.eval(state)?;
                     if value.sql_cmp(&p, "when")? == Some(Ordering::Equal) {
+                        return r.eval(state);
+                    }
+                }
+                otherwise.eval(state)?
+            }
+
+            C::CaseValueWhen {
+                value: None,
+                conditions,
+                otherwise,
+            } => {
+                for (p, r) in conditions {
+                    if p.eval(state)?.is_sql_true("when")? {
                         return r.eval(state);
                     }
                 }

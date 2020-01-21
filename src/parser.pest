@@ -143,7 +143,7 @@ expr_unary = {
 }
 
 expr_case_value_when = {
-    kw_case ~ case_value_when_value ~
+    kw_case ~ case_value_when_value? ~
     (kw_when ~ case_value_when_pattern ~ kw_then ~ case_value_when_result)+ ~
     (kw_else ~ case_value_when_else)? ~
     kw_end

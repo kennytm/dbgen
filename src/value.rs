@@ -361,6 +361,21 @@ impl Value {
         }
         Ok(Self::Bytes(res))
     }
+
+    /// Checks whether this value is truthy in SQL sense.
+    ///
+    /// All nonzero numbers are considered "true", and both NULL and zero are
+    /// considered "false". All other types cause the `InvalidArguments` error.
+    pub fn is_sql_true(&self, name: &'static str) -> Result<bool, Error> {
+        match self {
+            Self::Null => Ok(false),
+            Self::Number(n) => Ok(n.to_sql_bool() == Some(true)),
+            _ => Err(Error::InvalidArguments {
+                name,
+                cause: format!("truth value of {} is undefined", self),
+            }),
+        }
+    }
 }
 
 /// The error indicating the expected type.

@@ -242,7 +242,7 @@ fn gen_nullable_bool_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
     let p = rng.gen::<f64>();
     Column {
         ty: "boolean".to_owned(),
-        expr: format!("CASE rand.bool({}) WHEN TRUE THEN '' || rand.bool(0.5) END", p),
+        expr: format!("CASE WHEN rand.bool({}) THEN '' || rand.bool(0.5) END", p),
         neg_log2_prob: -((1.5 * p - 2.0) * p + 1.0).log2(),
         average_len: 4.0 - p,
         nullable: true,

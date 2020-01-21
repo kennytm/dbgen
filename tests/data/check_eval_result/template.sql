@@ -68,6 +68,12 @@ CREATE TABLE result (
         when 10 then 'ten'
         else 'otherwise'
     end }}
+    {{ case
+        when null then 'null'
+        when false then 'false'
+        when -3 then 'minus three'
+        when true then 'true'
+    end }}
 
     {{ ((((((((((((((((((((((((7)))))))))))))))))))))))) }}
     {{ 1 + 2 - 3 - 4 + 5 + 6 + 7 - 8 - 9 - 10 - 11 }}
