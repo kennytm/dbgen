@@ -413,7 +413,7 @@ impl Value {
                 Self::Array(_) => {
                     return Err(Error::InvalidArguments {
                         name: "||",
-                        cause: format!("cannot concatenate arrays using || operator"),
+                        cause: "cannot concatenate arrays using || operator".to_owned(),
                     });
                 }
             }

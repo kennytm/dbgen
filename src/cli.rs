@@ -203,15 +203,20 @@ static WRITE_PROGRESS: AtomicU64 = AtomicU64::new(0);
 /// Counter of number of bytes being written.
 static WRITTEN_SIZE: AtomicU64 = AtomicU64::new(0);
 
-/// Runs the CLI program.
-pub fn run(args: Args) -> Result<(), Error> {
-    let input = if args.template == Path::new("-") {
+/// Reads the template file
+fn read_template_file(path: &Path) -> Result<String, Error> {
+    if path == Path::new("-") {
         let mut buf = String::new();
         stdin().read_to_string(&mut buf).map(move |_| buf)
     } else {
-        read_to_string(&args.template)
+        read_to_string(path)
     }
-    .context("failed to read template")?;
+    .context("failed to read template")
+}
+
+/// Runs the CLI program.
+pub fn run(args: Args) -> Result<(), Error> {
+    let input = read_template_file(&args.template)?;
     let template = Template::parse(&input, &args.initialize)?;
 
     let pool = ThreadPoolBuilder::new()
@@ -264,8 +269,8 @@ pub fn run(args: Args) -> Result<(), Error> {
     let files_count = args.files_count;
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
     let rng_name = args.rng;
-    let inserts_count = args.inserts_count;
-    let rows_count = args.rows_count;
+    let mut inserts_count = args.inserts_count;
+    let mut rows_count = args.rows_count;
     let last_file_inserts_count = args.last_file_inserts_count.unwrap_or(inserts_count);
     let last_insert_rows_count = args.last_insert_rows_count.unwrap_or(rows_count);
 
@@ -290,20 +295,16 @@ pub fn run(args: Args) -> Result<(), Error> {
     let iv = (0..files_count)
         .map(move |i| {
             let file_index = i + 1;
+            if file_index == files_count {
+                inserts_count = last_file_inserts_count;
+                rows_count = last_insert_rows_count;
+            }
             (
                 rng_name.create(&mut seeding_rng),
                 FileInfo {
                     file_index,
-                    inserts_count: if file_index == files_count {
-                        last_file_inserts_count
-                    } else {
-                        inserts_count
-                    },
-                    last_insert_rows_count: if file_index == files_count {
-                        last_insert_rows_count
-                    } else {
-                        rows_count
-                    },
+                    inserts_count,
+                    last_insert_rows_count: rows_count,
                 },
                 u64::from(i) * rows_per_file + 1,
             )
