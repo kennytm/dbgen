@@ -31,8 +31,8 @@ INSERT INTO "table" VALUES
 ### Global expressions
 
 The `{{ … }}` can also be placed before the CREATE TABLE statement. These expressions would be
-evaluated once, and will not be written into the generated file. This is useful to define global
-constants shared among all rows.
+evaluated once, and will not be written into the generated files. This is useful to define global
+constants used by all rows.
 
 ```sql
 {{ @dirs := array['North', 'West', 'East', 'South'] }}
@@ -42,6 +42,38 @@ CREATE TABLE cardinals (
     d2 VARCHAR(5)   {{ @dirs[rand.zipf(4, 0.8)] }}
 );
 ```
+
+Variables assigned in global expressions can be re-assigned, but the change is localized in the
+current generated file. Every new file would be initialized by the same evaluated values.
+For instance if we generate 2 files given this template:
+
+```sql
+{{ @value := rand.range(0, 100000) }}
+CREATE TABLE _ (
+    p INTEGER {{ @value }},
+    n INTEGER {{ @value := rand.range(0, 100000) }}
+);
+```
+
+We may get
+
+```sql
+------ first file -------
+INSERT INTO _ VALUES
+(58405, 87322),
+(87322, 41735),
+(41735, 91701);
+
+------ second file ------
+INSERT INTO _ VALUES
+(58405, 3046),
+(3046, 8087),
+(8087, 26211);
+```
+
+Note that the initial `@value` are the same for both files (`58405`), because `rand.range()` is only
+evaluated once. After generation started, though, each file acquires its own state and we see they
+evaluate `@value` differently without any interference.
 
 Expression syntax
 -----------------
@@ -172,6 +204,27 @@ From highest to lowest precedence:
 
     The first and second columns are entirely independent, but the second and third column will
     always have the same value.
+
+    Within the same generated file, a row can use local variables assigned from the previous row.
+    For instance:
+
+    ```sql
+    {{ @prev := 0 }}
+    CREATE TABLE _ (
+        "prev" INTEGER NULL     {{ @prev }},
+        "cur"  INTEGER NOT NULL {{ @prev := rownum }}
+    );
+    ```
+
+    would produce
+
+    ```sql
+    INSERT INTO _ VALUES
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    …
+    ```
 
 * **Statements `;`**
 
