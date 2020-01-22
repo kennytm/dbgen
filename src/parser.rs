@@ -659,7 +659,7 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 /// Obtains a function from its name.
 fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
     use functions::{
-        ops, rand,
+        array, ops, rand,
         string::{self, Unit},
     };
 
@@ -686,6 +686,7 @@ fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
         "char_length" | "character_length" => &string::Length(Unit::Characters),
         "octet_length" => &string::Length(Unit::Octets),
         "coalesce" => &ops::Coalesce,
+        "generate_series" => &array::GenerateSeries,
         _ => return Err(Error::UnknownFunction(name)),
     })
 }

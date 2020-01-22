@@ -8,8 +8,8 @@ use crate::{
 };
 use rand::distributions::BernoulliError;
 use rand_distr::NormalError;
-use zipf::ZipfDistribution;
 use std::sync::Arc;
+use zipf::ZipfDistribution;
 
 //------------------------------------------------------------------------------
 

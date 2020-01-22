@@ -291,8 +291,28 @@ impl Value {
         })
     }
 
+    /// Compares this value with the zero value of its own type.
+    pub fn sql_sign(&self) -> Ordering {
+        match self {
+            Self::Null => Ordering::Equal,
+            Self::Number(Number(N::Int(a))) => a.cmp(&0),
+            Self::Number(Number(N::Float(a))) => a.partial_cmp(&0.0).unwrap_or(Ordering::Equal),
+            Self::Bytes(a) => true.cmp(&a.bytes.is_empty()),
+            Self::Timestamp(..) => Ordering::Greater,
+            Self::Interval(a) => a.cmp(&0),
+            Self::Array(a) => true.cmp(&a.is_empty()),
+        }
+    }
+
     /// Adds two values using the rules common among SQL implementations.
     pub fn sql_add(&self, other: &Self) -> Result<Self, Error> {
+        self.sql_add_named(other, "+")
+    }
+
+    /// Adds two values using the rules common among SQL implementations.
+    ///
+    /// The method uses a custom name when reporting errors.
+    pub(crate) fn sql_add_named(&self, other: &Self, name: &'static str) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => (*lhs + *rhs).into(),
             (Self::Timestamp(ts, tz), Self::Interval(dur)) | (Self::Interval(dur), Self::Timestamp(ts, tz)) => {
@@ -311,7 +331,7 @@ impl Value {
             }
             _ => {
                 return Err(Error::InvalidArguments {
-                    name: "+",
+                    name,
                     cause: format!("cannot add {} to {}", self, other),
                 });
             }

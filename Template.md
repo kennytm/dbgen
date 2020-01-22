@@ -441,6 +441,25 @@ From highest to lowest precedence:
     Extracts the 3rd element from the array *arr*. Following the SQL standard, the index is 1-based,
     i.e. *arr*[1] returns the first element. Returns NULL if the index is out of range of the array.
 
+* **generate_series(11, 31, 5)**
+
+    Generates an array of value sequence `array[11, 16, 21, 26, 31]`. Both start and end points are
+    inclusive.
+
+    The step ("5" here) can be omitted and defaults to 1. It can also be negative to generate a
+    decreasing sequence.
+
+    ```sql
+    generate_series(31, 11, -5) = array[31, 26, 21, 16, 11]
+    ```
+
+    The sequence will not go beyond the end point.
+
+    ```sql
+    generate_series(11, 30, 5) = array[11, 16, 21, 26]
+    generate_series(30, 11, -5) = array[30, 25, 20, 15]
+    ```
+
 * **rand.shuffle(*arr*)**
 
     Returns a new array by shuffling *arr*.

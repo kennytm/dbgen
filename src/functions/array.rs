@@ -1,12 +1,12 @@
 //! Array functions.
 
-use super::{args_2, Function};
+use super::{args_2, args_3, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
     value::Value,
 };
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 /// The array constructor.
 #[derive(Debug)]
@@ -30,5 +30,38 @@ impl Function for Subscript {
         } else {
             base[index - 1].clone()
         })))
+    }
+}
+
+/// The `generate_series` SQL function.
+#[derive(Debug)]
+pub struct GenerateSeries;
+
+impl Function for GenerateSeries {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let name = "generate_series";
+        let (start, end, step) = args_3::<Value, Value, Value>(name, args, None, None, Some(1.into()))?;
+
+        let step_sign = step.sql_sign();
+        if step_sign == Ordering::Equal {
+            return Err(Error::InvalidArguments {
+                name,
+                cause: format!("cannot use zero step {}", step),
+            });
+        }
+
+        let mut value = start;
+        let mut result = Vec::new();
+        loop {
+            let cur_cmp = value.sql_cmp(&end, name)?;
+            if cur_cmp.is_none() || cur_cmp == Some(step_sign) {
+                break;
+            }
+            let next = value.sql_add_named(&step, name)?;
+            result.push(value);
+            value = next;
+        }
+
+        Ok(Compiled(C::Constant(Value::Array(result.into()))))
     }
 }

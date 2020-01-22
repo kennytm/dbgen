@@ -17,4 +17,15 @@ CREATE TABLE result (
     {{ array[array[13]][1][1] }}
 
     {{ -@a[1] }}
+
+    {{ generate_series(11, 21, 5) }}
+    {{ generate_series(21, 11, 5) }}
+    {{ generate_series(11, 21, -5) }}
+    {{ generate_series(21, 11, -5) }}
+    {{ generate_series(1.1, 2.25, 0.5) }}
+    {{ generate_series(2.25, 1.1, -0.5) }}
+    {{ generate_series(1, 4) }}
+    {{ generate_series(3, 3) }}
+    {{ generate_series(4, 5, 7) }}
+    {{ generate_series(TIMESTAMP '2019-01-01 13:00:00', TIMESTAMP '2019-01-01 14:00:00', INTERVAL 20 MINUTE) }}
 );
