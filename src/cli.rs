@@ -4,7 +4,7 @@ use crate::{
     eval::{CompileContext, Row, State},
     format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
-    value::Value,
+    value::{Value, TIMESTAMP_FORMAT},
 };
 
 use anyhow::{bail, Context, Error};
@@ -175,7 +175,7 @@ pub(crate) fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, De
 }
 
 fn now_from_str(s: &str) -> ParseResult<NaiveDateTime> {
-    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
+    NaiveDateTime::parse_from_str(s, TIMESTAMP_FORMAT)
 }
 
 /// Extension trait for `Result` to annotate it with a file path.
