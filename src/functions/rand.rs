@@ -147,6 +147,10 @@ pub struct FiniteF64;
 #[derive(Debug)]
 pub struct U31Timestamp;
 
+/// The `rand.uuid` SQL function.
+#[derive(Debug)]
+pub struct Uuid;
+
 impl Function for FiniteF32 {
     fn compile(&self, _: &CompileContext, _: Vec<Value>) -> Result<Compiled, Error> {
         Ok(Compiled(C::RandFiniteF32(rand_distr::Uniform::new(0, 0xff00_0000))))
@@ -165,6 +169,12 @@ impl Function for FiniteF64 {
 impl Function for U31Timestamp {
     fn compile(&self, _: &CompileContext, _: Vec<Value>) -> Result<Compiled, Error> {
         Ok(Compiled(C::RandU31Timestamp(rand_distr::Uniform::new(1, 0x8000_0000))))
+    }
+}
+
+impl Function for Uuid {
+    fn compile(&self, _: &CompileContext, _: Vec<Value>) -> Result<Compiled, Error> {
+        Ok(Compiled(C::RandUuid))
     }
 }
 

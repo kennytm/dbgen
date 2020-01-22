@@ -150,6 +150,8 @@ pub(crate) enum C {
     RandU31Timestamp(Uniform<i64>),
     /// Random shuffled array
     RandShuffle(Arc<[Value]>),
+    /// Random (version 4) UUID
+    RandUuid,
 }
 
 /// A compiled expression
@@ -293,6 +295,23 @@ impl Compiled {
                 let mut shuffled_array = Arc::<[Value]>::from(&**array);
                 Arc::get_mut(&mut shuffled_array).unwrap().shuffle(&mut state.rng);
                 Value::Array(shuffled_array)
+            }
+
+            C::RandUuid => {
+                // we will loss 6 bits but that's still uniform.
+                let [a, b, c, d, e, f, g, h] = state.rng.gen::<[u16; 8]>();
+                format!(
+                    "{:04x}{:04x}-{:04x}-4{:03x}-{:04x}-{:04x}{:04x}{:04x}",
+                    a,
+                    b,
+                    c,
+                    d & 0xfff,
+                    (e & 0x3fff) | 0x8000,
+                    f,
+                    g,
+                    h,
+                )
+                .into()
             }
         })
     }
