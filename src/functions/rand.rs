@@ -9,6 +9,7 @@ use crate::{
 use rand::distributions::BernoulliError;
 use rand_distr::NormalError;
 use zipf::ZipfDistribution;
+use std::sync::Arc;
 
 //------------------------------------------------------------------------------
 
@@ -207,4 +208,17 @@ fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<
         pattern: regex.to_owned(),
         source,
     })
+}
+
+//------------------------------------------------------------------------------
+
+/// The `rand.shuffle` SQL function.
+#[derive(Debug)]
+pub struct Shuffle;
+
+impl Function for Shuffle {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let array = args_1::<Arc<[Value]>>("rand.shuffle", args, None)?;
+        Ok(Compiled(C::RandShuffle(array)))
+    }
 }

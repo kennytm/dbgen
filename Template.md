@@ -441,6 +441,10 @@ From highest to lowest precedence:
     Extracts the 3rd element from the array *arr*. Following the SQL standard, the index is 1-based,
     i.e. *arr*[1] returns the first element. Returns NULL if the index is out of range of the array.
 
+* **rand.shuffle(*arr*)**
+
+    Returns a new array by shuffling *arr*.
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**

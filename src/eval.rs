@@ -3,12 +3,13 @@
 use crate::{error::Error, functions::Function, parser::Expr, value::Value};
 use chrono::NaiveDateTime;
 use chrono_tz::Tz;
-use rand::{distributions::Bernoulli, Rng, RngCore};
+use rand::{distributions::Bernoulli, seq::SliceRandom, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
 use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
     fmt,
+    sync::Arc,
 };
 use zipf::ZipfDistribution;
 
@@ -147,6 +148,8 @@ pub(crate) enum C {
     RandFiniteF64(Uniform<u64>),
     /// Random u31 timestamp
     RandU31Timestamp(Uniform<i64>),
+    /// Random shuffled array
+    RandShuffle(Arc<[Value]>),
 }
 
 /// A compiled expression
@@ -284,6 +287,12 @@ impl Compiled {
                 let seconds = state.rng.sample(uniform);
                 let timestamp = NaiveDateTime::from_timestamp(seconds, 0);
                 Value::new_timestamp(timestamp, state.compile_context.time_zone)
+            }
+
+            C::RandShuffle(array) => {
+                let mut shuffled_array = Arc::<[Value]>::from(&**array);
+                Arc::get_mut(&mut shuffled_array).unwrap().shuffle(&mut state.rng);
+                Value::Array(shuffled_array)
             }
         })
     }
