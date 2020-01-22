@@ -91,6 +91,11 @@ macro_rules! impl_from_int_for_number {
 }
 impl_from_int_for_number!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, bool);
 
+impl From<i128> for Number {
+    fn from(value: i128) -> Self {
+        Self(N::Int(value))
+    }
+}
 impl From<f32> for Number {
     fn from(value: f32) -> Self {
         Self(N::Float(value.into()))
@@ -491,6 +496,7 @@ impl_try_from_value!(i8, "8-bit signed integer");
 impl_try_from_value!(i16, "16-bit signed integer");
 impl_try_from_value!(i32, "32-bit signed integer");
 impl_try_from_value!(i64, "64-bit signed integer");
+impl_try_from_value!(i128, "signed integer");
 impl_try_from_value!(isize, "signed integer");
 impl_try_from_value!(f32, "floating point number");
 impl_try_from_value!(f64, "floating point number");

@@ -71,6 +71,10 @@ op_concat   = @{ "||" }
 op_mul      = @{ "*" }
 op_float_div = @{ "/" }
 op_semicolon = @{ ";" }
+op_bit_and  = @{ "&" }
+op_bit_or   = @{ "|" }
+op_bit_xor  = @{ "^" }
+op_bit_not  = @{ "~" }
 
 balanced = _{
     "(" ~ balanced* ~ ")" |
@@ -120,7 +124,13 @@ expr_not = {
 }
 is_not = { kw_is ~ kw_not }
 expr_cmp = {
-    expr_add ~ ((is_not | kw_is | op_le | op_ge | op_ne | op_lt | op_gt | op_eq) ~ expr_add)?
+    expr_bit_or ~ ((is_not | kw_is | op_le | op_ge | op_ne | op_lt | op_gt | op_eq) ~ expr_bit_or)?
+}
+expr_bit_or = {
+    expr_bit_and ~ ((op_bit_or | op_bit_xor) ~ expr_bit_and)*
+}
+expr_bit_and = {
+    expr_add ~ (op_bit_and ~ expr_add)*
 }
 expr_add = {
     expr_mul ~ ((op_add | op_sub | op_concat) ~ expr_mul)*
@@ -129,7 +139,7 @@ expr_mul = {
     expr_unary ~ ((op_mul | op_float_div) ~ expr_unary)*
 }
 expr_unary = {
-    (op_add | op_sub)* ~ expr_primary ~ ("[" ~ expr ~ "]")*
+    (op_add | op_sub | op_bit_not)* ~ expr_primary ~ ("[" ~ expr ~ "]")*
 }
 
 expr_primary = {

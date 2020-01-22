@@ -77,15 +77,18 @@ row generated.
 
 From highest to lowest precedence:
 
-1. unary `-`, unary `+`, function call, array subscript
-2. `*`, `/`
-3. `+`, `-`, `||`
-4. `=`, `<>`, `<`, `>`, `<=`, `>=`, `IS`, `IS NOT`
-5. unary `NOT`
-6. `AND`
-7. `OR`
-8. `:=`
-9. `;`
+1. function call, array subscript `x[i]`
+2. unary `-`, `+`, `~`
+3. `*`, `/`
+4. `+`, `-`, `||`
+5. `&`
+6. `|`, `^`
+7. `=`, `<>`, `<`, `>`, `<=`, `>=`, `IS`, `IS NOT`
+8. unary `NOT`
+9. `AND`
+10. `OR`
+11. `:=`
+12. `;`
 
 * **Division `/`**
 
@@ -146,6 +149,12 @@ From highest to lowest precedence:
     |  **TRUE** | FALSE |
     |  **NULL** |  NULL |
     | **FALSE** |  TRUE |
+
+* **Bitwise operators `&`, `|`, `^`, `~`**
+
+    These corresponds to bitwise-AND, -OR, -XOR and -NOT respectively. These
+    operators only accept integers as input and produce *signed* results (e.g.
+    `~1 = -2`).
 
 * **Assignment `:=`**
 

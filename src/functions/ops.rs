@@ -99,6 +99,19 @@ impl Function for Not {
 
 //------------------------------------------------------------------------------
 
+/// The bitwise-NOT `~` SQL function.
+#[derive(Debug)]
+pub struct BitNot;
+
+impl Function for BitNot {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        let inner = args_1::<i128>("~", args, None)?;
+        Ok(Compiled(C::Constant((!inner).into())))
+    }
+}
+
+//------------------------------------------------------------------------------
+
 /// The logical `AND`/`OR` SQL functions.
 #[derive(Debug)]
 pub struct Logic {
@@ -170,6 +183,34 @@ impl Function for Arith {
                 }))
             });
         Ok(Compiled(C::Constant(result?.expect("at least 1 argument"))))
+    }
+}
+
+//------------------------------------------------------------------------------
+
+/// The bitwise binary (`&`, `|`, `^`) SQL functions.
+#[derive(Debug)]
+pub enum Bitwise {
+    /// Bitwise-AND (`&`)
+    And,
+    /// Bitwise-OR (`|`)
+    Or,
+    /// Bitwise-XOR (`^`)
+    Xor,
+}
+
+impl Function for Bitwise {
+    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+        use std::ops::{BitAnd, BitOr, BitXor};
+
+        let (name, func, init): (_, fn(i128, i128) -> i128, _) = match self {
+            Self::And => ("&", i128::bitand, -1),
+            Self::Or => ("|", i128::bitor, 0),
+            Self::Xor => ("^", i128::bitxor, 0),
+        };
+
+        let result = iter_args::<i128>(name, args).try_fold(init, |a, b| b.map(|bb| func(a, bb)))?;
+        Ok(Compiled(C::Constant(result.into())))
     }
 }
 

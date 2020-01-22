@@ -296,7 +296,7 @@ impl Allocator {
         for pair in pairs {
             let rule = pair.as_rule();
             match rule {
-                Rule::expr_and | Rule::expr_add | Rule::expr_mul => {
+                Rule::expr_bit_or | Rule::expr_bit_and | Rule::expr_and | Rule::expr_add | Rule::expr_mul => {
                     args.push(self.expr_binary_from_pairs(pair.into_inner())?)
                 }
                 Rule::expr_not => args.push(self.expr_not_from_pairs(pair.into_inner())?),
@@ -317,6 +317,9 @@ impl Allocator {
                 | Rule::op_concat
                 | Rule::op_mul
                 | Rule::op_float_div
+                | Rule::op_bit_and
+                | Rule::op_bit_or
+                | Rule::op_bit_xor
                 | Rule::op_semicolon => {
                     match op {
                         Some(o) if o != rule => {
@@ -449,14 +452,13 @@ impl Allocator {
 
     /// Creates any expression involving a unary operator `+x`, `-x`, `x[i]`, etc.
     fn expr_unary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut has_neg = false;
+        let mut op_stack = Vec::<&dyn Function>::new();
         let mut base = Expr::default();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::op_add => {}
-                Rule::op_sub => {
-                    has_neg = !has_neg;
-                }
+                Rule::op_sub => op_stack.push(&functions::ops::Neg),
+                Rule::op_bit_not => op_stack.push(&functions::ops::BitNot),
                 Rule::expr_primary => {
                     base = self.expr_primary_from_pairs(pair.into_inner())?;
                 }
@@ -470,11 +472,11 @@ impl Allocator {
             }
         }
 
-        if has_neg {
+        for function in op_stack.into_iter().rev() {
             base = Expr::Function {
-                function: &functions::ops::Neg,
+                function,
                 args: vec![base],
-            }
+            };
         }
         Ok(base)
     }
@@ -730,6 +732,9 @@ fn function_from_rule(rule: Rule) -> &'static dyn Function {
         Rule::is_not => &functions::ops::Identical { eq: false },
         Rule::kw_and => &functions::ops::Logic { identity: true },
         Rule::kw_or => &functions::ops::Logic { identity: false },
+        Rule::op_bit_and => &functions::ops::Bitwise::And,
+        Rule::op_bit_or => &functions::ops::Bitwise::Or,
+        Rule::op_bit_xor => &functions::ops::Bitwise::Xor,
         r => unreachable!("Unexpected operator rule {:?}", r),
     }
 }
