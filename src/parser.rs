@@ -201,13 +201,12 @@ impl Template {
         let mut exprs = Vec::new();
         let mut global_exprs = Vec::new();
         let mut content = String::from("(");
+        let mut is_global = true;
 
         for pair in pairs {
             match pair.as_rule() {
-                Rule::kw_create | Rule::kw_table => {}
-                Rule::qname => {
-                    name = Some(QName::from_pairs(pair.into_inner()));
-                }
+                Rule::kw_create | Rule::kw_table => is_global = false,
+                Rule::qname => name = Some(QName::from_pairs(pair.into_inner())),
                 Rule::column_definition | Rule::table_options => {
                     let s = pair.as_str();
                     // insert a space if needed to ensure word boundaries
@@ -216,12 +215,8 @@ impl Template {
                     }
                     content.push_str(s);
                 }
-                Rule::expr => {
-                    exprs.push(alloc.expr_from_pairs(pair.into_inner())?);
-                }
-                Rule::global_content => {
-                    global_exprs.push(alloc.expr_group_from_pairs(pair.into_inner())?);
-                }
+                Rule::stmt => if is_global { &mut global_exprs } else { &mut exprs }
+                    .push(alloc.expr_binary_from_pairs(pair.into_inner())?),
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
@@ -284,14 +279,11 @@ impl Allocator {
             let rule = pair.as_rule();
             match rule {
                 Rule::expr_and | Rule::expr_add | Rule::expr_mul => {
-                    args.push(self.expr_binary_from_pairs(pair.into_inner())?);
+                    args.push(self.expr_binary_from_pairs(pair.into_inner())?)
                 }
-                Rule::expr_not => {
-                    args.push(self.expr_not_from_pairs(pair.into_inner())?);
-                }
-                Rule::expr_subscript => {
-                    args.push(self.expr_subscript_from_pairs(pair.into_inner())?);
-                }
+                Rule::expr_not => args.push(self.expr_not_from_pairs(pair.into_inner())?),
+                Rule::expr_subscript => args.push(self.expr_subscript_from_pairs(pair.into_inner())?),
+                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
                 Rule::kw_or
                 | Rule::kw_and
                 | Rule::is_not
@@ -306,7 +298,8 @@ impl Allocator {
                 | Rule::op_sub
                 | Rule::op_concat
                 | Rule::op_mul
-                | Rule::op_float_div => {
+                | Rule::op_float_div
+                | Rule::op_semicolon => {
                     match op {
                         Some(o) if o != rule => {
                             args = vec![Expr::Function {
@@ -498,14 +491,17 @@ impl Allocator {
             let rule = pair.as_rule();
             match rule {
                 Rule::kw_case | Rule::kw_when | Rule::kw_then | Rule::kw_else | Rule::kw_end => {}
-                Rule::case_value_when_value
-                | Rule::case_value_when_pattern
-                | Rule::case_value_when_result
-                | Rule::case_value_when_else => {
+                Rule::case_value_when_value | Rule::case_value_when_pattern => {
                     let expr = self.expr_group_from_pairs(pair.into_inner())?;
                     match rule {
                         Rule::case_value_when_value => value = Some(Box::new(expr)),
                         Rule::case_value_when_pattern => pattern = Some(expr),
+                        _ => unreachable!(),
+                    }
+                }
+                Rule::case_value_when_result | Rule::case_value_when_else => {
+                    let expr = self.expr_binary_from_pairs(pair.into_inner().next().unwrap().into_inner())?;
+                    match rule {
                         Rule::case_value_when_result => conditions.push((pattern.take().unwrap(), expr)),
                         Rule::case_value_when_else => otherwise = Some(Box::new(expr)),
                         _ => unreachable!(),
@@ -729,6 +725,7 @@ fn function_from_rule(rule: Rule) -> &'static dyn Function {
         Rule::op_sub => &functions::ops::Arith::Sub,
         Rule::op_mul => &functions::ops::Arith::Mul,
         Rule::op_float_div => &functions::ops::Arith::FloatDiv,
+        Rule::op_semicolon => &functions::ops::Last,
         Rule::op_concat => &functions::string::Concat,
         Rule::kw_is => &functions::ops::Identical { eq: true },
         Rule::is_not => &functions::ops::Identical { eq: false },

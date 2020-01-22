@@ -261,3 +261,15 @@ impl Function for Coalesce {
         Ok(Compiled(C::Constant(res)))
     }
 }
+
+//------------------------------------------------------------------------------
+
+/// The statement terminator `;`.
+#[derive(Debug)]
+pub struct Last;
+
+impl Function for Last {
+    fn compile(&self, _: &CompileContext, mut args: Vec<Value>) -> Result<Compiled, Error> {
+        Ok(Compiled(C::Constant(args.pop().expect("at least one expression"))))
+    }
+}

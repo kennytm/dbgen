@@ -129,4 +129,6 @@ CREATE TABLE result (
     {{ coalesce(1, null) }}
     {{ coalesce(null, 2) }}
     {{ coalesce(null, null) }}
+
+    {{ @e := 567; @f := @e - 7; @f + 40 }}
 );

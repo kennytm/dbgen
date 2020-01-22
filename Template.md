@@ -85,6 +85,7 @@ From highest to lowest precedence:
 6. `AND`
 7. `OR`
 8. `:=`
+9. `;`
 
 * **Division `/`**
 
@@ -162,6 +163,14 @@ From highest to lowest precedence:
 
     The first and second columns are entirely independent, but the second and third column will
     always have the same value.
+
+* **Statements `;`**
+
+    The syntax `a; b; c` evaluates all 3 expressions in order, but only returns `c`. The results of
+    `a` and `b` are discarded. The statement separator `;` can only be used
+
+    * directly inside `{{ … }}`, and
+    * as `THEN`/`ELSE` clauses of `CASE WHEN` expressions
 
 ### Symbols
 

@@ -70,6 +70,7 @@ op_sub      = @{ "-" }
 op_concat   = @{ "||" }
 op_mul      = @{ "*" }
 op_float_div = @{ "/" }
+op_semicolon = @{ ";" }
 
 balanced = _{
     "(" ~ balanced* ~ ")" |
@@ -92,19 +93,19 @@ table_options = {
     ")" ~ ANY*
 }
 content = _{
-    "{{" ~ expr ~ "}}" | "/*{{" ~ expr ~ "}}*/"
+    "{{" ~ stmt ~ "}}" | "/*{{" ~ stmt ~ "}}*/"
 }
 create_table_content = _{
     "(" ~ (column_definition | content)* ~ table_options
 }
-global_content = {
-    content
-}
 
 create_table = _{
-    SOI ~ global_content* ~ kw_create ~ kw_table ~ qname ~ create_table_content
+    SOI ~ content* ~ kw_create ~ kw_table ~ qname ~ create_table_content
 }
 
+stmt = {
+    expr ~ (op_semicolon ~ expr)*
+}
 expr = {
     ("@" ~ ident ~ ":=")* ~ expr_or
 }
@@ -162,8 +163,8 @@ expr_case_value_when = {
 }
 case_value_when_value = { expr }
 case_value_when_pattern = { expr }
-case_value_when_result = { expr }
-case_value_when_else = { expr }
+case_value_when_result = { stmt }
+case_value_when_else = { stmt }
 
 expr_timestamp = {
     kw_timestamp ~ (kw_with ~ kw_time ~ kw_zone)? ~ expr_primary
