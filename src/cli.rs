@@ -29,7 +29,7 @@ use std::{
     io::{self, sink, stdin, BufWriter, Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     thread::{sleep, spawn},
     time::Duration,
 };
@@ -194,9 +194,9 @@ impl<T, E: error::Error + Send + Sync + 'static> PathResultExt for Result<T, E> 
 /// Indicator whether all tables are written. Used by the progress bar thread to break the loop.
 static WRITE_FINISHED: AtomicBool = AtomicBool::new(false);
 /// Counter of number of rows being written.
-static WRITE_PROGRESS: AtomicUsize = AtomicUsize::new(0);
+static WRITE_PROGRESS: AtomicU64 = AtomicU64::new(0);
 /// Counter of number of bytes being written.
-static WRITTEN_SIZE: AtomicUsize = AtomicUsize::new(0);
+static WRITTEN_SIZE: AtomicU64 = AtomicU64::new(0);
 
 /// Runs the CLI program.
 pub fn run(args: Args) -> Result<(), Error> {
@@ -456,7 +456,7 @@ impl CompressionName {
 /// Wrapping of a [`Write`] which counts how many bytes are written.
 struct WriteCountWrapper<W: Write> {
     inner: W,
-    count: usize,
+    count: u64,
 }
 impl<W: Write> WriteCountWrapper<W> {
     /// Creates a new [`WriteCountWrapper`] by wrapping another [`Write`].
@@ -475,7 +475,7 @@ impl<W: Write> WriteCountWrapper<W> {
 impl<W: Write> Write for WriteCountWrapper<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let bytes_written = self.inner.write(buf)?;
-        self.count += bytes_written;
+        self.count += bytes_written as u64;
         Ok(bytes_written)
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -561,7 +561,7 @@ impl Env {
 
             format.write_trailer(&mut file).with_path(&path)?;
             file.commit_bytes_written();
-            WRITE_PROGRESS.fetch_add(rows_count as usize, Ordering::Relaxed);
+            WRITE_PROGRESS.fetch_add(rows_count.into(), Ordering::Relaxed);
         }
         Ok(())
     }
@@ -594,10 +594,10 @@ fn run_progress_thread(total_rows: u64) {
 
     while !WRITE_FINISHED.load(Ordering::Relaxed) {
         sleep(Duration::from_millis(500));
-        let rows_count = WRITE_PROGRESS.load(Ordering::Relaxed) as u64;
+        let rows_count = WRITE_PROGRESS.load(Ordering::Relaxed);
         pb.set(rows_count);
 
-        let written_size = WRITTEN_SIZE.load(Ordering::Relaxed) as u64;
+        let written_size = WRITTEN_SIZE.load(Ordering::Relaxed);
         if rows_count != 0 {
             speed_bar.total = written_size
                 .mul_div_round(total_rows, rows_count)
