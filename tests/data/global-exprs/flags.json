@@ -1,3 +1,6 @@
 {
-    "rows_count": 5
+    "rows_count": 5,
+    "initialize": [
+        "@d := 100"
+    ]
 }

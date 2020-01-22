@@ -113,6 +113,24 @@ More options
     started. The timestamp must be written in the format `YYYY-mm-dd HH:MM:SS.fff`, and it is always
     in UTC, regardless of the `--time-zone` setting.
 
+* `-D «EXPR»`, `--initialize «EXPR»`
+
+    Executes the global expression before generating files. This parameter can be specified multiple
+    times. The expressions are executed before the global expressions in the template file. This
+    allows user to parametrize the template, e.g. here we define a `@level` variable defaults to 1
+
+    ```sql
+    /*{{ @level := coalesce(@level, 1) }}*/
+    create table foo (
+        …
+    ```
+
+    and then we can use `-D` to override `@level`:
+
+    ```sh
+    ./dbgen -D '@level := 2' …
+    ```
+
 * `-f «FORMAT»`, `--format «FORMAT»`
 
     Output format. Could be one of:

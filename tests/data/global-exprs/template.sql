@@ -2,5 +2,5 @@
 {{ @b := @a * 2 }}
 CREATE TABLE result (
     {{ @c := rownum + @a + @b }}
-    {{ @c }}
+    {{ @c + @d }}
 );

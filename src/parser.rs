@@ -199,13 +199,20 @@ fn is_ident_char(c: char) -> bool {
 
 impl Template {
     /// Parses a raw string into a structured template.
-    pub fn parse(input: &str) -> Result<Self, Error> {
+    pub fn parse(input: &str, init_globals: &[String]) -> Result<Self, Error> {
+        let mut alloc = Allocator::default();
+        let mut global_exprs = init_globals
+            .iter()
+            .map(|init_global_input| {
+                let pairs = TemplateParser::parse(Rule::stmt, init_global_input)?;
+                alloc.stmt_from_pairs(pairs)
+            })
+            .collect::<Result<_, _>>()?;
+
         let pairs = TemplateParser::parse(Rule::create_table, input)?;
 
         let mut name = QName::default();
-        let mut alloc = Allocator::default();
         let mut exprs = Vec::new();
-        let mut global_exprs = Vec::new();
         let mut content = String::from("(");
         let mut is_global = true;
 
@@ -251,6 +258,11 @@ impl Allocator {
         unescape_into(&mut var_name, raw_var_name, false);
         let count = self.map.len();
         *self.map.entry(var_name).or_insert(count)
+    }
+
+    /// Creates a statement expression `a; b; c`.
+    fn stmt_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+        self.expr_binary_from_pairs(pairs.next().unwrap().into_inner())
     }
 
     /// Creates an assignment expression `@x := @y := z`.
@@ -503,7 +515,7 @@ impl Allocator {
                     }
                 }
                 Rule::case_value_when_result | Rule::case_value_when_else => {
-                    let expr = self.expr_binary_from_pairs(pair.into_inner().next().unwrap().into_inner())?;
+                    let expr = self.stmt_from_pairs(pair.into_inner())?;
                     match rule {
                         Rule::case_value_when_result => conditions.push((mem::take(&mut pattern), expr)),
                         Rule::case_value_when_else => otherwise = Some(Box::new(expr)),
@@ -751,7 +763,7 @@ fn test_parse_template_error() {
         "create table a ({{ 4 >= 4 >= 4 }});",
     ];
     for tc in &test_cases {
-        let res = Template::parse(tc);
+        let res = Template::parse(tc, &[]);
         assert!(res.is_err(), "unexpected for case {}:\n{:#?}", tc, res);
     }
 }

@@ -127,6 +127,10 @@ pub struct Args {
     /// Do not generate data files (only useful for benchmarking and fuzzing)
     #[structopt(long, hidden(true))]
     pub no_data: bool,
+
+    /// Initializes the template with these global expressions.
+    #[structopt(long, short = "D")]
+    pub initialize: Vec<String>,
 }
 
 /// The default implementation of the argument suitable for *testing*.
@@ -154,6 +158,7 @@ impl Default for Args {
             compress_level: 6,
             no_schemas: false,
             no_data: false,
+            initialize: Vec::new(),
         }
     }
 }
@@ -207,7 +212,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         read_to_string(&args.template)
     }
     .context("failed to read template")?;
-    let template = Template::parse(&input)?;
+    let template = Template::parse(&input, &args.initialize)?;
 
     let pool = ThreadPoolBuilder::new()
         .num_threads(args.jobs)
