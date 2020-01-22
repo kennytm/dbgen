@@ -205,6 +205,12 @@ pub enum Value {
     Array(Arc<[Value]>),
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Self::Null
+    }
+}
+
 macro_rules! try_or_overflow {
     ($e:expr, $($fmt:tt)+) => {
         if let Some(e) = $e {

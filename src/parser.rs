@@ -9,7 +9,7 @@ use crate::{
 };
 
 use pest::{iterators::Pairs, Parser};
-use std::{cmp::Ordering, collections::HashMap};
+use std::{cmp::Ordering, collections::HashMap, mem};
 
 mod derived {
     use pest_derive::Parser;
@@ -20,7 +20,7 @@ mod derived {
 }
 
 /// A schema-qualified name with quotation marks still intact.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct QName {
     /// Database name
     pub database: Option<String>,
@@ -125,7 +125,7 @@ fn unescape_into(res: &mut String, ident: &str, do_percent_escape: bool) {
         match c {
             '.' | '-' | '/' => {
                 if do_percent_escape {
-                    write!(res, "%{:02X}", c as u32).unwrap();
+                    write!(res, "%{:02X}", u32::from(c)).unwrap();
                     continue;
                 }
             }
@@ -187,6 +187,12 @@ pub enum Expr {
     },
 }
 
+impl Default for Expr {
+    fn default() -> Self {
+        Self::Value(Value::Null)
+    }
+}
+
 fn is_ident_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
@@ -196,7 +202,7 @@ impl Template {
     pub fn parse(input: &str) -> Result<Self, Error> {
         let pairs = TemplateParser::parse(Rule::create_table, input)?;
 
-        let mut name = None;
+        let mut name = QName::default();
         let mut alloc = Allocator::default();
         let mut exprs = Vec::new();
         let mut global_exprs = Vec::new();
@@ -206,7 +212,7 @@ impl Template {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::kw_create | Rule::kw_table => is_global = false,
-                Rule::qname => name = Some(QName::from_pairs(pair.into_inner())),
+                Rule::qname => name = QName::from_pairs(pair.into_inner()),
                 Rule::column_definition | Rule::table_options => {
                     let s = pair.as_str();
                     // insert a space if needed to ensure word boundaries
@@ -222,7 +228,7 @@ impl Template {
         }
 
         Ok(Self {
-            name: name.unwrap(),
+            name,
             content,
             exprs,
             global_exprs,
@@ -328,7 +334,7 @@ impl Allocator {
 
     /// Creates an array subscript expression `p[i][j][k]`
     fn expr_subscript_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut base = Expr::Value(Value::Null);
+        let mut base = Expr::default();
 
         for pair in pairs {
             let rule = pair.as_rule();
@@ -405,24 +411,21 @@ impl Allocator {
 
     /// Creates a function call expression `x.y.z(a, b, c)`.
     fn expr_function_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut function = None;
+        let mut function: &dyn Function = &functions::ops::Last;
         let mut args = Vec::new();
 
         for pair in pairs {
             match pair.as_rule() {
                 Rule::qname => {
                     let q_name = QName::from_pairs(pair.into_inner());
-                    function = Some(function_from_name(q_name.unique_name())?);
+                    function = function_from_name(q_name.unique_name())?;
                 }
                 Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
-        Ok(Expr::Function {
-            function: function.unwrap(),
-            args,
-        })
+        Ok(Expr::Function { function, args })
     }
 
     /// Creates an array expression `ARRAY[a, b, c]`.
@@ -483,7 +486,7 @@ impl Allocator {
     /// Creates a `CASE … WHEN` expression.
     fn expr_case_value_when_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut value = None;
-        let mut pattern = None;
+        let mut pattern = Expr::default();
         let mut conditions = Vec::with_capacity(2);
         let mut otherwise = None;
 
@@ -495,14 +498,14 @@ impl Allocator {
                     let expr = self.expr_group_from_pairs(pair.into_inner())?;
                     match rule {
                         Rule::case_value_when_value => value = Some(Box::new(expr)),
-                        Rule::case_value_when_pattern => pattern = Some(expr),
+                        Rule::case_value_when_pattern => pattern = expr,
                         _ => unreachable!(),
                     }
                 }
                 Rule::case_value_when_result | Rule::case_value_when_else => {
                     let expr = self.expr_binary_from_pairs(pair.into_inner().next().unwrap().into_inner())?;
                     match rule {
-                        Rule::case_value_when_result => conditions.push((pattern.take().unwrap(), expr)),
+                        Rule::case_value_when_result => conditions.push((mem::take(&mut pattern), expr)),
                         Rule::case_value_when_else => otherwise = Some(Box::new(expr)),
                         _ => unreachable!(),
                     }
@@ -543,12 +546,12 @@ impl Allocator {
     /// Creates an `INTERVAL` expression.
     fn expr_interval_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut unit = 1;
-        let mut expr = None;
+        let mut expr = Expr::default();
 
         for pair in pairs {
             match pair.as_rule() {
                 Rule::kw_interval => {}
-                Rule::expr => expr = Some(self.expr_from_pairs(pair.into_inner())?),
+                Rule::expr => expr = self.expr_from_pairs(pair.into_inner())?,
                 Rule::kw_week => unit = 604_800_000_000,
                 Rule::kw_day => unit = 86_400_000_000,
                 Rule::kw_hour => unit = 3_600_000_000,
@@ -562,7 +565,7 @@ impl Allocator {
 
         Ok(Expr::Function {
             function: &functions::ops::Arith::Mul,
-            args: vec![expr.unwrap(), Expr::Value(Value::Interval(unit))],
+            args: vec![expr, Expr::Value(Value::Interval(unit))],
         })
     }
 
@@ -571,7 +574,7 @@ impl Allocator {
         use functions::string::{Substring, Unit};
 
         let mut function = &Substring(Unit::Characters);
-        let mut input = None;
+        let mut input = Expr::default();
         let mut from = None;
         let mut length = None;
 
@@ -582,19 +585,19 @@ impl Allocator {
                 Rule::kw_octets => function = &Substring(Unit::Octets),
                 Rule::kw_characters => function = &Substring(Unit::Characters),
                 Rule::substring_input | Rule::substring_from | Rule::substring_for => {
-                    let target = match rule {
-                        Rule::substring_input => &mut input,
-                        Rule::substring_from => &mut from,
-                        Rule::substring_for => &mut length,
+                    let expr = self.expr_group_from_pairs(pair.into_inner())?;
+                    match rule {
+                        Rule::substring_input => input = expr,
+                        Rule::substring_from => from = Some(expr),
+                        Rule::substring_for => length = Some(expr),
                         _ => unreachable!(),
-                    };
-                    *target = Some(self.expr_group_from_pairs(pair.into_inner())?);
+                    }
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
-        let mut args = vec![input.unwrap(), from.unwrap_or_else(|| Expr::Value(1.into()))];
+        let mut args = vec![input, from.unwrap_or_else(|| Expr::Value(1.into()))];
         if let Some(length) = length {
             args.push(length);
         }
@@ -606,9 +609,9 @@ impl Allocator {
         use functions::string::{Overlay, Unit};
 
         let mut function = &Overlay(Unit::Characters);
-        let mut input = None;
-        let mut placing = None;
-        let mut from = None;
+        let mut input = Expr::default();
+        let mut placing = Expr::default();
+        let mut from = Expr::default();
         let mut length = None;
 
         for pair in pairs {
@@ -618,20 +621,20 @@ impl Allocator {
                 Rule::kw_octets => function = &Overlay(Unit::Octets),
                 Rule::kw_characters => function = &Overlay(Unit::Characters),
                 Rule::substring_input | Rule::substring_from | Rule::substring_for | Rule::overlay_placing => {
-                    let target = match rule {
-                        Rule::substring_input => &mut input,
-                        Rule::substring_from => &mut from,
-                        Rule::substring_for => &mut length,
-                        Rule::overlay_placing => &mut placing,
+                    let expr = self.expr_group_from_pairs(pair.into_inner())?;
+                    match rule {
+                        Rule::substring_input => input = expr,
+                        Rule::substring_from => from = expr,
+                        Rule::substring_for => length = Some(expr),
+                        Rule::overlay_placing => placing = expr,
                         _ => unreachable!(),
-                    };
-                    *target = Some(self.expr_group_from_pairs(pair.into_inner())?);
+                    }
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
-        let mut args = vec![input.unwrap(), placing.unwrap(), from.unwrap()];
+        let mut args = vec![input, placing, from];
         if let Some(length) = length {
             args.push(length);
         }
