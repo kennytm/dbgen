@@ -126,10 +126,10 @@ expr_add = {
     expr_mul ~ ((op_add | op_sub | op_concat) ~ expr_mul)*
 }
 expr_mul = {
-    expr_subscript ~ ((op_mul | op_float_div) ~ expr_subscript)*
+    expr_unary ~ ((op_mul | op_float_div) ~ expr_unary)*
 }
-expr_subscript = {
-    expr_primary ~ ("[" ~ expr ~ "]")*
+expr_unary = {
+    (op_add | op_sub)* ~ expr_primary ~ ("[" ~ expr ~ "]")*
 }
 
 expr_primary = {
@@ -137,7 +137,6 @@ expr_primary = {
     expr_group |
     single_quoted |     // string
     number |
-    expr_unary |
     expr_case_value_when |
     expr_timestamp |
     expr_interval |
@@ -150,9 +149,6 @@ expr_primary = {
 
 expr_group = {
     "(" ~ expr ~ ")"
-}
-expr_unary = {
-    (op_add | op_sub)+ ~ expr_primary
 }
 
 expr_case_value_when = {

@@ -1,6 +1,6 @@
 CREATE TABLE result (
     {{ array[] }}
-    {{ array[1] }}
+    {{ @a := array[1] }}
     {{ array[1, 2] }}
     {{ array[array[], array[3], array[4, 5]] }}
 
@@ -15,4 +15,6 @@ CREATE TABLE result (
     {{ array[10, 20, 30][0] }}
     {{ array[10, 20, 30][999] }}
     {{ array[array[13]][1][1] }}
+
+    {{ -@a[1] }}
 );

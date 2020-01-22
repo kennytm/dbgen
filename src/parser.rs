@@ -300,7 +300,7 @@ impl Allocator {
                     args.push(self.expr_binary_from_pairs(pair.into_inner())?)
                 }
                 Rule::expr_not => args.push(self.expr_not_from_pairs(pair.into_inner())?),
-                Rule::expr_subscript => args.push(self.expr_subscript_from_pairs(pair.into_inner())?),
+                Rule::expr_unary => args.push(self.expr_unary_from_pairs(pair.into_inner())?),
                 Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
                 Rule::kw_or
                 | Rule::kw_and
@@ -344,27 +344,6 @@ impl Allocator {
         })
     }
 
-    /// Creates an array subscript expression `p[i][j][k]`
-    fn expr_subscript_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut base = Expr::default();
-
-        for pair in pairs {
-            let rule = pair.as_rule();
-            match rule {
-                Rule::expr_primary => base = self.expr_primary_from_pairs(pair.into_inner())?,
-                Rule::expr => {
-                    base = Expr::Function {
-                        function: &functions::array::Subscript,
-                        args: vec![base, self.expr_from_pairs(pair.into_inner())?],
-                    }
-                }
-                r => unreachable!("Unexpected rule {:?}", r),
-            }
-        }
-
-        Ok(base)
-    }
-
     /// Creates a NOT expression `NOT NOT NOT x`.
     fn expr_not_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut has_not = false;
@@ -401,7 +380,6 @@ impl Allocator {
             Rule::kw_false => Expr::Value(0_u64.into()),
             Rule::expr_group => self.expr_group_from_pairs(pair.into_inner())?,
             Rule::number => Expr::Value(parse_number(pair.as_str())?),
-            Rule::expr_unary => self.expr_unary_from_pairs(pair.into_inner())?,
             Rule::expr_timestamp => self.expr_timestamp_from_pairs(pair.into_inner())?,
             Rule::expr_interval => self.expr_interval_from_pairs(pair.into_inner())?,
             Rule::expr_get_variable => self.expr_get_variable_from_pairs(pair.into_inner())?,
@@ -469,9 +447,10 @@ impl Allocator {
         Ok(Expr::GetVariable(self.allocate(pair.as_str())))
     }
 
-    /// Creates any expression involving a unary operator `+x`, `-x`, etc.
+    /// Creates any expression involving a unary operator `+x`, `-x`, `x[i]`, etc.
     fn expr_unary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
         let mut has_neg = false;
+        let mut base = Expr::default();
         for pair in pairs {
             match pair.as_rule() {
                 Rule::op_add => {}
@@ -479,20 +458,25 @@ impl Allocator {
                     has_neg = !has_neg;
                 }
                 Rule::expr_primary => {
-                    let expr = self.expr_primary_from_pairs(pair.into_inner())?;
-                    return Ok(if has_neg {
-                        Expr::Function {
-                            function: &functions::ops::Neg,
-                            args: vec![expr],
-                        }
-                    } else {
-                        expr
-                    });
+                    base = self.expr_primary_from_pairs(pair.into_inner())?;
+                }
+                Rule::expr => {
+                    base = Expr::Function {
+                        function: &functions::array::Subscript,
+                        args: vec![base, self.expr_from_pairs(pair.into_inner())?],
+                    }
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
-        unreachable!("Pairs exhausted without finding the inner expression");
+
+        if has_neg {
+            base = Expr::Function {
+                function: &functions::ops::Neg,
+                args: vec![base],
+            }
+        }
+        Ok(base)
     }
 
     /// Creates a `CASE … WHEN` expression.
