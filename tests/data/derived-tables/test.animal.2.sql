@@ -1,0 +1,6 @@
+INSERT INTO animal VALUES
+(4, 1, 10);
+INSERT INTO animal VALUES
+(5, 1, 8);
+INSERT INTO animal VALUES
+(6, 1, 1);
