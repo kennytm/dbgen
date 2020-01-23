@@ -116,7 +116,7 @@ single_table = {
     open_paren ~ (any_text | content)* ~ close_paren ~ any_text?
 }
 create_table = _{
-    SOI ~ content* ~ single_table ~ (dependency_directive_content ~ single_table)*
+    SOI ~ content* ~ single_table ~ (dependency_directive_content ~ single_table)* ~ EOI
 }
 
 stmt = {

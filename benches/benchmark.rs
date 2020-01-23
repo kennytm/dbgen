@@ -14,12 +14,12 @@ use std::{
 };
 
 fn run_benchmark(b: &mut Bencher<'_>, path: &str) -> Result<(), Error> {
-    let template = Template::parse(&read_to_string(path)?, &[])?;
+    let mut template = Template::parse(&read_to_string(path)?, &[], None)?;
     let ctx = CompileContext {
         variables: vec![Value::Null; template.variables_count],
         ..CompileContext::default()
     };
-    let row = ctx.compile_row(template.exprs)?;
+    let row = ctx.compile_row(template.tables.swap_remove(0).exprs)?;
     let mut state = State::new(1, Box::new(Hc128Rng::from_seed([0x41; 32])), ctx);
     let format = SqlFormat {
         escape_backslash: false,

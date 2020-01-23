@@ -233,6 +233,7 @@ impl Template {
 
         for pair in pairs {
             match pair.as_rule() {
+                Rule::EOI => {}
                 Rule::stmt => template
                     .global_exprs
                     .push(alloc.expr_binary_from_pairs(pair.into_inner())?),
@@ -820,6 +821,8 @@ fn test_parse_template_error() {
         "create table a ({{ 4 <= 4 <= 4 }});",
         "create table a ({{ 4 > 4 > 4 }});",
         "create table a ({{ 4 >= 4 >= 4 }});",
+        "create table a (); {{ 1 }}",
+        "create table a (); {{ 1 }} create table b ();",
     ];
     for tc in &test_cases {
         let res = Template::parse(tc, &[], None);
