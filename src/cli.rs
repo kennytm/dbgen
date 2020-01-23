@@ -515,7 +515,7 @@ impl Env {
     fn write_schema(&self, content: &str) -> Result<(), Error> {
         let path = self.out_dir.join(format!("{}-schema.sql", self.unique_name));
         let mut file = BufWriter::new(File::create(&path).with_path(&path)?);
-        writeln!(file, "CREATE TABLE {} {}", self.qualified_name, content).with_path(&path)
+        write!(file, "CREATE TABLE {} {}", self.qualified_name, content).with_path(&path)
     }
 
     /// Writes a single data file.

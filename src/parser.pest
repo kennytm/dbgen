@@ -58,6 +58,10 @@ kw_overlay  = @{ ^"overlay" ~ b }
 kw_placing  = @{ ^"placing" ~ b }
 kw_current_timestamp = @{ ^"current_timestamp" ~ b }
 kw_array    = @{ ^"array" ~ b }
+kw_for_each = @{ ^"for" ~ b ~ ^"each" ~ b }
+kw_rows     = @{ ^"row" ~ ^"s"? ~ b }
+kw_in       = @{ ^"in" ~ b }
+kw_generate = @{ ^"generate" ~ b }
 
 op_le       = @{ "<=" }
 op_lt       = @{ "<" }
@@ -94,7 +98,7 @@ column_definition = {
     (!"{{" ~ !"/*{{" ~ balanced)+
 }
 table_options = {
-    ")" ~ ANY*
+    ")" ~ column_definition?
 }
 content = _{
     "{{" ~ stmt ~ "}}" | "/*{{" ~ stmt ~ "}}*/"
@@ -102,9 +106,18 @@ content = _{
 create_table_content = _{
     "(" ~ (column_definition | content)* ~ table_options
 }
+dependency_directive = {
+    "{{" ~ dependency_directive_inner ~ "}}" | "/*{{" ~ dependency_directive_inner ~ "}}*/"
+}
+dependency_directive_inner = _{
+    kw_for_each ~ kw_rows ~ kw_in ~ qname ~ kw_generate ~ expr ~ kw_rows
+}
 
+single_table = _{
+    kw_create ~ kw_table ~ qname ~ create_table_content
+}
 create_table = _{
-    SOI ~ content* ~ kw_create ~ kw_table ~ qname ~ create_table_content
+    SOI ~ content* ~ single_table ~ (dependency_directive ~ single_table)*
 }
 
 stmt = {
