@@ -230,6 +230,7 @@ impl Template {
 
         let pairs = TemplateParser::parse(Rule::create_table, input)?;
         let mut table_map = HashMap::new();
+        let mut expected_child_name = None::<QName>;
 
         for pair in pairs {
             match pair.as_rule() {
@@ -239,15 +240,25 @@ impl Template {
                     .push(alloc.expr_binary_from_pairs(pair.into_inner())?),
                 Rule::single_table => {
                     let table = alloc.table_from_pairs(pair.into_inner())?;
-                    table_map.insert(table.name.unique_name().to_owned(), template.tables.len());
+                    let table_name = table.name.unique_name();
+                    if let Some(child_name) = &expected_child_name {
+                        if child_name.unique_name() != &*table_name {
+                            return Err(Error::DerivedTableNameMismatch {
+                                for_each_row: child_name.table_name(true).to_owned(),
+                                create_table: table.name.table_name(true).to_owned(),
+                            });
+                        }
+                    }
+                    table_map.insert(table_name.to_owned(), template.tables.len());
                     template.tables.push(table);
                 }
                 Rule::dependency_directive => {
                     // register the next table as derived from the specified parent table.
                     let child_index = template.tables.len();
-                    let (parent, count) = alloc.dependency_directive_from_pairs(pair.into_inner())?;
+                    let (parent, child, count) = alloc.dependency_directive_from_pairs(pair.into_inner())?;
                     if let Some(parent_index) = table_map.get(parent.unique_name()) {
                         template.tables[*parent_index].derived.push((child_index, count));
+                        expected_child_name = Some(child);
                     } else {
                         return Err(Error::UnknownParentTable {
                             parent: parent.table_name(true).to_owned(),
@@ -311,20 +322,30 @@ impl<'a> Allocator<'a> {
     }
 
     /// Parses a dependency directive.
-    fn dependency_directive_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<(QName, Expr), Error> {
+    fn dependency_directive_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<(QName, QName, Expr), Error> {
         let mut parent = QName::default();
+        let mut child = QName::default();
         let mut count = Expr::default();
+        let mut is_parent = true;
 
         for pair in pairs {
             match pair.as_rule() {
-                Rule::kw_for | Rule::kw_each | Rule::kw_rows | Rule::kw_in | Rule::kw_generate => {}
-                Rule::qname => parent = QName::from_pairs(pair.into_inner(), self.override_schema),
+                Rule::kw_for | Rule::kw_each | Rule::kw_rows | Rule::kw_of | Rule::kw_generate => {}
                 Rule::expr => count = self.expr_from_pairs(pair.into_inner())?,
+                Rule::qname => {
+                    let target = if is_parent {
+                        is_parent = false;
+                        &mut parent
+                    } else {
+                        &mut child
+                    };
+                    *target = QName::from_pairs(pair.into_inner(), self.override_schema);
+                }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
-        Ok((parent, count))
+        Ok((parent, child, count))
     }
 
     /// Creates a statement expression `a; b; c`.
@@ -823,9 +844,14 @@ fn test_parse_template_error() {
         "create table a ({{ 4 >= 4 >= 4 }});",
         "create table a (); {{ 1 }}",
         "create table a (); {{ 1 }} create table b ();",
+        "create table a (); {{ for each row of x generate 1 row of b }} create table b ();",
+        "create table a (); {{ for each row of a generate 1 row of c }} create table b ();",
+        "create table a (); {{ for each row of b generate 1 row of a }} create table b ();",
+        "create table a (); {{ for each row of a generate (*) rows of b }} create table b ();",
     ];
     for tc in &test_cases {
         let res = Template::parse(tc, &[], None);
         assert!(res.is_err(), "unexpected for case {}:\n{:#?}", tc, res);
     }
 }
+
