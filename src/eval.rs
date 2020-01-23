@@ -340,17 +340,17 @@ impl Compiled {
 
             C::RandUuid => {
                 // we will loss 6 bits but that's still uniform.
-                let [a, b, c, d, e, f, g, h] = state.rng.gen::<[u16; 8]>();
+                let g = state.rng.gen::<[u16; 8]>();
                 format!(
                     "{:04x}{:04x}-{:04x}-4{:03x}-{:04x}-{:04x}{:04x}{:04x}",
-                    a,
-                    b,
-                    c,
-                    d & 0xfff,
-                    (e & 0x3fff) | 0x8000,
-                    f,
-                    g,
-                    h,
+                    g[0],
+                    g[1],
+                    g[2],
+                    g[3] & 0xfff,
+                    (g[4] & 0x3fff) | 0x8000,
+                    g[5],
+                    g[6],
+                    g[7],
                 )
                 .into()
             }
