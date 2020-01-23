@@ -22,56 +22,72 @@ mod derived {
 /// A schema-qualified name with quotation marks still intact.
 #[derive(Debug, Clone, Default)]
 pub struct QName {
-    /// Database name
-    pub database: Option<String>,
-    /// Schema name
-    pub schema: Option<String>,
-    /// Table name
-    pub table: String,
+    table_name_index: usize,
+    qualified_name: String,
+    unique_name: String,
 }
 
 impl QName {
-    fn from_pairs(pairs: Pairs<'_, Rule>) -> Self {
-        let mut database = None;
-        let mut schema = None;
-        let mut table = None;
-        for pair in pairs {
-            database = schema;
-            schema = table;
-            table = Some(pair.as_str().to_owned());
+    /// Creates a new qualified name from its components.
+    pub fn new(database: Option<&str>, schema: Option<&str>, table: &str) -> Self {
+        let estimated_joined_len =
+            database.map_or(0, |s| s.len() + 1) + schema.map_or(0, |s| s.len() + 1) + table.len();
+
+        let mut qualified_name = String::with_capacity(estimated_joined_len);
+        let mut unique_name = String::with_capacity(estimated_joined_len);
+        if let Some(db) = database {
+            qualified_name.push_str(db);
+            qualified_name.push('.');
+            unescape_into(&mut unique_name, db, true);
+            unique_name.push('.');
         }
+        if let Some(schema) = schema {
+            qualified_name.push_str(schema);
+            qualified_name.push('.');
+            unescape_into(&mut unique_name, schema, true);
+            unique_name.push('.');
+        }
+        let table_name_index = qualified_name.len();
+        qualified_name.push_str(table);
+        unescape_into(&mut unique_name, table, true);
+
         Self {
-            database,
-            schema,
-            table: table.expect("at least one name"),
+            table_name_index,
+            qualified_name,
+            unique_name,
         }
     }
 
-    fn estimated_joined_len(&self) -> usize {
-        self.database.as_ref().map_or(0, |s| s.len() + 1)
-            + self.schema.as_ref().map_or(0, |s| s.len() + 1)
-            + self.table.len()
+    fn from_pairs(pairs: Pairs<'_, Rule>, override_schema: Option<&str>) -> Self {
+        let (mut database, mut schema, mut table) = (None, None, None);
+        for pair in pairs {
+            database = schema;
+            schema = table;
+            table = Some(pair.as_str());
+        }
+        if override_schema.is_some() {
+            database = None;
+            schema = override_schema;
+        }
+        Self::new(database, schema, table.expect("at least one name"))
     }
 
     /// Parses a qualified name
     pub fn parse(input: &str) -> Result<Self, Error> {
         let mut pairs = TemplateParser::parse(Rule::qname, input)?;
-        Ok(Self::from_pairs(pairs.next().unwrap().into_inner()))
+        Ok(Self::from_pairs(pairs.next().unwrap().into_inner(), None))
     }
 
-    /// Obtains the qualified name connected with dots (`"db"."schema"."table"`)
-    pub fn qualified_name(&self) -> String {
-        let mut res = String::with_capacity(self.estimated_joined_len());
-        if let Some(db) = &self.database {
-            res.push_str(db);
-            res.push('.');
+    /// Obtains the table name.
+    ///
+    /// When `qualified` is true, returns the qualified name connected with dots
+    /// (`"db"."schema"."table"`). Otherwise just returns the unqualified name.
+    pub fn table_name(&self, qualified: bool) -> &str {
+        if qualified {
+            &self.qualified_name
+        } else {
+            &self.qualified_name[self.table_name_index..]
         }
-        if let Some(schema) = &self.schema {
-            res.push_str(schema);
-            res.push('.');
-        }
-        res.push_str(&self.table);
-        res
     }
 
     /// Obtains the unique name.
@@ -84,19 +100,8 @@ impl QName {
     ///  - Quotation marks are removed (`"Hello ""world"""` → `Hello "world"`)
     ///  - Special characters including `.`, `-` and `/` are percent-encoded,
     ///     so the resulting string can be safely used as a filename.
-    pub fn unique_name(&self) -> String {
-        let mut res = String::with_capacity(self.estimated_joined_len());
-
-        if let Some(db) = &self.database {
-            unescape_into(&mut res, db, true);
-            res.push('.');
-        }
-        if let Some(schema) = &self.schema {
-            unescape_into(&mut res, schema, true);
-            res.push('.');
-        }
-        unescape_into(&mut res, &self.table, true);
-        res
+    pub fn unique_name(&self) -> &str {
+        &self.unique_name
     }
 }
 
@@ -135,9 +140,9 @@ fn unescape_into(res: &mut String, ident: &str, do_percent_escape: bool) {
     }
 }
 
-/// A parsed template.
-#[derive(Debug, Clone)]
-pub struct Template {
+/// One single table.
+#[derive(Debug, Clone, Default)]
+pub struct Table {
     /// The default table name.
     pub name: QName,
 
@@ -147,13 +152,23 @@ pub struct Template {
     /// The expressions to populate the table.
     pub exprs: Vec<Expr>,
 
-    /// The expressions shared among all rows.
+    /// The indices of the derived tables, and the number of rows to generate.
+    pub derived: Vec<(usize, Expr)>,
+}
+
+/// A parsed template.
+#[derive(Debug, Clone, Default)]
+pub struct Template {
+    /// The expressions shared among all tables and rows.
     ///
     /// These should be evaluated only once.
     pub global_exprs: Vec<Expr>,
 
     /// Number of variables involved in the expressions (including globals).
     pub variables_count: usize,
+
+    /// The tables to be written out.
+    pub tables: Vec<Table>,
 }
 
 /// A parsed expression.
@@ -161,6 +176,8 @@ pub struct Template {
 pub enum Expr {
     /// The `rownum` symbol.
     RowNum,
+    /// The `subrownum` symbol.
+    SubRowNum,
     /// The `current_timestamp` symbol.
     CurrentTimestamp,
     /// A constant value.
@@ -199,9 +216,11 @@ fn is_ident_char(c: char) -> bool {
 
 impl Template {
     /// Parses a raw string into a structured template.
-    pub fn parse(input: &str, init_globals: &[String]) -> Result<Self, Error> {
-        let mut alloc = Allocator::default();
-        let mut global_exprs = init_globals
+    pub fn parse(input: &str, init_globals: &[String], override_schema: Option<&str>) -> Result<Self, Error> {
+        let mut alloc = Allocator::new(override_schema);
+        let mut template = Self::default();
+
+        template.global_exprs = init_globals
             .iter()
             .map(|init_global_input| {
                 let pairs = TemplateParser::parse(Rule::stmt, init_global_input)?;
@@ -210,54 +229,101 @@ impl Template {
             .collect::<Result<_, _>>()?;
 
         let pairs = TemplateParser::parse(Rule::create_table, input)?;
-
-        let mut name = QName::default();
-        let mut exprs = Vec::new();
-        let mut content = String::from("(");
-        let mut is_global = true;
+        let mut table_map = HashMap::new();
 
         for pair in pairs {
             match pair.as_rule() {
-                Rule::kw_create | Rule::kw_table => is_global = false,
-                Rule::qname => name = QName::from_pairs(pair.into_inner()),
-                Rule::column_definition | Rule::table_options => {
-                    let s = pair.as_str();
-                    // insert a space if needed to ensure word boundaries
-                    if content.ends_with(is_ident_char) && s.starts_with(is_ident_char) {
-                        content.push(' ');
-                    }
-                    content.push_str(s);
-                }
-                Rule::stmt => if is_global { &mut global_exprs } else { &mut exprs }
+                Rule::stmt => template
+                    .global_exprs
                     .push(alloc.expr_binary_from_pairs(pair.into_inner())?),
+                Rule::single_table => {
+                    let table = alloc.table_from_pairs(pair.into_inner())?;
+                    table_map.insert(table.name.unique_name().to_owned(), template.tables.len());
+                    template.tables.push(table);
+                }
+                Rule::dependency_directive => {
+                    // register the next table as derived from the specified parent table.
+                    let child_index = template.tables.len();
+                    let (parent, count) = alloc.dependency_directive_from_pairs(pair.into_inner())?;
+                    if let Some(parent_index) = table_map.get(parent.unique_name()) {
+                        template.tables[*parent_index].derived.push((child_index, count));
+                    } else {
+                        return Err(Error::UnknownParentTable {
+                            parent: parent.table_name(true).to_owned(),
+                        });
+                    }
+                }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
-        Ok(Self {
-            name,
-            content,
-            exprs,
-            global_exprs,
-            variables_count: alloc.map.len(),
-        })
+        template.variables_count = alloc.map.len();
+        Ok(template)
     }
 }
 
 /// Local variable allocator. This structure keeps record of local variables `@x` and assigns a
 /// unique number of each variable, so that they can be referred using a number instead of a string.
-#[derive(Default)]
-struct Allocator {
+struct Allocator<'a> {
+    override_schema: Option<&'a str>,
     map: HashMap<String, usize>,
 }
 
-impl Allocator {
+impl<'a> Allocator<'a> {
+    fn new(override_schema: Option<&'a str>) -> Self {
+        Self {
+            override_schema,
+            map: HashMap::new(),
+        }
+    }
+
     /// Allocates a local variable index given the name.
     fn allocate(&mut self, raw_var_name: &str) -> usize {
         let mut var_name = String::with_capacity(raw_var_name.len());
         unescape_into(&mut var_name, raw_var_name, false);
         let count = self.map.len();
         *self.map.entry(var_name).or_insert(count)
+    }
+
+    /// Creates a single table.
+    fn table_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Table, Error> {
+        let mut table = Table::default();
+
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::kw_create | Rule::kw_table => {}
+                Rule::qname => table.name = QName::from_pairs(pair.into_inner(), self.override_schema),
+                Rule::open_paren | Rule::close_paren | Rule::any_text => {
+                    let s = pair.as_str();
+                    // insert a space if needed to ensure word boundaries
+                    if table.content.ends_with(is_ident_char) && s.starts_with(is_ident_char) {
+                        table.content.push(' ');
+                    }
+                    table.content.push_str(s);
+                }
+                Rule::stmt => table.exprs.push(self.expr_binary_from_pairs(pair.into_inner())?),
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok(table)
+    }
+
+    /// Parses a dependency directive.
+    fn dependency_directive_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<(QName, Expr), Error> {
+        let mut parent = QName::default();
+        let mut count = Expr::default();
+
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::kw_for | Rule::kw_each | Rule::kw_rows | Rule::kw_in | Rule::kw_generate => {}
+                Rule::qname => parent = QName::from_pairs(pair.into_inner(), self.override_schema),
+                Rule::expr => count = self.expr_from_pairs(pair.into_inner())?,
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        Ok((parent, count))
     }
 
     /// Creates a statement expression `a; b; c`.
@@ -377,6 +443,7 @@ impl Allocator {
         let pair = pairs.next().unwrap();
         Ok(match pair.as_rule() {
             Rule::kw_rownum => Expr::RowNum,
+            Rule::kw_subrownum => Expr::SubRowNum,
             Rule::kw_current_timestamp => Expr::CurrentTimestamp,
             Rule::kw_null => Expr::Value(Value::Null),
             Rule::kw_true => Expr::Value(1_u64.into()),
@@ -410,7 +477,7 @@ impl Allocator {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::qname => {
-                    let q_name = QName::from_pairs(pair.into_inner());
+                    let q_name = QName::from_pairs(pair.into_inner(), None);
                     function = function_from_name(q_name.unique_name())?;
                 }
                 Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
@@ -657,13 +724,13 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 }
 
 /// Obtains a function from its name.
-fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
+fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
     use functions::{
         array, ops, rand,
         string::{self, Unit},
     };
 
-    Ok(match &*name {
+    Ok(match name {
         "rand.regex" => &rand::Regex,
         "rand.range" => &rand::Range,
         "rand.range_inclusive" => &rand::RangeInclusive,
@@ -688,7 +755,7 @@ fn function_from_name(name: String) -> Result<&'static dyn Function, Error> {
         "octet_length" => &string::Length(Unit::Octets),
         "coalesce" => &ops::Coalesce,
         "generate_series" => &array::GenerateSeries,
-        _ => return Err(Error::UnknownFunction(name)),
+        _ => return Err(Error::UnknownFunction(name.to_owned())),
     })
 }
 
@@ -755,7 +822,7 @@ fn test_parse_template_error() {
         "create table a ({{ 4 >= 4 >= 4 }});",
     ];
     for tc in &test_cases {
-        let res = Template::parse(tc, &[]);
+        let res = Template::parse(tc, &[], None);
         assert!(res.is_err(), "unexpected for case {}:\n{:#?}", tc, res);
     }
 }

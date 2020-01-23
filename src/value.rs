@@ -476,6 +476,8 @@ impl fmt::Display for TryFromValueError {
     }
 }
 
+impl std::error::Error for TryFromValueError {}
+
 macro_rules! impl_try_from_value {
     ($T:ty, $name:expr) => {
         impl TryFrom<Value> for $T {

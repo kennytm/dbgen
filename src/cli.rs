@@ -1,7 +1,7 @@
 //! CLI driver of `dbgen`.
 
 use crate::{
-    eval::{CompileContext, Row, State},
+    eval::{CompileContext, State, Table},
     format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
     value::{Value, TIMESTAMP_FORMAT},
@@ -24,9 +24,11 @@ use rayon::{
 };
 use serde_derive::Deserialize;
 use std::{
+    convert::TryInto,
     error,
     fs::{create_dir_all, read_to_string, File},
     io::{self, sink, stdin, BufWriter, Read, Write},
+    mem,
     path::{Path, PathBuf},
     str::FromStr,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
@@ -49,8 +51,12 @@ pub struct Args {
     pub qualified: bool,
 
     /// Override the table name.
-    #[structopt(short, long)]
+    #[structopt(short, long, conflicts_with("schema-name"))]
     pub table_name: Option<String>,
+
+    /// Override the schema name.
+    #[structopt(long)]
+    pub schema_name: Option<String>,
 
     /// Output directory.
     #[structopt(short, long, parse(from_os_str))]
@@ -139,6 +145,7 @@ impl Default for Args {
         Self {
             qualified: false,
             table_name: None,
+            schema_name: None,
             out_dir: PathBuf::default(),
             files_count: 1,
             inserts_count: 1,
@@ -217,37 +224,39 @@ fn read_template_file(path: &Path) -> Result<String, Error> {
 /// Runs the CLI program.
 pub fn run(args: Args) -> Result<(), Error> {
     let input = read_template_file(&args.template)?;
-    let template = Template::parse(&input, &args.initialize)?;
+    let mut template = Template::parse(&input, &args.initialize, args.schema_name.as_deref())?;
 
     let pool = ThreadPoolBuilder::new()
         .num_threads(args.jobs)
         .build()
         .context("failed to configure thread pool")?;
 
-    let table_name = match args.table_name {
-        Some(n) => QName::parse(&n)?,
-        None => template.name,
-    };
-
-    create_dir_all(&args.out_dir).context("failed to create output directory")?;
+    if let Some(override_table_name) = &args.table_name {
+        if template.tables.len() != 1 {
+            bail!("cannot use --table-name when template contains multiple tables");
+        }
+        template.tables[0].name = QName::parse(override_table_name)?;
+    }
 
     let mut ctx = CompileContext {
         time_zone: args.time_zone,
         current_timestamp: args.now.unwrap_or_else(|| Utc::now().naive_utc()),
         variables: vec![Value::Null; template.variables_count],
     };
+    let tables = template
+        .tables
+        .into_iter()
+        .map(|t| ctx.compile_table(t))
+        .collect::<Result<_, _>>()?;
+
+    create_dir_all(&args.out_dir).context("failed to create output directory")?;
 
     let compress_level = args.compress_level;
     let env = Env {
         out_dir: args.out_dir,
         file_num_digits: args.files_count.to_string().len(),
-        unique_name: table_name.unique_name(),
-        row_gen: ctx.compile_row(template.exprs)?,
-        qualified_name: if args.qualified {
-            table_name.qualified_name()
-        } else {
-            table_name.table
-        },
+        tables,
+        qualified: args.qualified,
         rows_count: args.rows_count,
         escape_backslash: args.escape_backslash,
         format: args.format,
@@ -256,7 +265,7 @@ pub fn run(args: Args) -> Result<(), Error> {
     };
 
     if !args.no_schemas {
-        env.write_schema(&template.content)?;
+        env.write_schema()?;
     }
 
     let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
@@ -470,11 +479,11 @@ impl<W: Write> WriteCountWrapper<W> {
         Self { inner, count: 0 }
     }
 
-    /// Commits the number of bytes written into the [`WRITTEN_SIZE`] global variable, then resets
-    /// the byte count of this instance to zero.
-    fn commit_bytes_written(&mut self) {
-        WRITTEN_SIZE.fetch_add(self.count, Ordering::Relaxed);
-        self.count = 0;
+    /// Commits the number of bytes written into the [`WRITTEN_SIZE`] global variable, and resets
+    /// the byte count of all iterated `WriteCountWrapper` instances to zero.
+    fn commit_bytes_written(instances: &mut [Self]) {
+        let total = instances.iter_mut().map(|w| mem::take(&mut w.count)).sum();
+        WRITTEN_SIZE.fetch_add(total, Ordering::Relaxed);
     }
 }
 
@@ -493,9 +502,8 @@ impl<W: Write> Write for WriteCountWrapper<W> {
 struct Env {
     out_dir: PathBuf,
     file_num_digits: usize,
-    row_gen: Row,
-    unique_name: String,
-    qualified_name: String,
+    tables: Vec<Table>,
+    qualified: bool,
     rows_count: u32,
     escape_backslash: bool,
     format: FormatName,
@@ -503,71 +511,174 @@ struct Env {
     no_data: bool,
 }
 
-/// Information specific to a data file.
+/// Information specific to a file and its derived tables.
 struct FileInfo {
     file_index: u32,
     inserts_count: u32,
     last_insert_rows_count: u32,
 }
 
+struct FileWriterEnv<'a> {
+    env: &'a Env,
+    state: &'a mut State,
+    format: Box<dyn Format>,
+    files: Vec<WriteCountWrapper<BufWriter<Box<dyn Write>>>>,
+    paths: Vec<PathBuf>,
+    /// For each single main row, records whether the table has been visited.
+    visited: Vec<bool>,
+    /// For each INSERT statement, records number of rows included.
+    actual_rows: Vec<u64>,
+}
+
 impl Env {
-    /// Writes the `CREATE TABLE` schema file.
-    fn write_schema(&self, content: &str) -> Result<(), Error> {
-        let path = self.out_dir.join(format!("{}-schema.sql", self.unique_name));
-        let mut file = BufWriter::new(File::create(&path).with_path(&path)?);
-        write!(file, "CREATE TABLE {} {}", self.qualified_name, content).with_path(&path)
+    /// Writes the `CREATE TABLE` schema files.
+    fn write_schema(&self) -> Result<(), Error> {
+        for table in &self.tables {
+            let path = self.out_dir.join(format!("{}-schema.sql", table.name.unique_name()));
+            let mut file = BufWriter::new(File::create(&path).with_path(&path)?);
+            write!(
+                file,
+                "CREATE TABLE {} {}",
+                table.name.table_name(self.qualified),
+                table.content
+            )
+            .with_path(&path)?;
+        }
+        Ok(())
     }
 
-    /// Writes a single data file.
-    fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), Error> {
-        let mut path = self.out_dir.join(format!(
-            "{0}.{1:02$}.{3}",
-            self.unique_name,
-            info.file_index,
-            self.file_num_digits,
-            self.format.extension(),
-        ));
-
-        let inner_writer = if self.no_data {
+    fn open_data_file(&self, path: &mut PathBuf) -> Result<Box<dyn Write>, Error> {
+        Ok(if self.no_data {
             Box::new(sink())
         } else if let Some((compression, level)) = self.compression {
-            let mut path_string = path.into_os_string();
+            let mut path_string = mem::take(path).into_os_string();
             path_string.push(".");
             path_string.push(compression.extension());
-            path = PathBuf::from(path_string);
+            *path = PathBuf::from(path_string);
             compression.wrap(File::create(&path).with_path(&path)?, level)
         } else {
             Box::new(File::create(&path).with_path(&path)?)
-        };
+        })
+    }
 
-        let mut file = WriteCountWrapper::new(BufWriter::new(inner_writer));
+    /// Writes the data file.
+    fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), Error> {
+        let path_suffix = format!(
+            ".{0:01$}.{2}",
+            info.file_index,
+            self.file_num_digits,
+            self.format.extension()
+        );
         let format = self.format.create(self.escape_backslash);
 
-        for i in 0..info.inserts_count {
-            format.write_header(&mut file, &self.qualified_name).with_path(&path)?;
+        let mut files = Vec::with_capacity(self.tables.len());
+        let mut paths = Vec::with_capacity(self.tables.len());
+        for table in &self.tables {
+            let mut path = self.out_dir.join([table.name.unique_name(), &path_suffix].concat());
+            let inner_writer = self.open_data_file(&mut path)?;
+            files.push(WriteCountWrapper::new(BufWriter::new(inner_writer)));
+            paths.push(path);
+        }
 
+        let mut fwe = FileWriterEnv {
+            env: self,
+            state,
+            format,
+            files,
+            paths,
+            visited: vec![false; self.tables.len()],
+            actual_rows: vec![0; self.tables.len()],
+        };
+
+        // for ((file, path), table) in files.iter_mut().zip(&self.tables) {
+        //     format.write_header(file, table.name.table_name(self.qualified)).with_path(path)?;
+        // }
+
+        // if row_index != 0 {
+        //     format.write_row_separator(&mut file).with_path(&path)?;
+        // }
+
+        // format.write_trailer(&mut file).with_path(&path)?;
+
+        for i in 0..info.inserts_count {
             let rows_count = if i == info.inserts_count - 1 {
                 info.last_insert_rows_count
             } else {
                 self.rows_count
             };
-            for row_index in 0..rows_count {
-                if row_index != 0 {
-                    format.write_row_separator(&mut file).with_path(&path)?;
-                }
-
-                let values = self.row_gen.eval(state).with_path(&path)?;
-                for (col_index, value) in values.iter().enumerate() {
-                    if col_index != 0 {
-                        format.write_value_separator(&mut file).with_path(&path)?;
-                    }
-                    format.write_value(&mut file, value).with_path(&path)?;
-                }
+            for _ in 0..rows_count {
+                fwe.write_row()?;
             }
+            fwe.write_trailer()?;
 
-            format.write_trailer(&mut file).with_path(&path)?;
-            file.commit_bytes_written();
+            WriteCountWrapper::commit_bytes_written(&mut fwe.files);
             WRITE_PROGRESS.fetch_add(rows_count.into(), Ordering::Relaxed);
+        }
+        Ok(())
+    }
+}
+
+impl<'e> FileWriterEnv<'e> {
+    fn write_one_row(&mut self, i: usize) -> Result<(), Error> {
+        let file = &mut self.files[i];
+        let table = &self.env.tables[i];
+        let actual_rows = &mut self.actual_rows[i];
+
+        if self.state.sub_row_num == 1 && *actual_rows == 0 {
+            self.format
+                .write_header(file, table.name.table_name(self.env.qualified))
+        } else {
+            self.format.write_row_separator(file)
+        }?;
+
+        let values = table.row.eval(self.state)?;
+        *actual_rows += 1;
+
+        for (col_index, value) in values.iter().enumerate() {
+            if col_index != 0 {
+                self.format.write_value_separator(file)?;
+            }
+            self.format.write_value(file, value)?;
+        }
+
+        for (child, count) in &table.derived {
+            let count = count.eval(self.state)?;
+            let count: u64 = count.try_into().with_context(|| {
+                format!(
+                    "number of rows to generate for {} is not an integer",
+                    self.env.tables[*child].name.table_name(true),
+                )
+            })?;
+
+            self.visited[*child] = true;
+            for r in 1..=count {
+                self.state.sub_row_num = r;
+                self.write_one_row(*child)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn write_row(&mut self) -> Result<(), Error> {
+        for visited in &mut self.visited {
+            *visited = false;
+        }
+        for i in 0..self.visited.len() {
+            if !mem::replace(&mut self.visited[i], true) {
+                self.state.sub_row_num = 1;
+                self.write_one_row(i)?;
+            }
+        }
+        self.state.increase_row_num();
+        Ok(())
+    }
+
+    fn write_trailer(&mut self) -> Result<(), Error> {
+        for ((file, path), actual_rows) in self.files.iter_mut().zip(&self.paths).zip(&mut self.actual_rows) {
+            if mem::take(actual_rows) > 0 {
+                self.format.write_trailer(file).with_path(path)?;
+            }
         }
         Ok(())
     }

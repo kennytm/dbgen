@@ -83,4 +83,11 @@ pub enum Error {
         /// Source of the error.
         source: chrono::format::ParseError,
     },
+
+    /// Cannot find parent table for derived table directive.
+    #[error("cannot find parent table {parent} to generate derived rows")]
+    UnknownParentTable {
+        /// Expected parent table name.
+        parent: String,
+    },
 }

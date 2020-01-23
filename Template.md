@@ -236,7 +236,10 @@ From highest to lowest precedence:
 
 ### Symbols
 
-* **rownum**: The current row number. The first row has value 1.
+* **rownum**: The current row number of the main table. The first row has value 1. The derived rows share the same row
+    number as the main row.
+* **subrownum**: The current number in a derived table. If one row of the main table generates *N* rows in the derived
+    table, this constant will take values 1, 2, …, *N*.
 * **current_timestamp**: The timestamp when `dbgen` was started. This can be overridden using the `--now` parameter.
 * **NULL**: The null value.
 * **TRUE**: Equals to 1.

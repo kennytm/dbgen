@@ -1,6 +1,11 @@
 //! Evaluating compiled expressions into values.
 
-use crate::{error::Error, functions::Function, parser::Expr, value::Value};
+use crate::{
+    error::Error,
+    functions::Function,
+    parser::{Expr, QName},
+    value::Value,
+};
 use chrono::NaiveDateTime;
 use chrono_tz::Tz;
 use rand::{distributions::Bernoulli, seq::SliceRandom, Rng, RngCore};
@@ -37,6 +42,8 @@ impl Default for CompileContext {
 /// The external mutable state used during evaluation.
 pub struct State {
     pub(crate) row_num: u64,
+    /// Defines the value of `subrownum`.
+    pub sub_row_num: u64,
     rng: Box<dyn RngCore>,
     compile_context: CompileContext,
 }
@@ -45,6 +52,7 @@ impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("State")
             .field("row_num", &self.row_num)
+            .field("sub_row_num", &self.sub_row_num)
             .field("rng", &())
             .field("variables", &self.compile_context.variables)
             .finish()
@@ -62,6 +70,7 @@ impl State {
     pub fn new(row_num: u64, rng: Box<dyn RngCore>, compile_context: CompileContext) -> Self {
         Self {
             row_num,
+            sub_row_num: 1,
             rng,
             compile_context,
         }
@@ -70,6 +79,40 @@ impl State {
     /// Extracts the compile context from the state.
     pub fn into_compile_context(self) -> CompileContext {
         self.compile_context
+    }
+
+    /// Increases the rownum by 1.
+    pub fn increase_row_num(&mut self) {
+        self.row_num += 1;
+    }
+}
+
+/// A compiled table
+#[derive(Debug)]
+pub struct Table {
+    /// Table name.
+    pub name: QName,
+    /// Content of table schema.
+    pub content: String,
+    /// Compiled row.
+    pub row: Row,
+    /// Information of dervied tables (index, and number of rows to generate)
+    pub derived: Vec<(usize, Compiled)>,
+}
+
+impl CompileContext {
+    /// Compiles a table.
+    pub fn compile_table(&self, table: crate::parser::Table) -> Result<Table, Error> {
+        Ok(Table {
+            name: table.name,
+            content: table.content,
+            row: self.compile_row(table.exprs)?,
+            derived: table
+                .derived
+                .into_iter()
+                .map(|(i, e)| self.compile(e).map(|c| (i, c)))
+                .collect::<Result<_, _>>()?,
+        })
     }
 }
 
@@ -88,15 +131,9 @@ impl CompileContext {
 }
 
 impl Row {
-    /// Evaluates the row into a vector of values and updates the state.
+    /// Evaluates the row into a vector of values.
     pub fn eval(&self, state: &mut State) -> Result<Vec<Value>, Error> {
-        let result = self
-            .0
-            .iter()
-            .map(|compiled| compiled.eval(state))
-            .collect::<Result<_, _>>()?;
-        state.row_num += 1;
-        Ok(result)
+        self.0.iter().map(|compiled| compiled.eval(state)).collect()
     }
 }
 
@@ -105,6 +142,8 @@ impl Row {
 pub(crate) enum C {
     /// The row number.
     RowNum,
+    /// The derived row number.
+    SubRowNum,
     /// An evaluated constant.
     Constant(Value),
     /// An unevaluated function.
@@ -174,6 +213,7 @@ impl CompileContext {
     pub fn compile(&self, expr: Expr) -> Result<Compiled, Error> {
         Ok(Compiled(match expr {
             Expr::RowNum => C::RowNum,
+            Expr::SubRowNum => C::SubRowNum,
             Expr::CurrentTimestamp => C::Constant(Value::Timestamp(self.current_timestamp, self.time_zone)),
             Expr::Value(v) => C::Constant(v),
             Expr::GetVariable(index) => C::GetVariable(index),
@@ -228,6 +268,7 @@ impl Compiled {
     pub fn eval(&self, state: &mut State) -> Result<Value, Error> {
         Ok(match &self.0 {
             C::RowNum => state.row_num.into(),
+            C::SubRowNum => state.sub_row_num.into(),
             C::Constant(v) => v.clone(),
             C::RawFunction { function, args } => {
                 let args = args.iter().map(|c| c.eval(state)).collect::<Result<Vec<_>, _>>()?;
