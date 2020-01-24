@@ -2,7 +2,7 @@
 
 use crate::{
     error::Error,
-    functions::Function,
+    functions::{Arguments, Function},
     parser::{Expr, QName},
     value::Value,
 };
@@ -271,8 +271,11 @@ impl Compiled {
             C::SubRowNum => state.sub_row_num.into(),
             C::Constant(v) => v.clone(),
             C::RawFunction { function, args } => {
-                let args = args.iter().map(|c| c.eval(state)).collect::<Result<_, _>>()?;
-                let compiled = (*function).compile(&state.compile_context, args)?;
+                let mut eval_args = Arguments::with_capacity(args.len());
+                for c in args {
+                    eval_args.push(c.eval(state)?);
+                }
+                let compiled = (*function).compile(&state.compile_context, eval_args)?;
                 compiled.eval(state)?
             }
             C::GetVariable(index) => state.compile_context.variables[*index].clone(),
