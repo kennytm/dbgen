@@ -12,10 +12,13 @@ pub mod rand;
 pub mod string;
 pub mod time;
 
+/// Container of the arguments passed to functions.
+pub type Arguments = smallvec::SmallVec<[Value; 2]>;
+
 /// An SQL function.
 pub trait Function: Sync + Debug {
     /// Compiles or evaluates this function taking the provided arguments.
-    fn compile(&self, ctx: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error>;
+    fn compile(&self, ctx: &CompileContext, args: Arguments) -> Result<Compiled, Error>;
 }
 
 macro_rules! declare_arg_fn {
@@ -24,7 +27,7 @@ macro_rules! declare_arg_fn {
         fn $name:ident($($def:ident: $ty:ident),+);
     ) => {
         $(#[$meta])*
-        fn $name<$($ty),+>(name: &'static str, args: Vec<Value>, $($def: Option<$ty>),+) -> Result<($($ty),+), Error>
+        fn $name<$($ty),+>(name: &'static str, args: Arguments, $($def: Option<$ty>),+) -> Result<($($ty),+), Error>
         where
             $($ty: TryFrom<Value>,
             $ty::Error: ToString,)+
@@ -68,7 +71,7 @@ declare_arg_fn! {
 }
 
 /// Converts a slice of arguments all into a specific type.
-fn iter_args<T>(name: &'static str, args: Vec<Value>) -> impl Iterator<Item = Result<T, Error>>
+fn iter_args<T>(name: &'static str, args: Arguments) -> impl Iterator<Item = Result<T, Error>>
 where
     T: TryFrom<Value>,
     T::Error: ToString,

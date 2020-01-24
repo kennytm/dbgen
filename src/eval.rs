@@ -224,7 +224,7 @@ impl CompileContext {
                     .map(|e| self.compile(e))
                     .collect::<Result<Vec<_>, _>>()?;
                 if args.iter().all(Compiled::is_constant) {
-                    let args = args.into_iter().map(|c| c.try_into().unwrap()).collect::<Vec<Value>>();
+                    let args = args.into_iter().map(|c| c.try_into().unwrap()).collect();
                     function.compile(self, args)?.0
                 } else {
                     C::RawFunction { function, args }
@@ -271,7 +271,7 @@ impl Compiled {
             C::SubRowNum => state.sub_row_num.into(),
             C::Constant(v) => v.clone(),
             C::RawFunction { function, args } => {
-                let args = args.iter().map(|c| c.eval(state)).collect::<Result<Vec<_>, _>>()?;
+                let args = args.iter().map(|c| c.eval(state)).collect::<Result<_, _>>()?;
                 let compiled = (*function).compile(&state.compile_context, args)?;
                 compiled.eval(state)?
             }

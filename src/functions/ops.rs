@@ -1,6 +1,6 @@
 //! Numerical and logical functions.
 
-use super::{args_1, args_2, iter_args, Function};
+use super::{args_1, args_2, iter_args, Arguments, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
@@ -15,7 +15,7 @@ use std::cmp::Ordering;
 pub struct Neg;
 
 impl Function for Neg {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let inner = args_1::<Number>("neg", args, None)?;
         Ok(Compiled(C::Constant((-inner).into())))
     }
@@ -49,7 +49,7 @@ impl Compare {
 }
 
 impl Function for Compare {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = self.name();
         if let [lhs, rhs] = &*args {
             Ok(Compiled(C::Constant(match lhs.sql_cmp(rhs, name)? {
@@ -74,7 +74,7 @@ pub struct Identical {
 }
 
 impl Function for Identical {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         if let [lhs, rhs] = &*args {
             let is_eq = lhs == rhs;
             Ok(Compiled(C::Constant((is_eq == self.eq).into())))
@@ -91,7 +91,7 @@ impl Function for Identical {
 pub struct Not;
 
 impl Function for Not {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let inner = args_1::<Option<bool>>("not", args, None)?;
         Ok(Compiled(C::Constant(inner.map(|b| !b).into())))
     }
@@ -104,7 +104,7 @@ impl Function for Not {
 pub struct BitNot;
 
 impl Function for BitNot {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let inner = args_1::<i128>("~", args, None)?;
         Ok(Compiled(C::Constant((!inner).into())))
     }
@@ -130,7 +130,7 @@ impl Logic {
 }
 
 impl Function for Logic {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = self.name();
         let mut result = Some(self.identity);
 
@@ -165,7 +165,7 @@ pub enum Arith {
 }
 
 impl Function for Arith {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let func = match self {
             Self::Add => Value::sql_add,
             Self::Sub => Value::sql_sub,
@@ -200,7 +200,7 @@ pub enum Bitwise {
 }
 
 impl Function for Bitwise {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         use std::ops::{BitAnd, BitOr, BitXor};
 
         let (name, func, init): (_, fn(i128, i128) -> i128, _) = match self {
@@ -234,7 +234,7 @@ impl Extremum {
 }
 
 impl Function for Extremum {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = self.name();
         let mut res = Value::Null;
         for value in args {
@@ -258,7 +258,7 @@ impl Function for Extremum {
 pub struct Round;
 
 impl Function for Round {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let (value, digits) = args_2::<f64, i32>("round", args, None, Some(0))?;
         let scale = 10.0_f64.powi(digits);
         let result = (value * scale).round() / scale;
@@ -273,7 +273,7 @@ impl Function for Round {
 pub struct Div;
 
 impl Function for Div {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let (n, d) = args_2::<Number, Number>("div", args, None, None)?;
         Ok(Compiled(C::Constant(n.div(&d).into())))
     }
@@ -284,7 +284,7 @@ impl Function for Div {
 pub struct Mod;
 
 impl Function for Mod {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let (n, d) = args_2::<Number, Number>("mod", args, None, None)?;
         Ok(Compiled(C::Constant(n.rem(&d).into())))
     }
@@ -297,7 +297,7 @@ impl Function for Mod {
 pub struct Coalesce;
 
 impl Function for Coalesce {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let res = args.into_iter().find(|v| *v != Value::Null).unwrap_or(Value::Null);
         Ok(Compiled(C::Constant(res)))
     }
@@ -310,7 +310,7 @@ impl Function for Coalesce {
 pub struct Last;
 
 impl Function for Last {
-    fn compile(&self, _: &CompileContext, mut args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, mut args: Arguments) -> Result<Compiled, Error> {
         Ok(Compiled(C::Constant(args.pop().expect("at least one expression"))))
     }
 }

@@ -1,6 +1,6 @@
 //! Array functions.
 
-use super::{args_2, args_3, Function};
+use super::{args_2, args_3, Arguments, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
@@ -13,8 +13,8 @@ use std::{cmp::Ordering, sync::Arc};
 pub struct Array;
 
 impl Function for Array {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
-        Ok(Compiled(C::Constant(Value::Array(args.into()))))
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
+        Ok(Compiled(C::Constant(Value::Array(args.into_vec().into()))))
     }
 }
 
@@ -23,7 +23,7 @@ impl Function for Array {
 pub struct Subscript;
 
 impl Function for Subscript {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let (base, index) = args_2::<Arc<[Value]>, usize>("[]", args, None, None)?;
         Ok(Compiled(C::Constant(if index == 0 || index > base.len() {
             Value::Null
@@ -38,7 +38,7 @@ impl Function for Subscript {
 pub struct GenerateSeries;
 
 impl Function for GenerateSeries {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = "generate_series";
         let (start, end, step) = args_3::<Value, Value, Value>(name, args, None, None, Some(1.into()))?;
 

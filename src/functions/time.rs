@@ -1,6 +1,6 @@
 //! Time functions.
 
-use super::{args_1, Function};
+use super::{args_1, Arguments, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
@@ -15,7 +15,7 @@ use chrono_tz::Tz;
 pub struct Timestamp;
 
 impl Function for Timestamp {
-    fn compile(&self, ctx: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, ctx: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let input = args_1::<String>("timestamp", args, None)?;
         let tz = ctx.time_zone;
         let timestamp = tz
@@ -34,7 +34,7 @@ impl Function for Timestamp {
 pub struct TimestampWithTimeZone;
 
 impl Function for TimestampWithTimeZone {
-    fn compile(&self, ctx: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, ctx: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = "timestamp with time zone";
         let mut input = &*args_1::<String>(name, args, None)?;
         let tz = match input.find(|c: char| c.is_ascii_alphabetic()) {

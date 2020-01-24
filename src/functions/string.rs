@@ -1,6 +1,6 @@
 //! String functions.
 
-use super::{args_1, args_3, args_4, Function};
+use super::{args_1, args_3, args_4, Arguments, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
@@ -114,7 +114,7 @@ pub struct Substring(
 );
 
 impl Function for Substring {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = "substring";
         let (mut input, start, length) = args_3::<Vec<u8>, isize, Option<isize>>(name, args, None, None, Some(None))?;
         let (start, end) = self.0.parse_sql_range(&input, start, length.unwrap_or(0));
@@ -138,7 +138,7 @@ pub struct Length(
 );
 
 impl Function for Length {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = match self.0 {
             Unit::Characters => "char_length",
             Unit::Octets => "octet_length",
@@ -158,7 +158,7 @@ pub struct Overlay(
 );
 
 impl Function for Overlay {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let name = "overlay";
         let (mut input, placing, start, length) =
             args_4::<Vec<u8>, Vec<u8>, isize, Option<isize>>(name, args, None, None, None, Some(None))?;
@@ -177,7 +177,7 @@ impl Function for Overlay {
 pub struct Concat;
 
 impl Function for Concat {
-    fn compile(&self, _: &CompileContext, args: Vec<Value>) -> Result<Compiled, Error> {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let result = Value::sql_concat(args.into_iter())?;
         Ok(Compiled(C::Constant(result)))
     }
