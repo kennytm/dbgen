@@ -58,16 +58,16 @@ impl QName {
         }
     }
 
-    fn from_pairs(pairs: Pairs<'_, Rule>, override_schema: Option<&str>) -> Self {
+    fn from_pairs(pairs: Pairs<'_, Rule>, override_schema: [Option<&str>; 2]) -> Self {
         let (mut database, mut schema, mut table) = (None, None, None);
         for pair in pairs {
             database = schema;
             schema = table;
             table = Some(pair.as_str());
         }
-        if override_schema.is_some() {
-            database = None;
-            schema = override_schema;
+        if override_schema[1].is_some() {
+            database = override_schema[0];
+            schema = override_schema[1];
         }
         Self::new(database, schema, table.expect("at least one name"))
     }
@@ -75,7 +75,7 @@ impl QName {
     /// Parses a qualified name
     pub fn parse(input: &str) -> Result<Self, Error> {
         let mut pairs = TemplateParser::parse(Rule::qname, input)?;
-        Ok(Self::from_pairs(pairs.next().unwrap().into_inner(), None))
+        Ok(Self::from_pairs(pairs.next().unwrap().into_inner(), [None; 2]))
     }
 
     /// Obtains the table name.
@@ -217,7 +217,10 @@ fn is_ident_char(c: char) -> bool {
 impl Template {
     /// Parses a raw string into a structured template.
     pub fn parse(input: &str, init_globals: &[String], override_schema: Option<&str>) -> Result<Self, Error> {
-        let mut alloc = Allocator::new(override_schema);
+        let mut alloc = Allocator::default();
+        if let Some(schema) = override_schema {
+            alloc.set_schema_name(schema)?;
+        }
         let mut template = Self::default();
 
         template.global_exprs = init_globals
@@ -276,17 +279,19 @@ impl Template {
 
 /// Local variable allocator. This structure keeps record of local variables `@x` and assigns a
 /// unique number of each variable, so that they can be referred using a number instead of a string.
+#[derive(Default)]
 struct Allocator<'a> {
-    override_schema: Option<&'a str>,
+    override_schema: [Option<&'a str>; 2],
     map: HashMap<String, usize>,
 }
 
 impl<'a> Allocator<'a> {
-    fn new(override_schema: Option<&'a str>) -> Self {
-        Self {
-            override_schema,
-            map: HashMap::new(),
+    fn set_schema_name(&mut self, schema: &'a str) -> Result<(), Error> {
+        let pairs = TemplateParser::parse(Rule::qname, schema)?;
+        for pair in pairs {
+            self.override_schema = [self.override_schema[1], Some(pair.as_str())];
         }
+        Ok(())
     }
 
     /// Allocates a local variable index given the name.
@@ -499,7 +504,7 @@ impl<'a> Allocator<'a> {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::qname => {
-                    let q_name = QName::from_pairs(pair.into_inner(), None);
+                    let q_name = QName::from_pairs(pair.into_inner(), [None; 2]);
                     function = function_from_name(q_name.unique_name())?;
                 }
                 Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),

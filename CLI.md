@@ -39,6 +39,13 @@ More options
     Override the table name of generated data. Should be a qualified and quoted name like
     `'"database"."schema"."table"'`.
 
+    This option cannot be used when the template has multiple tables.
+
+* `--schema-name «NAME»`
+
+    Replaces the schema name of the generated tables. Should be a qualified and quoted name like
+    `'"database"."schema"'`.
+
 * `--qualified`
 
     If specified, the generated INSERT statements will use the fully qualified table name (i.e.
