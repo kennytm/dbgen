@@ -28,52 +28,7 @@ INSERT INTO "table" VALUES
 …
 ```
 
-### Global expressions
-
-The `{{ … }}` can also be placed before the CREATE TABLE statement. These expressions would be
-evaluated once, and will not be written into the generated files. This is useful to define global
-constants used by all rows.
-
-```sql
-{{ @dirs := array['North', 'West', 'East', 'South'] }}
-CREATE TABLE cardinals (
-    t INTEGER       {{ rownum }},
-    d1 VARCHAR(5)   {{ @dirs[rand.zipf(4, 0.8)] }},
-    d2 VARCHAR(5)   {{ @dirs[rand.zipf(4, 0.8)] }}
-);
-```
-
-Variables assigned in global expressions can be re-assigned, but the change is localized in the
-current generated file. Every new file would be initialized by the same evaluated values.
-For instance if we generate 2 files given this template:
-
-```sql
-{{ @value := rand.range(0, 100000) }}
-CREATE TABLE _ (
-    p INTEGER {{ @value }},
-    n INTEGER {{ @value := rand.range(0, 100000) }}
-);
-```
-
-We may get
-
-```sql
------- first file -------
-INSERT INTO _ VALUES
-(58405, 87322),
-(87322, 41735),
-(41735, 91701);
-
------- second file ------
-INSERT INTO _ VALUES
-(58405, 3046),
-(3046, 8087),
-(8087, 26211);
-```
-
-Note that the initial `@value` are the same for both files (`58405`), because `rand.range()` is only
-evaluated once. After generation started, though, each file acquires its own state and we see they
-evaluate `@value` differently without any interference.
+See [Advanced template features](./TemplateAdvanced.md) for more syntactical features.
 
 Expression syntax
 -----------------
@@ -493,6 +448,10 @@ From highest to lowest precedence:
 * **coalesce(*v1*, *v2*, *v3*)**
 
     Returns the first non-NULL value. If all of *v1*, *v2*, *v3* are NULL, returns NULL.
+
+    Note that `coalesce` is treated as a normal function, unlike standard SQL, and all arguments are
+    evaluated before checking for nullability. Prefer `CASE WHEN` expression if you need to control
+    the evaluation side-effect.
 
 * **@local**
 
