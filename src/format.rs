@@ -4,6 +4,7 @@ use crate::value::{Bytes, Value};
 
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
 use chrono_tz::Tz;
+use memchr::{memchr2_iter, memchr3_iter, memchr_iter};
 use std::{
     io::{Error, Write},
     slice,
@@ -95,6 +96,50 @@ fn write_interval(writer: &mut dyn Write, quote: &str, mut interval: i64) -> Res
     writer.write_all(quote.as_bytes())
 }
 
+fn write_with_escape(writer: &mut dyn Write, bytes: &[u8], rules: &[(u8, &[u8])]) -> Result<(), Error> {
+    let mut prev = 0;
+    match *rules {
+        [] => {}
+        [(s1, r1)] => {
+            for cur in memchr_iter(s1, bytes) {
+                writer.write_all(&bytes[prev..cur])?;
+                writer.write_all(r1)?;
+                prev = cur + 1;
+            }
+        }
+        [(s1, r1), (s2, r2)] => {
+            for cur in memchr2_iter(s1, s2, bytes) {
+                writer.write_all(&bytes[prev..cur])?;
+                writer.write_all(if bytes[cur] == s1 { r1 } else { r2 })?;
+                prev = cur + 1;
+            }
+        }
+        [(s1, r1), (s2, r2), (s3, r3)] => {
+            for cur in memchr3_iter(s1, s2, s3, bytes) {
+                writer.write_all(&bytes[prev..cur])?;
+                writer.write_all(match bytes[cur] {
+                    b if b == s1 => r1,
+                    b if b == s2 => r2,
+                    _ => r3,
+                })?;
+                prev = cur + 1;
+            }
+        }
+        _ => {
+            for cur in bytes {
+                if let Some((_, r)) = rules.iter().find(|(s, _)| s == cur) {
+                    writer.write_all(r)
+                } else {
+                    writer.write_all(slice::from_ref(cur))
+                }?;
+            }
+            return Ok(());
+        }
+    }
+
+    writer.write_all(&bytes[prev..])
+}
+
 impl SqlFormat {
     fn write_bytes(&self, writer: &mut dyn Write, bytes: &Bytes) -> Result<(), Error> {
         if bytes.is_binary() {
@@ -104,14 +149,15 @@ impl SqlFormat {
             }
         } else {
             writer.write_all(b"'")?;
-            for b in bytes.as_bytes() {
-                writer.write_all(match *b {
-                    b'\'' => b"''",
-                    b'\\' if self.escape_backslash => b"\\\\",
-                    b'\0' if self.escape_backslash => b"\\0",
-                    _ => slice::from_ref(b),
-                })?;
-            }
+            write_with_escape(
+                writer,
+                bytes.as_bytes(),
+                if self.escape_backslash {
+                    &[(b'\'', b"''"), (b'\\', br"\\"), (b'\0', br"\0")]
+                } else {
+                    &[(b'\'', b"''")]
+                },
+            )?;
         }
         writer.write_all(b"'")
     }
@@ -158,13 +204,15 @@ impl Format for SqlFormat {
 impl CsvFormat {
     fn write_bytes(&self, writer: &mut dyn Write, bytes: &Bytes) -> Result<(), Error> {
         writer.write_all(b"\"")?;
-        for b in bytes.as_bytes() {
-            writer.write_all(match *b {
-                b'"' => b"\"\"",
-                b'\\' if self.escape_backslash => b"\\\\",
-                _ => slice::from_ref(b),
-            })?;
-        }
+        write_with_escape(
+            writer,
+            bytes.as_bytes(),
+            if self.escape_backslash {
+                &[(b'"', b"\"\""), (b'\\', br"\\")]
+            } else {
+                &[(b'"', b"\"\"")]
+            },
+        )?;
         writer.write_all(b"\"")
     }
 }
