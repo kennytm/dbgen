@@ -133,7 +133,11 @@ impl CompileContext {
 impl Row {
     /// Evaluates the row into a vector of values.
     pub fn eval(&self, state: &mut State) -> Result<Vec<Value>, Error> {
-        self.0.iter().map(|compiled| compiled.eval(state)).collect()
+        let mut result = Vec::with_capacity(self.0.len());
+        for compiled in &self.0 {
+            result.push(compiled.eval(state)?);
+        }
+        Ok(result)
     }
 }
 
