@@ -4,7 +4,7 @@ use crate::{
     eval::{CompileContext, State, Table},
     format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
-    value::{Value, TIMESTAMP_FORMAT},
+    value::TIMESTAMP_FORMAT,
 };
 
 use anyhow::{bail, Context, Error};
@@ -238,11 +238,9 @@ pub fn run(args: Args) -> Result<(), Error> {
         template.tables[0].name = QName::parse(override_table_name)?;
     }
 
-    let mut ctx = CompileContext {
-        time_zone: args.time_zone,
-        current_timestamp: args.now.unwrap_or_else(|| Utc::now().naive_utc()),
-        variables: vec![Value::Null; template.variables_count],
-    };
+    let mut ctx = CompileContext::new(template.variables_count);
+    ctx.time_zone = args.time_zone;
+    ctx.current_timestamp = args.now.unwrap_or_else(|| Utc::now().naive_utc());
     let tables = template
         .tables
         .into_iter()

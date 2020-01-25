@@ -854,4 +854,3 @@ fn test_parse_template_error() {
         assert!(res.is_err(), "unexpected for case {}:\n{:#?}", tc, res);
     }
 }
-

@@ -26,15 +26,16 @@ pub struct CompileContext {
     /// The current timestamp in UTC.
     pub current_timestamp: NaiveDateTime,
     /// The global variables.
-    pub variables: Vec<Value>,
+    pub variables: Box<[Value]>,
 }
 
-impl Default for CompileContext {
-    fn default() -> Self {
+impl CompileContext {
+    /// Creates a default compile context storing the given number of variables.
+    pub fn new(variables_count: usize) -> Self {
         Self {
             time_zone: Tz::UTC,
             current_timestamp: NaiveDateTime::from_timestamp(0, 0),
-            variables: Vec::new(),
+            variables: vec![Value::Null; variables_count].into_boxed_slice(),
         }
     }
 }
@@ -155,7 +156,7 @@ pub(crate) enum C {
         /// The function.
         function: &'static dyn Function,
         /// Function arguments.
-        args: Vec<Compiled>,
+        args: Box<[Compiled]>,
     },
     /// Obtains a local variable.
     GetVariable(usize),
@@ -166,7 +167,7 @@ pub(crate) enum C {
         /// The value to match against.
         value: Option<Box<Compiled>>,
         /// The conditions and their corresponding results.
-        conditions: Vec<(Compiled, Compiled)>,
+        conditions: Box<[(Compiled, Compiled)]>,
         /// The result when all conditions failed.
         otherwise: Box<Compiled>,
     },
@@ -231,7 +232,10 @@ impl CompileContext {
                     let args = args.into_iter().map(|c| c.try_into().unwrap()).collect();
                     function.compile(self, args)?.0
                 } else {
-                    C::RawFunction { function, args }
+                    C::RawFunction {
+                        function,
+                        args: args.into_boxed_slice(),
+                    }
                 }
             }
             Expr::CaseValueWhen {
@@ -243,7 +247,8 @@ impl CompileContext {
                 let conditions = conditions
                     .into_iter()
                     .map(|(p, r)| Ok((self.compile(p)?, self.compile(r)?)))
-                    .collect::<Result<_, Error>>()?;
+                    .collect::<Result<Vec<_>, Error>>()?
+                    .into_boxed_slice();
                 let otherwise = Box::new(if let Some(o) = otherwise {
                     self.compile(*o)?
                 } else {
@@ -276,7 +281,7 @@ impl Compiled {
             C::Constant(v) => v.clone(),
             C::RawFunction { function, args } => {
                 let mut eval_args = Arguments::with_capacity(args.len());
-                for c in args {
+                for c in &**args {
                     eval_args.push(c.eval(state)?);
                 }
                 let compiled = (*function).compile(&state.compile_context, eval_args)?;
@@ -295,7 +300,7 @@ impl Compiled {
                 otherwise,
             } => {
                 let value = value.eval(state)?;
-                for (p, r) in conditions {
+                for (p, r) in &**conditions {
                     let p = p.eval(state)?;
                     if value.sql_cmp(&p, "when")? == Some(Ordering::Equal) {
                         return r.eval(state);
@@ -309,7 +314,7 @@ impl Compiled {
                 conditions,
                 otherwise,
             } => {
-                for (p, r) in conditions {
+                for (p, r) in &**conditions {
                     if p.eval(state)?.is_sql_true("when")? {
                         return r.eval(state);
                     }
