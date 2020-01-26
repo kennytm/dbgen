@@ -1,4 +1,5 @@
-CREATE TABLE result (a INT,
+CREATE TABLE result (
+    a INT,
     b TEXT,
     c TIMESTAMP,
     d INTERVAL,

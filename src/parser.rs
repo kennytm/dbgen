@@ -305,22 +305,38 @@ impl<'a> Allocator<'a> {
     /// Creates a single table.
     fn table_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Table, Error> {
         let mut table = Table::default();
+        let mut previous_end_line = 0;
 
         for pair in pairs {
             match pair.as_rule() {
                 Rule::kw_create | Rule::kw_table => {}
                 Rule::qname => table.name = QName::from_pairs(pair.into_inner(), self.override_schema),
-                Rule::open_paren | Rule::close_paren | Rule::any_text => {
-                    let s = pair.as_str();
-                    // insert a space if needed to ensure word boundaries
-                    if table.content.ends_with(is_ident_char) && s.starts_with(is_ident_char) {
+                Rule::open_paren | Rule::close_paren => {
+                    let span = pair.as_span();
+                    previous_end_line = span.end_pos().line_col().0;
+                    table.content.push_str(span.as_str());
+                }
+                Rule::any_text => {
+                    let span = pair.as_span();
+                    let start_line = span.start_pos().line_col().0;
+                    let end_line = span.end_pos().line_col().0;
+                    let s = span.as_str();
+
+                    if previous_end_line != start_line {
+                        // insert an indented '\n' if the whitespace we skipped included it.
+                        table.content.push_str("\n    ");
+                    } else if table.content.ends_with(is_ident_char) && s.starts_with(is_ident_char) {
+                        // insert a space if needed to ensure word boundaries
                         table.content.push(' ');
                     }
                     table.content.push_str(s);
+
+                    previous_end_line = end_line;
                 }
                 Rule::stmt => table.exprs.push(self.expr_binary_from_pairs(pair.into_inner())?),
                 r => unreachable!("Unexpected rule {:?}", r),
             }
+
         }
 
         Ok(table)

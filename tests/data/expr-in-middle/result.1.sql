@@ -1,2 +1,2 @@
 INSERT INTO result VALUES
-(1);
+(1, 1, 1);
