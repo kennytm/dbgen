@@ -336,7 +336,6 @@ impl<'a> Allocator<'a> {
                 Rule::stmt => table.exprs.push(self.expr_binary_from_pairs(pair.into_inner())?),
                 r => unreachable!("Unexpected rule {:?}", r),
             }
-
         }
 
         Ok(table)

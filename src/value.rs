@@ -3,9 +3,14 @@
 use chrono::{Duration, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
 use num_traits::FromPrimitive;
-use std::{cmp::Ordering, convert::TryFrom, fmt, io::Write, ops, str::from_utf8, sync::Arc};
+use std::{
+    cmp::Ordering,
+    convert::{TryFrom, TryInto},
+    fmt, ops,
+    sync::Arc,
+};
 
-use crate::error::Error;
+use crate::{bytes::Bytes, error::Error};
 
 /// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
@@ -171,27 +176,6 @@ impl PartialOrd for Number {
     }
 }
 
-/// An SQL string (UTF-8 or byte-string).
-#[derive(Clone, PartialEq, Debug, Default)]
-pub struct Bytes {
-    /// The raw bytes.
-    bytes: Vec<u8>,
-    /// Whether the bytes contained non-UTF-8 content.
-    is_binary: bool,
-}
-
-impl Bytes {
-    /// Gets whether the bytes contained non-UTF-8 content.
-    pub fn is_binary(&self) -> bool {
-        self.is_binary
-    }
-
-    /// Gets the byte content of this string.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-}
-
 /// A scalar value.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -278,7 +262,7 @@ impl Value {
         Ok(match (self, other) {
             (Self::Null, _) | (_, Self::Null) => None,
             (Self::Number(a), Self::Number(b)) => a.partial_cmp(b),
-            (Self::Bytes(a), Self::Bytes(b)) => a.bytes.partial_cmp(&b.bytes),
+            (Self::Bytes(a), Self::Bytes(b)) => a.partial_cmp(b),
             (Self::Timestamp(a, _), Self::Timestamp(b, _)) => a.partial_cmp(b),
             (Self::Interval(a), Self::Interval(b)) => a.partial_cmp(b),
             (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), |a, b| a.sql_cmp(b, name))?,
@@ -297,7 +281,7 @@ impl Value {
             Self::Null => Ordering::Equal,
             Self::Number(Number(N::Int(a))) => a.cmp(&0),
             Self::Number(Number(N::Float(a))) => a.partial_cmp(&0.0).unwrap_or(Ordering::Equal),
-            Self::Bytes(a) => true.cmp(&a.bytes.is_empty()),
+            Self::Bytes(a) => true.cmp(&a.is_empty()),
             Self::Timestamp(..) => Ordering::Greater,
             Self::Interval(a) => a.cmp(&0),
             Self::Array(a) => true.cmp(&a.is_empty()),
@@ -404,37 +388,16 @@ impl Value {
 
     /// Concatenates multiple values into a string.
     pub fn sql_concat(values: impl Iterator<Item = Self>) -> Result<Self, Error> {
+        use std::fmt::Write;
+
         let mut res = Bytes::default();
-        let mut should_check_binary = false;
         for item in values {
             match item {
-                Self::Null => {
-                    return Ok(Self::Null);
-                }
-                Self::Number(n) => {
-                    write!(&mut res.bytes, "{}", n).unwrap();
-                }
-                Self::Bytes(mut b) => {
-                    res.bytes.append(&mut b.bytes);
-                    if b.is_binary {
-                        if res.is_binary {
-                            should_check_binary = true;
-                        } else {
-                            res.is_binary = true;
-                        }
-                    }
-                }
-                Self::Timestamp(timestamp, tz) => {
-                    write!(
-                        &mut res.bytes,
-                        "{}",
-                        tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)
-                    )
-                    .unwrap();
-                }
-                Self::Interval(interval) => {
-                    write!(&mut res.bytes, "INTERVAL {} MICROSECOND", interval).unwrap();
-                }
+                Self::Null => return Ok(Self::Null),
+                Self::Number(n) => write!(res, "{}", n).unwrap(),
+                Self::Bytes(b) => res.extend_bytes(b),
+                Self::Timestamp(timestamp, tz) => write!(res, "{}", tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)).unwrap(),
+                Self::Interval(interval) => write!(res, "INTERVAL {} MICROSECOND", interval).unwrap(),
                 Self::Array(_) => {
                     return Err(Error::InvalidArguments {
                         name: "||",
@@ -442,10 +405,6 @@ impl Value {
                     });
                 }
             }
-        }
-
-        if should_check_binary {
-            res.is_binary = from_utf8(&res.bytes).is_err();
         }
         Ok(Self::Bytes(res))
     }
@@ -539,10 +498,7 @@ impl TryFrom<Value> for String {
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Bytes(Bytes {
-                is_binary: false,
-                bytes,
-            }) => Ok(unsafe { Self::from_utf8_unchecked(bytes) }),
+            Value::Bytes(bytes) => bytes.try_into().map_err(|_| TryFromValueError("string")),
             _ => Err(TryFromValueError("string")),
         }
     }
@@ -553,7 +509,7 @@ impl TryFrom<Value> for Vec<u8> {
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Bytes(Bytes { bytes, .. }) => Ok(bytes),
+            Value::Bytes(bytes) => Ok(bytes.into_raw_bytes()),
             _ => Err(TryFromValueError("bytes string")),
         }
     }
@@ -590,19 +546,13 @@ impl<T: Into<Number>> From<T> for Value {
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Self::Bytes(Bytes {
-            is_binary: false,
-            bytes: value.into_bytes(),
-        })
+        Self::Bytes(value.into())
     }
 }
 
 impl From<Vec<u8>> for Value {
     fn from(bytes: Vec<u8>) -> Self {
-        Self::Bytes(Bytes {
-            is_binary: from_utf8(&bytes).is_err(),
-            bytes,
-        })
+        Self::Bytes(bytes.into())
     }
 }
 

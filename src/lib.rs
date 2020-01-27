@@ -22,6 +22,7 @@ pub const FULL_VERSION: &str = concat!(
     env!("VERGEN_TARGET_TRIPLE"),
 );
 
+pub mod bytes;
 pub mod cli;
 pub mod error;
 pub mod eval;

@@ -1,6 +1,6 @@
 //! Output formatter
 
-use crate::value::{Bytes, Value};
+use crate::{bytes::Bytes, value::Value};
 
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
 use chrono_tz::Tz;
@@ -144,14 +144,14 @@ impl SqlFormat {
     fn write_bytes(&self, writer: &mut dyn Write, bytes: &Bytes) -> Result<(), Error> {
         if bytes.is_binary() {
             writer.write_all(b"X'")?;
-            for b in bytes.as_bytes() {
+            for b in bytes.as_raw_bytes() {
                 write!(writer, "{:02X}", b)?;
             }
         } else {
             writer.write_all(b"'")?;
             write_with_escape(
                 writer,
-                bytes.as_bytes(),
+                bytes.as_raw_bytes(),
                 if self.escape_backslash {
                     &[(b'\'', b"''"), (b'\\', br"\\"), (b'\0', br"\0")]
                 } else {
@@ -206,7 +206,7 @@ impl CsvFormat {
         writer.write_all(b"\"")?;
         write_with_escape(
             writer,
-            bytes.as_bytes(),
+            bytes.as_raw_bytes(),
             if self.escape_backslash {
                 &[(b'"', b"\"\""), (b'\\', br"\\")]
             } else {
