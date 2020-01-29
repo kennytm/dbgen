@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{bytes::Bytes, error::Error};
+use crate::{bytes::ByteString, error::Error};
 
 /// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
@@ -186,7 +186,7 @@ pub enum Value {
     /// A number.
     Number(Number),
     /// A string or byte string.
-    Bytes(Bytes),
+    Bytes(ByteString),
     /// A timestamp. The `NaiveDateTime` field must be in the UTC time zone.
     Timestamp(NaiveDateTime, Tz),
     /// A time interval, as multiple of microseconds.
@@ -391,12 +391,12 @@ impl Value {
     pub fn sql_concat<'a>(values: impl Iterator<Item = &'a Self>) -> Result<Self, Error> {
         use std::fmt::Write;
 
-        let mut res = Bytes::default();
+        let mut res = ByteString::default();
         for item in values {
             match item {
                 Self::Null => return Ok(Self::Null),
                 Self::Number(n) => write!(res, "{}", n).unwrap(),
-                Self::Bytes(b) => res.extend_bytes(b),
+                Self::Bytes(b) => res.extend_byte_string(b),
                 Self::Timestamp(timestamp, tz) => {
                     write!(res, "{}", tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)).unwrap()
                 }
@@ -512,7 +512,7 @@ impl TryFrom<Value> for Vec<u8> {
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Bytes(bytes) => Ok(bytes.into_raw_bytes()),
+            Value::Bytes(bytes) => Ok(bytes.into_bytes()),
             _ => Err(TryFromValueError("bytes string")),
         }
     }
@@ -559,8 +559,8 @@ impl From<Vec<u8>> for Value {
     }
 }
 
-impl From<Bytes> for Value {
-    fn from(b: Bytes) -> Self {
+impl From<ByteString> for Value {
+    fn from(b: ByteString) -> Self {
         Self::Bytes(b)
     }
 }

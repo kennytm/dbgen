@@ -9,11 +9,11 @@ use std::{
     string::FromUtf8Error,
 };
 
-/// Describes how the input bytes failed the UTF-8 encoding.
+/// Describes how the input byte-string failed the UTF-8 encoding.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct TryIntoStringError {
-    /// The bytes are valid until this position, which encountered the first
-    /// non-UTF-8 bytes.
+    /// The bytes are valid UTF-8 until this position, which encountered the
+    /// first non-UTF-8 bytes.
     valid_len: usize,
     /// Whether the error is caused by a partial UTF-8 code point at the end of
     /// the sequence, and can be corrected by appending continuation bytes.
@@ -39,9 +39,9 @@ impl Add<usize> for TryIntoStringError {
     }
 }
 
-/// An SQL string (UTF-8 or byte-string).
+/// A string which potentially contains invalid UTF-8.
 #[derive(Clone, Eq, Debug, Default)]
-pub struct Bytes {
+pub struct ByteString {
     /// The raw bytes.
     bytes: Vec<u8>,
     /// If the bytes are not valid UTF-8, this field contains information about
@@ -49,25 +49,25 @@ pub struct Bytes {
     error: Option<TryIntoStringError>,
 }
 
-impl PartialEq for Bytes {
+impl PartialEq for ByteString {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl PartialOrd for Bytes {
+impl PartialOrd for ByteString {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.bytes.partial_cmp(&other.bytes)
     }
 }
 
-impl Ord for Bytes {
+impl Ord for ByteString {
     fn cmp(&self, other: &Self) -> Ordering {
         self.bytes.cmp(&other.bytes)
     }
 }
 
-impl From<String> for Bytes {
+impl From<String> for ByteString {
     fn from(s: String) -> Self {
         Self {
             bytes: s.into_bytes(),
@@ -76,13 +76,13 @@ impl From<String> for Bytes {
     }
 }
 
-impl From<Vec<u8>> for Bytes {
+impl From<Vec<u8>> for ByteString {
     fn from(bytes: Vec<u8>) -> Self {
         String::from_utf8(bytes).into()
     }
 }
 
-impl From<FromUtf8Error> for Bytes {
+impl From<FromUtf8Error> for ByteString {
     fn from(error: FromUtf8Error) -> Self {
         Self {
             error: Some(error.utf8_error().into()),
@@ -91,7 +91,7 @@ impl From<FromUtf8Error> for Bytes {
     }
 }
 
-impl From<Result<String, FromUtf8Error>> for Bytes {
+impl From<Result<String, FromUtf8Error>> for ByteString {
     fn from(result: Result<String, FromUtf8Error>) -> Self {
         match result {
             Ok(s) => s.into(),
@@ -100,15 +100,15 @@ impl From<Result<String, FromUtf8Error>> for Bytes {
     }
 }
 
-impl From<Bytes> for Vec<u8> {
-    fn from(bytes: Bytes) -> Self {
+impl From<ByteString> for Vec<u8> {
+    fn from(bytes: ByteString) -> Self {
         bytes.bytes
     }
 }
 
-impl TryFrom<Bytes> for String {
+impl TryFrom<ByteString> for String {
     type Error = TryIntoStringError;
-    fn try_from(bytes: Bytes) -> Result<Self, Self::Error> {
+    fn try_from(bytes: ByteString) -> Result<Self, Self::Error> {
         if let Some(e) = bytes.error {
             Err(e)
         } else {
@@ -117,9 +117,9 @@ impl TryFrom<Bytes> for String {
     }
 }
 
-impl io::Write for Bytes {
+impl io::Write for ByteString {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.extend_raw_bytes(buf);
+        self.extend_bytes(buf);
         Ok(buf.len())
     }
 
@@ -128,14 +128,14 @@ impl io::Write for Bytes {
     }
 }
 
-impl fmt::Write for Bytes {
+impl fmt::Write for ByteString {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.extend_str(s);
         Ok(())
     }
 }
 
-impl Bytes {
+impl ByteString {
     /// Validates the invariant. Becomes no-op on release build.
     fn debug_validate(&self) {
         debug_assert_eq!(self.error, from_utf8(&self.bytes).err().map(TryIntoStringError::from));
@@ -146,12 +146,12 @@ impl Bytes {
         self.bytes.len()
     }
 
-    /// Returns whether the bytes are empty.
+    /// Returns whether the byte string is empty.
     pub fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
 
-    /// Gets the length where the bytes are valid UTF-8 up to this point.
+    /// Gets the length where the byte string is valid UTF-8 up to this point.
     fn valid_len(&self) -> usize {
         self.error.map_or(self.bytes.len(), |e| e.valid_len)
     }
@@ -164,27 +164,27 @@ impl Bytes {
             .map(|e| TryIntoStringError::from(e) + old_valid_len)
     }
 
-    /// Gets whether the bytes consists of valid UTF-8 content.
+    /// Gets whether the byte string consists of valid UTF-8 content.
     pub fn is_utf8(&self) -> bool {
         self.error.is_none()
     }
 
-    /// Gets whether the bytes contained non-UTF-8 content.
+    /// Gets whether the byte string contained non-UTF-8 content.
     pub fn is_binary(&self) -> bool {
         self.error.is_some()
     }
 
-    /// Gets the byte content of this string.
-    pub fn as_raw_bytes(&self) -> &[u8] {
+    /// Gets the slice of bytes of this byte string.
+    pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
 
-    /// Extracts ownership of the byte content of this string.
-    pub fn into_raw_bytes(self) -> Vec<u8> {
+    /// Extracts ownership of the vector of bytes from this byte string.
+    pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
 
-    /// Extends a string to the end of these bytes.
+    /// Extends a string to the end of this byte string.
     pub fn extend_str(&mut self, s: &str) {
         if s.is_empty() {
             return;
@@ -196,8 +196,8 @@ impl Bytes {
         self.debug_validate();
     }
 
-    /// Extends some bytes to the end of these bytes.
-    pub fn extend_raw_bytes(&mut self, b: &[u8]) {
+    /// Extends some bytes to the end of this byte string.
+    pub fn extend_bytes(&mut self, b: &[u8]) {
         if b.is_empty() {
             return;
         }
@@ -213,8 +213,8 @@ impl Bytes {
         self.debug_validate();
     }
 
-    /// Extends another bytes instance.
-    pub fn extend_bytes(&mut self, other: &Self) {
+    /// Extends another byte string instance to the end.
+    pub fn extend_byte_string(&mut self, other: &Self) {
         if other.is_empty() {
             return;
         }
@@ -251,19 +251,19 @@ mod tests {
 
     #[test]
     fn test_push_str() {
-        let test_cases: Vec<(Bytes, &str, bool, &[u8])> = vec![
-            (Bytes::from("abc".to_owned()), "def", true, b"abcdef"),
-            (Bytes::from("abc".to_owned()), "", true, b"abc"),
-            (Bytes::from(b"abc\xc2".to_vec()), "def", false, b"abc\xc2def"),
-            (Bytes::from(b"abc\xc2".to_vec()), "", false, b"abc\xc2"),
-            (Bytes::from(b"abc\x80".to_vec()), "def", false, b"abc\x80def"),
-            (Bytes::from(b"abc\x80".to_vec()), "", false, b"abc\x80"),
-            (Bytes::default(), "def", true, b"def"),
-            (Bytes::default(), "", true, b""),
-            (Bytes::from(b"\xc2".to_vec()), "def", false, b"\xc2def"),
-            (Bytes::from(b"\xc2".to_vec()), "", false, b"\xc2"),
-            (Bytes::from(b"\x80".to_vec()), "def", false, b"\x80def"),
-            (Bytes::from(b"\x80".to_vec()), "", false, b"\x80"),
+        let test_cases: Vec<(ByteString, &str, bool, &[u8])> = vec![
+            ("abc".to_owned().into(), "def", true, b"abcdef"),
+            ("abc".to_owned().into(), "", true, b"abc"),
+            (b"abc\xc2".to_vec().into(), "def", false, b"abc\xc2def"),
+            (b"abc\xc2".to_vec().into(), "", false, b"abc\xc2"),
+            (b"abc\x80".to_vec().into(), "def", false, b"abc\x80def"),
+            (b"abc\x80".to_vec().into(), "", false, b"abc\x80"),
+            (ByteString::default(), "def", true, b"def"),
+            (ByteString::default(), "", true, b""),
+            (b"\xc2".to_vec().into(), "def", false, b"\xc2def"),
+            (b"\xc2".to_vec().into(), "", false, b"\xc2"),
+            (b"\x80".to_vec().into(), "def", false, b"\x80def"),
+            (b"\x80".to_vec().into(), "", false, b"\x80"),
         ];
 
         for (mut target, string, is_utf8, bytes) in test_cases {
@@ -273,78 +273,98 @@ mod tests {
 
             target.extend_str(string);
             assert_eq!(target.is_utf8(), is_utf8);
-            assert_eq!(target.as_raw_bytes(), bytes);
+            assert_eq!(target.as_bytes(), bytes);
 
-            target_clone.extend_bytes(&string.to_owned().into());
+            target_clone.extend_byte_string(&string.to_owned().into());
             assert_eq!(target_clone.is_utf8(), is_utf8);
-            assert_eq!(target_clone.as_raw_bytes(), bytes);
+            assert_eq!(target_clone.as_bytes(), bytes);
 
             {
                 use std::io::Write;
                 write!(&mut target_clone_2, "{}", string).unwrap();
             }
             assert_eq!(target_clone_2.is_utf8(), is_utf8);
-            assert_eq!(target_clone_2.as_raw_bytes(), bytes);
+            assert_eq!(target_clone_2.as_bytes(), bytes);
 
             {
                 use std::fmt::Write;
                 write!(&mut target_clone_3, "{}", string).unwrap();
             }
             assert_eq!(target_clone_3.is_utf8(), is_utf8);
-            assert_eq!(target_clone_3.as_raw_bytes(), bytes);
+            assert_eq!(target_clone_3.as_bytes(), bytes);
         }
     }
 
     #[test]
     fn test_push_bytes() {
-        let test_cases: Vec<(Bytes, &[u8], bool, &[u8])> = vec![
-            (Bytes::from("abc".to_owned()), b"def", true, b"abcdef"),
-            (Bytes::from("abc".to_owned()), b"def\xc2", false, b"abcdef\xc2"),
-            (Bytes::from("abc".to_owned()), b"def\x80", false, b"abcdef\x80"),
-            (Bytes::from("abc".to_owned()), b"", true, b"abc"),
-            (Bytes::from("abc".to_owned()), b"\xc2", false, b"abc\xc2"),
-            (Bytes::from("abc".to_owned()), b"\x80", false, b"abc\x80"),
-            (Bytes::from(b"abc\xc2".to_vec()), b"def", false, b"abc\xc2def"),
-            (Bytes::from(b"abc\xc2".to_vec()), b"def\xc2", false, b"abc\xc2def\xc2"),
-            (Bytes::from(b"abc\xc2".to_vec()), b"def\x80", false, b"abc\xc2def\x80"),
-            (Bytes::from(b"abc\xc2".to_vec()), b"", false, b"abc\xc2"),
-            (Bytes::from(b"abc\xc2".to_vec()), b"\xc2", false, b"abc\xc2\xc2"),
-            (Bytes::from(b"abc\xc2".to_vec()), b"\x80", true, b"abc\xc2\x80"),
-            (Bytes::from(b"abc\x80".to_vec()), b"def", false, b"abc\x80def"),
-            (Bytes::from(b"abc\x80".to_vec()), b"def\xc2", false, b"abc\x80def\xc2"),
-            (Bytes::from(b"abc\x80".to_vec()), b"def\x80", false, b"abc\x80def\x80"),
-            (Bytes::from(b"abc\x80".to_vec()), b"", false, b"abc\x80"),
-            (Bytes::from(b"abc\x80".to_vec()), b"\xc2", false, b"abc\x80\xc2"),
-            (Bytes::from(b"abc\x80".to_vec()), b"\x80", false, b"abc\x80\x80"),
-            (Bytes::default(), b"def", true, b"def"),
-            (Bytes::default(), b"def\xc2", false, b"def\xc2"),
-            (Bytes::default(), b"def\x80", false, b"def\x80"),
-            (Bytes::default(), b"", true, b""),
-            (Bytes::default(), b"\xc2", false, b"\xc2"),
-            (Bytes::default(), b"\x80", false, b"\x80"),
-            (Bytes::from(b"\xc2".to_vec()), b"def", false, b"\xc2def"),
-            (Bytes::from(b"\xc2".to_vec()), b"def\xc2", false, b"\xc2def\xc2"),
-            (Bytes::from(b"\xc2".to_vec()), b"def\x80", false, b"\xc2def\x80"),
-            (Bytes::from(b"\xc2".to_vec()), b"", false, b"\xc2"),
-            (Bytes::from(b"\xc2".to_vec()), b"\xc2", false, b"\xc2\xc2"),
-            (Bytes::from(b"\xc2".to_vec()), b"\x80", true, b"\xc2\x80"),
-            (Bytes::from(b"\x80".to_vec()), b"def", false, b"\x80def"),
-            (Bytes::from(b"\x80".to_vec()), b"def\xc2", false, b"\x80def\xc2"),
-            (Bytes::from(b"\x80".to_vec()), b"def\x80", false, b"\x80def\x80"),
-            (Bytes::from(b"\x80".to_vec()), b"", false, b"\x80"),
-            (Bytes::from(b"\x80".to_vec()), b"\xc2", false, b"\x80\xc2"),
-            (Bytes::from(b"\x80".to_vec()), b"\x80", false, b"\x80\x80"),
+        let test_cases: Vec<(ByteString, &[u8], bool, &[u8])> = vec![
+            ("abc".to_owned().into(), b"def", true, b"abcdef"),
+            ("abc".to_owned().into(), b"def\xc2", false, b"abcdef\xc2"),
+            ("abc".to_owned().into(), b"def\x80", false, b"abcdef\x80"),
+            ("abc".to_owned().into(), b"", true, b"abc"),
+            ("abc".to_owned().into(), b"\xc2", false, b"abc\xc2"),
+            ("abc".to_owned().into(), b"\x80", false, b"abc\x80"),
+            (b"abc\xc2".to_vec().into(), b"def", false, b"abc\xc2def"),
+            (
+                b"abc\xc2".to_vec().into(),
+                b"def\xc2",
+                false,
+                b"abc\xc2def\xc2",
+            ),
+            (
+                b"abc\xc2".to_vec().into(),
+                b"def\x80",
+                false,
+                b"abc\xc2def\x80",
+            ),
+            (b"abc\xc2".to_vec().into(), b"", false, b"abc\xc2"),
+            (b"abc\xc2".to_vec().into(), b"\xc2", false, b"abc\xc2\xc2"),
+            (b"abc\xc2".to_vec().into(), b"\x80", true, b"abc\xc2\x80"),
+            (b"abc\x80".to_vec().into(), b"def", false, b"abc\x80def"),
+            (
+                b"abc\x80".to_vec().into(),
+                b"def\xc2",
+                false,
+                b"abc\x80def\xc2",
+            ),
+            (
+                b"abc\x80".to_vec().into(),
+                b"def\x80",
+                false,
+                b"abc\x80def\x80",
+            ),
+            (b"abc\x80".to_vec().into(), b"", false, b"abc\x80"),
+            (b"abc\x80".to_vec().into(), b"\xc2", false, b"abc\x80\xc2"),
+            (b"abc\x80".to_vec().into(), b"\x80", false, b"abc\x80\x80"),
+            (ByteString::default(), b"def", true, b"def"),
+            (ByteString::default(), b"def\xc2", false, b"def\xc2"),
+            (ByteString::default(), b"def\x80", false, b"def\x80"),
+            (ByteString::default(), b"", true, b""),
+            (ByteString::default(), b"\xc2", false, b"\xc2"),
+            (ByteString::default(), b"\x80", false, b"\x80"),
+            (b"\xc2".to_vec().into(), b"def", false, b"\xc2def"),
+            (b"\xc2".to_vec().into(), b"def\xc2", false, b"\xc2def\xc2"),
+            (b"\xc2".to_vec().into(), b"def\x80", false, b"\xc2def\x80"),
+            (b"\xc2".to_vec().into(), b"", false, b"\xc2"),
+            (b"\xc2".to_vec().into(), b"\xc2", false, b"\xc2\xc2"),
+            (b"\xc2".to_vec().into(), b"\x80", true, b"\xc2\x80"),
+            (b"\x80".to_vec().into(), b"def", false, b"\x80def"),
+            (b"\x80".to_vec().into(), b"def\xc2", false, b"\x80def\xc2"),
+            (b"\x80".to_vec().into(), b"def\x80", false, b"\x80def\x80"),
+            (b"\x80".to_vec().into(), b"", false, b"\x80"),
+            (b"\x80".to_vec().into(), b"\xc2", false, b"\x80\xc2"),
+            (b"\x80".to_vec().into(), b"\x80", false, b"\x80\x80"),
         ];
 
         for (mut target, append, is_utf8, bytes) in test_cases {
             let mut target_clone = target.clone();
-            target.extend_raw_bytes(append);
+            target.extend_bytes(append);
             assert_eq!(target.is_utf8(), is_utf8);
-            assert_eq!(target.as_raw_bytes(), bytes);
+            assert_eq!(target.as_bytes(), bytes);
 
-            target_clone.extend_bytes(&append.to_vec().into());
+            target_clone.extend_byte_string(&append.to_vec().into());
             assert_eq!(target_clone.is_utf8(), is_utf8);
-            assert_eq!(target_clone.as_raw_bytes(), bytes);
+            assert_eq!(target_clone.as_bytes(), bytes);
         }
     }
 }
