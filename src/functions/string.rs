@@ -178,7 +178,7 @@ pub struct Concat;
 
 impl Function for Concat {
     fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let result = Value::sql_concat(args.into_iter())?;
+        let result = Value::sql_concat(args.iter())?;
         Ok(Compiled(C::Constant(result)))
     }
 }

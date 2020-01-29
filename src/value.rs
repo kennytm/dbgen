@@ -388,7 +388,7 @@ impl Value {
     }
 
     /// Concatenates multiple values into a string.
-    pub fn sql_concat(values: impl Iterator<Item = Self>) -> Result<Self, Error> {
+    pub fn sql_concat<'a>(values: impl Iterator<Item = &'a Self>) -> Result<Self, Error> {
         use std::fmt::Write;
 
         let mut res = Bytes::default();
@@ -397,7 +397,9 @@ impl Value {
                 Self::Null => return Ok(Self::Null),
                 Self::Number(n) => write!(res, "{}", n).unwrap(),
                 Self::Bytes(b) => res.extend_bytes(b),
-                Self::Timestamp(timestamp, tz) => write!(res, "{}", tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)).unwrap(),
+                Self::Timestamp(timestamp, tz) => {
+                    write!(res, "{}", tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)).unwrap()
+                }
                 Self::Interval(interval) => write!(res, "INTERVAL {} MICROSECOND", interval).unwrap(),
                 Self::Array(_) => {
                     return Err(Error::InvalidArguments {

@@ -616,7 +616,7 @@ impl Env {
     }
 }
 
-impl<'e> FileWriterEnv<'e> {
+impl FileWriterEnv<'_> {
     fn write_one_row(&mut self, i: usize) -> Result<(), Error> {
         let file = &mut self.files[i];
         let table = &self.env.tables[i];

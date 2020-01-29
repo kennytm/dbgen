@@ -112,7 +112,7 @@ impl TryFrom<Bytes> for String {
         if let Some(e) = bytes.error {
             Err(e)
         } else {
-            Ok(unsafe { String::from_utf8_unchecked(bytes.bytes) })
+            Ok(unsafe { Self::from_utf8_unchecked(bytes.bytes) })
         }
     }
 }
@@ -214,7 +214,7 @@ impl Bytes {
     }
 
     /// Extends another bytes instance.
-    pub fn extend_bytes(&mut self, other: Self) {
+    pub fn extend_bytes(&mut self, other: &Self) {
         if other.is_empty() {
             return;
         }
@@ -275,7 +275,7 @@ mod tests {
             assert_eq!(target.is_utf8(), is_utf8);
             assert_eq!(target.as_raw_bytes(), bytes);
 
-            target_clone.extend_bytes(string.to_owned().into());
+            target_clone.extend_bytes(&string.to_owned().into());
             assert_eq!(target_clone.is_utf8(), is_utf8);
             assert_eq!(target_clone.as_raw_bytes(), bytes);
 
@@ -342,7 +342,7 @@ mod tests {
             assert_eq!(target.is_utf8(), is_utf8);
             assert_eq!(target.as_raw_bytes(), bytes);
 
-            target_clone.extend_bytes(append.to_vec().into());
+            target_clone.extend_bytes(&append.to_vec().into());
             assert_eq!(target_clone.is_utf8(), is_utf8);
             assert_eq!(target_clone.as_raw_bytes(), bytes);
         }
