@@ -322,13 +322,7 @@ impl Compiled {
                 otherwise.eval(state)?
             }
 
-            C::RandRegex(generator) => {
-                if generator.is_utf8() {
-                    state.rng.sample::<String, _>(generator).into()
-                } else {
-                    state.rng.sample::<Vec<u8>, _>(generator).into()
-                }
-            }
+            C::RandRegex(generator) => state.rng.sample::<Result<_, _>, _>(generator).into(),
             C::RandUniformU64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformI64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformF64(uniform) => state.rng.sample(uniform).into(),

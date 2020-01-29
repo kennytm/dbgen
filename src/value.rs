@@ -7,6 +7,7 @@ use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
     fmt, ops,
+    string::FromUtf8Error,
     sync::Arc,
 };
 
@@ -559,6 +560,12 @@ impl From<Vec<u8>> for Value {
 impl From<Bytes> for Value {
     fn from(b: Bytes) -> Self {
         Self::Bytes(b)
+    }
+}
+
+impl From<Result<String, FromUtf8Error>> for Value {
+    fn from(result: Result<String, FromUtf8Error>) -> Self {
+        Self::Bytes(result.into())
     }
 }
 
