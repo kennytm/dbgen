@@ -135,6 +135,12 @@ impl fmt::Write for ByteString {
     }
 }
 
+/// Whether the byte is a leading byte in UTF-8 (`0x00..=0x7F`, `0xC0..=0xFF`).
+#[allow(clippy::cast_possible_wrap)] // the wrap is intentional.
+fn is_utf8_leading_byte(b: u8) -> bool {
+    (b as i8) >= -0x40
+}
+
 impl ByteString {
     /// Validates the invariant. Becomes no-op on release build.
     fn debug_validate(&self) {
@@ -243,6 +249,59 @@ impl ByteString {
 
         self.debug_validate();
     }
+
+    /// Gets the total number of code points, if the byte string is valid UTF-8.
+    ///
+    /// If the byte string is not valid UTF-8, this method counts the number of
+    /// leading UTF-8 code units.
+    pub fn char_len(&self) -> usize {
+        self.bytes.iter().filter(|b| is_utf8_leading_byte(**b)).count()
+    }
+
+    /// Truncates the byte string to the given length.
+    pub fn truncate(&mut self, len: usize) {
+        if len == self.len() {
+            return;
+        }
+
+        let valid_len = self.valid_len();
+        self.error = if valid_len > len && !is_utf8_leading_byte(self.bytes[len]) {
+            // look backward for a char boundary.
+            Some(TryIntoStringError {
+                valid_len: self.bytes[..len]
+                    .iter()
+                    .rposition(|b| is_utf8_leading_byte(*b))
+                    .unwrap_or(0),
+                is_partial: true,
+            })
+        } else {
+            None
+        };
+
+        self.bytes.truncate(len);
+
+        if valid_len < len {
+            self.error = self.recompute_error(valid_len);
+        }
+        self.debug_validate();
+    }
+
+    /// Drops the first few bytes from the byte string.
+    pub fn drain_init(&mut self, len: usize) {
+        if len == 0 {
+            return;
+        }
+        let valid_len = self.valid_len();
+        self.bytes.drain(..len);
+        if len < valid_len && is_utf8_leading_byte(self.bytes[0]) {
+            if let Some(e) = &mut self.error {
+                e.valid_len = valid_len - len;
+            }
+        } else {
+            self.error = self.recompute_error(0);
+        }
+        self.debug_validate();
+    }
 }
 
 #[cfg(test)]
@@ -305,34 +364,14 @@ mod tests {
             ("abc".to_owned().into(), b"\xc2", false, b"abc\xc2"),
             ("abc".to_owned().into(), b"\x80", false, b"abc\x80"),
             (b"abc\xc2".to_vec().into(), b"def", false, b"abc\xc2def"),
-            (
-                b"abc\xc2".to_vec().into(),
-                b"def\xc2",
-                false,
-                b"abc\xc2def\xc2",
-            ),
-            (
-                b"abc\xc2".to_vec().into(),
-                b"def\x80",
-                false,
-                b"abc\xc2def\x80",
-            ),
+            (b"abc\xc2".to_vec().into(), b"def\xc2", false, b"abc\xc2def\xc2"),
+            (b"abc\xc2".to_vec().into(), b"def\x80", false, b"abc\xc2def\x80"),
             (b"abc\xc2".to_vec().into(), b"", false, b"abc\xc2"),
             (b"abc\xc2".to_vec().into(), b"\xc2", false, b"abc\xc2\xc2"),
             (b"abc\xc2".to_vec().into(), b"\x80", true, b"abc\xc2\x80"),
             (b"abc\x80".to_vec().into(), b"def", false, b"abc\x80def"),
-            (
-                b"abc\x80".to_vec().into(),
-                b"def\xc2",
-                false,
-                b"abc\x80def\xc2",
-            ),
-            (
-                b"abc\x80".to_vec().into(),
-                b"def\x80",
-                false,
-                b"abc\x80def\x80",
-            ),
+            (b"abc\x80".to_vec().into(), b"def\xc2", false, b"abc\x80def\xc2"),
+            (b"abc\x80".to_vec().into(), b"def\x80", false, b"abc\x80def\x80"),
             (b"abc\x80".to_vec().into(), b"", false, b"abc\x80"),
             (b"abc\x80".to_vec().into(), b"\xc2", false, b"abc\x80\xc2"),
             (b"abc\x80".to_vec().into(), b"\x80", false, b"abc\x80\x80"),
@@ -365,6 +404,67 @@ mod tests {
             target_clone.extend_byte_string(&append.to_vec().into());
             assert_eq!(target_clone.is_utf8(), is_utf8);
             assert_eq!(target_clone.as_bytes(), bytes);
+        }
+    }
+
+    #[test]
+    fn test_truncate() {
+        let test_cases: Vec<(ByteString, usize, bool, &[u8], bool, &[u8])> = vec![
+            ("abc".to_owned().into(), 2, true, b"ab", false, b"ab\x80"),
+            ("abc".to_owned().into(), 3, true, b"abc", false, b"abc\x80"),
+            ("abc".to_owned().into(), 0, true, b"", false, b"\x80"),
+            (
+                b"abc\xc2\x80".to_vec().into(),
+                4,
+                false,
+                b"abc\xc2",
+                true,
+                b"abc\xc2\x80",
+            ),
+            (
+                b"abc\xf0\x80".to_vec().into(),
+                4,
+                false,
+                b"abc\xf0",
+                false,
+                b"abc\xf0\x80",
+            ),
+            (
+                b"abc\x80\x80".to_vec().into(),
+                4,
+                false,
+                b"abc\x80",
+                false,
+                b"abc\x80\x80",
+            ),
+        ];
+
+        for (mut target, trunc_len, is_utf8, bytes, is_utf8_after, bytes_after) in test_cases {
+            target.truncate(trunc_len);
+            assert_eq!(target.is_utf8(), is_utf8);
+            assert_eq!(target.as_bytes(), bytes);
+
+            target.extend_bytes(b"\x80");
+            assert_eq!(target.is_utf8(), is_utf8_after);
+            assert_eq!(target.as_bytes(), bytes_after);
+        }
+    }
+
+    #[test]
+    fn test_drain_init() {
+        let test_cases: Vec<(ByteString, usize, bool, &[u8])> = vec![
+            ("abc".to_owned().into(), 2, true, b"c"),
+            ("abc".to_owned().into(), 3, true, b""),
+            (b"\xc2\x80".to_vec().into(), 1, false, b"\x80"),
+            (b"\xc2\x80".to_vec().into(), 2, true, b""),
+            (b"\x80\xc2".to_vec().into(), 1, false, b"\xc2"),
+            (b"\x80\xc2\x80".to_vec().into(), 1, true, b"\xc2\x80"),
+        ];
+
+        for (mut target, drain_len, is_utf8, bytes) in test_cases {
+            target.drain_init(drain_len);
+            assert_eq!(target.is_utf8(), is_utf8);
+            assert_eq!(target.as_bytes(), bytes);
         }
     }
 }
