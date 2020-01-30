@@ -2,6 +2,7 @@
 
 use super::{args_1, args_3, args_4, Arguments, Function};
 use crate::{
+    bytes::ByteString,
     error::Error,
     eval::{CompileContext, Compiled, C},
     value::Value,
@@ -130,21 +131,25 @@ impl Function for Substring {
 
 //------------------------------------------------------------------------------
 
-/// The `char_length` and `octet_length` SQL functions.
+/// The `char_length` SQL function.
 #[derive(Debug)]
-pub struct Length(
-    /// The string unit used by the function.
-    pub Unit,
-);
+pub struct CharLength;
 
-impl Function for Length {
+/// The `octet_length` SQL function.
+#[derive(Debug)]
+pub struct OctetLength;
+
+impl Function for CharLength {
     fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = match self.0 {
-            Unit::Characters => "char_length",
-            Unit::Octets => "octet_length",
-        };
-        let input = args_1::<Vec<u8>>(name, args, None)?;
-        Ok(Compiled(C::Constant(self.0.length_of(&input).into())))
+        let input = args_1::<ByteString>("char_length", args, None)?;
+        Ok(Compiled(C::Constant(input.char_len().into())))
+    }
+}
+
+impl Function for OctetLength {
+    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
+        let input = args_1::<ByteString>("octet_length", args, None)?;
+        Ok(Compiled(C::Constant(input.len().into())))
     }
 }
 

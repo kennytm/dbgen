@@ -496,6 +496,17 @@ impl TryFrom<Value> for Number {
     }
 }
 
+impl TryFrom<Value> for ByteString {
+    type Error = TryFromValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bytes(bytes) => Ok(bytes),
+            _ => Err(TryFromValueError("byte string")),
+        }
+    }
+}
+
 impl TryFrom<Value> for String {
     type Error = TryFromValueError;
 
@@ -513,7 +524,7 @@ impl TryFrom<Value> for Vec<u8> {
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Bytes(bytes) => Ok(bytes.into_bytes()),
-            _ => Err(TryFromValueError("bytes string")),
+            _ => Err(TryFromValueError("bytes")),
         }
     }
 }
