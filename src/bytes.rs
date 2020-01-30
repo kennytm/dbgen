@@ -4,7 +4,7 @@ use std::{
     cmp::Ordering,
     convert::TryFrom,
     fmt, io,
-    ops::Add,
+    ops::{Add, Range},
     str::{from_utf8, Utf8Error},
     string::FromUtf8Error,
 };
@@ -162,10 +162,24 @@ impl ByteString {
         self.error.map_or(self.bytes.len(), |e| e.valid_len)
     }
 
+    /// Computes the length where `self.bytes[..end]` is valid UTF-8 up to this
+    /// point. It is expected `end <= self.len()`.
+    fn valid_len_before(&self, end: usize) -> usize {
+        let valid_len = self.valid_len();
+        if end >= valid_len {
+            return valid_len;
+        }
+        // end < valid_len <= self.len() at this point.
+        self.bytes[..=end]
+            .iter()
+            .rposition(|b| is_utf8_leading_byte(*b))
+            .unwrap_or(0)
+    }
+
     /// Recomputes the `error` field, provided the bytes up to `old_valid_len`
     /// are valid UTF-8.
-    fn recompute_error(&self, old_valid_len: usize) -> Option<TryIntoStringError> {
-        from_utf8(&self.bytes[old_valid_len..])
+    fn recompute_error(&mut self, old_valid_len: usize) {
+        self.error = from_utf8(&self.bytes[old_valid_len..])
             .err()
             .map(|e| TryIntoStringError::from(e) + old_valid_len)
     }
@@ -214,8 +228,7 @@ impl ByteString {
             return;
         }
 
-        self.error = self.recompute_error(old_valid_len);
-
+        self.recompute_error(old_valid_len);
         self.debug_validate();
     }
 
@@ -227,11 +240,11 @@ impl ByteString {
 
         let old_len = self.bytes.len();
         self.bytes.extend_from_slice(&other.bytes);
-        self.error = match (self.error, other.error) {
+        match (self.error, other.error) {
             // Do nothing if we append a string to a string, or to binary which cannot be corrected.
-            (e @ None, None) | (e @ Some(TryIntoStringError { is_partial: false, .. }), _) => e,
+            (None, None) | (Some(TryIntoStringError { is_partial: false, .. }), _) => {}
             // If we append binary to a string, inherit the binary error info.
-            (None, Some(oe)) => Some(oe + old_len),
+            (None, Some(oe)) => self.error = Some(oe + old_len),
             // If we append start-with-binary to partial binary, recompute the info.
             (
                 Some(TryIntoStringError {
@@ -241,10 +254,12 @@ impl ByteString {
                 Some(TryIntoStringError { valid_len: 0, .. }),
             ) => self.recompute_error(valid_len),
             // If we append start-with-string to partial binary, make the existing error impartial.
-            (Some(TryIntoStringError { valid_len, .. }), _) => Some(TryIntoStringError {
-                valid_len,
-                is_partial: false,
-            }),
+            (Some(TryIntoStringError { valid_len, .. }), _) => {
+                self.error = Some(TryIntoStringError {
+                    valid_len,
+                    is_partial: false,
+                })
+            }
         };
 
         self.debug_validate();
@@ -264,24 +279,12 @@ impl ByteString {
             return;
         }
 
-        let valid_len = self.valid_len();
-        self.error = if valid_len > len && !is_utf8_leading_byte(self.bytes[len]) {
-            // look backward for a char boundary.
-            Some(TryIntoStringError {
-                valid_len: self.bytes[..len]
-                    .iter()
-                    .rposition(|b| is_utf8_leading_byte(*b))
-                    .unwrap_or(0),
-                is_partial: true,
-            })
-        } else {
-            None
-        };
-
+        let new_valid_len = self.valid_len_before(len);
         self.bytes.truncate(len);
-
-        if valid_len < len {
-            self.error = self.recompute_error(valid_len);
+        if new_valid_len == len {
+            self.error = None;
+        } else {
+            self.recompute_error(new_valid_len);
         }
         self.debug_validate();
     }
@@ -298,8 +301,45 @@ impl ByteString {
                 e.valid_len = valid_len - len;
             }
         } else {
-            self.error = self.recompute_error(0);
+            self.recompute_error(0);
         }
+        self.debug_validate();
+    }
+
+    /// Clamps the byte range by the input length.
+    pub fn clamp_range(&self, r: Range<usize>) -> Range<usize> {
+        let input_len = self.len();
+        r.start.min(input_len)..r.end.min(input_len)
+    }
+
+    /// Translates a range of characters into range of bytes.
+    ///
+    /// If the input overflows the input length, it will be clamped so the ends
+    /// never exceed `self.len()`.
+    pub fn char_range(&self, r: Range<usize>) -> Range<usize> {
+        let range_len = (r.end - r.start).checked_sub(1);
+        let input_len = self.len();
+        let mut it = self
+            .bytes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| if is_utf8_leading_byte(*b) { Some(i) } else { None })
+            .fuse();
+        let start = it.nth(r.start).unwrap_or(input_len);
+        let end = range_len.map_or(start, |len| it.nth(len).unwrap_or(input_len));
+        start..end
+    }
+
+    /// Replaces the bytes in the given range by the replacement byte string.
+    pub fn splice(&mut self, range: Range<usize>, replacement: ByteString) {
+        let mut valid_len = self.valid_len_before(range.start);
+        if valid_len == range.start {
+            valid_len += replacement.valid_len();
+        }
+
+        self.bytes.splice(range.clone(), replacement.bytes);
+        self.recompute_error(valid_len);
+
         self.debug_validate();
     }
 }
