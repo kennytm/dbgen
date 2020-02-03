@@ -761,7 +761,7 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 
     Ok(match input.parse::<u64>() {
         Ok(number) => number.into(),
-        Err(_) => input.parse::<f64>().unwrap().into(),
+        Err(_) => Value::from_finite_f64(input.parse::<f64>().unwrap()),
     })
 }
 

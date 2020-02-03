@@ -4,7 +4,8 @@ use super::{args_1, args_2, iter_args, Arguments, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
-    value::{Number, Value},
+    number::Number,
+    value::Value,
 };
 use std::cmp::Ordering;
 
@@ -17,7 +18,7 @@ pub struct Neg;
 impl Function for Neg {
     fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let inner = args_1::<Number>("neg", args, None)?;
-        Ok(Compiled(C::Constant((-inner).into())))
+        Ok(Compiled(C::Constant(inner.neg().into())))
     }
 }
 
@@ -261,8 +262,12 @@ impl Function for Round {
     fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let (value, digits) = args_2::<f64, i32>("round", args, None, Some(0))?;
         let scale = 10.0_f64.powi(digits);
-        let result = (value * scale).round() / scale;
-        Ok(Compiled(C::Constant(result.into())))
+        let result = if scale.is_finite() {
+            (value * scale).round() / scale
+        } else {
+            value
+        };
+        Ok(Compiled(C::Constant(Value::from_finite_f64(result))))
     }
 }
 
@@ -274,8 +279,8 @@ pub struct Div;
 
 impl Function for Div {
     fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let (n, d) = args_2::<Number, Number>("div", args, None, None)?;
-        Ok(Compiled(C::Constant(n.div(&d).into())))
+        let (n, d) = args_2::<Value, Value>("div", args, None, None)?;
+        Ok(Compiled(C::Constant(n.sql_div(&d)?)))
     }
 }
 
@@ -285,8 +290,8 @@ pub struct Mod;
 
 impl Function for Mod {
     fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let (n, d) = args_2::<Number, Number>("mod", args, None, None)?;
-        Ok(Compiled(C::Constant(n.rem(&d).into())))
+        let (n, d) = args_2::<Value, Value>("mod", args, None, None)?;
+        Ok(Compiled(C::Constant(n.sql_rem(&d)?)))
     }
 }
 

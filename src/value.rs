@@ -2,180 +2,22 @@
 
 use chrono::{Duration, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
-use num_traits::FromPrimitive;
 use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
-    fmt, ops,
+    fmt,
     string::FromUtf8Error,
     sync::Arc,
 };
 
-use crate::{bytes::ByteString, error::Error};
+use crate::{
+    bytes::ByteString,
+    error::Error,
+    number::{Number, NumberError},
+};
 
 /// The string format of an SQL timestamp.
 pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
-
-/// Implementation of a number.
-#[derive(Copy, Clone, Debug)]
-enum N {
-    Int(i128),
-    Float(f64),
-}
-
-/// An SQL number (could represent an integer or floating point number).
-#[derive(Copy, Clone, Debug)]
-pub struct Number(N);
-
-impl fmt::Display for Number {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            N::Int(v) => v.fmt(f),
-            N::Float(v) => {
-                let mut output = ryu::Buffer::new();
-                f.write_str(output.format(v))
-            }
-        }
-    }
-}
-
-impl Number {
-    /// Tries to convert this number into a primitive.
-    pub fn to<P: FromPrimitive>(&self) -> Option<P> {
-        match self.0 {
-            N::Int(v) => P::from_i128(v),
-            N::Float(v) => P::from_f64(v),
-        }
-    }
-
-    /// Converts this number into a nullable boolean using SQL rule.
-    pub fn to_sql_bool(&self) -> Option<bool> {
-        match self.0 {
-            N::Int(v) => Some(v != 0),
-            N::Float(v) if v.is_nan() => None,
-            N::Float(v) => Some(v != 0.0),
-        }
-    }
-
-    /// Divides this number by the other number, and truncates towards zero.
-    pub fn div(&self, other: &Self) -> Option<Self> {
-        Some(Self(match (self.0, other.0) {
-            (N::Int(n), N::Int(d)) => N::Int(n.checked_div(d)?),
-            (n, d) => {
-                let d = f64::from(d);
-                if d == 0.0 || d.is_nan() {
-                    return None;
-                }
-                N::Float((f64::from(n) / d).trunc())
-            }
-        }))
-    }
-
-    /// Computes the remainder when this number is divided by the other number.
-    pub fn rem(&self, other: &Self) -> Option<Self> {
-        Some(Self(match (self.0, other.0) {
-            (N::Int(n), N::Int(d)) => N::Int(n.checked_rem(d)?),
-            (n, d) => {
-                let d = f64::from(d);
-                if d == 0.0 || d.is_nan() {
-                    return None;
-                }
-                N::Float(f64::from(n) % d)
-            }
-        }))
-    }
-}
-
-macro_rules! impl_from_int_for_number {
-    ($($ty:ty),*) => {
-        $(impl From<$ty> for Number {
-            fn from(value: $ty) -> Self {
-                Self(N::Int(value as _))
-            }
-        })*
-    }
-}
-impl_from_int_for_number!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, bool);
-
-impl From<i128> for Number {
-    fn from(value: i128) -> Self {
-        Self(N::Int(value))
-    }
-}
-impl From<f32> for Number {
-    fn from(value: f32) -> Self {
-        Self(N::Float(value.into()))
-    }
-}
-impl From<f64> for Number {
-    fn from(value: f64) -> Self {
-        Self(N::Float(value))
-    }
-}
-impl From<N> for f64 {
-    #[allow(clippy::cast_precision_loss)]
-    fn from(n: N) -> Self {
-        match n {
-            N::Int(i) => i as Self,
-            N::Float(f) => f,
-        }
-    }
-}
-
-impl ops::Neg for Number {
-    type Output = Self;
-    fn neg(self) -> Self {
-        Self(match self.0 {
-            N::Int(i) => N::Int(i.wrapping_neg()),
-            N::Float(f) => N::Float(-f),
-        })
-    }
-}
-
-macro_rules! impl_number_bin_op {
-    ($trait:ident, $fname:ident, $checked:ident) => {
-        impl ops::$trait for Number {
-            type Output = Self;
-            fn $fname(self, other: Self) -> Self {
-                if let (N::Int(a), N::Int(b)) = (self.0, other.0) {
-                    if let Some(c) = a.$checked(b) {
-                        return Self(N::Int(c));
-                    }
-                }
-                Self(N::Float(f64::from(self.0).$fname(f64::from(other.0))))
-            }
-        }
-    };
-}
-
-impl_number_bin_op!(Add, add, checked_add);
-impl_number_bin_op!(Sub, sub, checked_sub);
-impl_number_bin_op!(Mul, mul, checked_mul);
-
-impl ops::Div for Number {
-    type Output = Self;
-    fn div(self, other: Self) -> Self {
-        Self(N::Float(f64::from(self.0) / f64::from(other.0)))
-    }
-}
-
-impl PartialEq for Number {
-    fn eq(&self, other: &Self) -> bool {
-        match (self.0, other.0) {
-            (N::Int(a), N::Int(b)) => a == b,
-            (a, b) => f64::from(a) == f64::from(b),
-        }
-    }
-}
-
-impl PartialOrd for Number {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (self.0, other.0) {
-            (N::Int(a), N::Int(b)) => a.partial_cmp(&b),
-            (a, b) => f64::from(a).partial_cmp(&f64::from(b)),
-        }
-    }
-}
 
 /// A scalar value.
 #[derive(Clone, Debug, PartialEq)]
@@ -207,6 +49,26 @@ macro_rules! try_or_overflow {
             e
         } else {
             return Err(Error::IntegerOverflow(format!($($fmt)+)));
+        }
+    }
+}
+
+macro_rules! try_from_number {
+    ($e:expr, $($fmt:tt)+) => {
+        match $e {
+            Ok(n) => Value::Number(n),
+            Err(NumberError::NaN) => Value::Null,
+            Err(NumberError::Overflow) => return Err(Error::IntegerOverflow(format!($($fmt)+))),
+        }
+    }
+}
+
+macro_rules! try_from_number_into_interval {
+    ($e:expr, $($fmt:tt)+) => {
+        match $e.and_then(i64::try_from) {
+            Ok(n) => Value::Interval(n),
+            Err(NumberError::NaN) => Value::Null,
+            Err(NumberError::Overflow) => return Err(Error::IntegerOverflow(format!($($fmt)+))),
         }
     }
 }
@@ -250,6 +112,17 @@ impl Value {
         Self::Timestamp(ts, tz)
     }
 
+    /// Creates a finite floating point value.
+    pub(crate) fn from_finite_f64(v: f64) -> Self {
+        Self::Number(Number::from_finite_f64(v))
+    }
+
+    // /// Creates a potentially non-finite floating point value. Returns error if
+    // /// the value is indeed non-finite.
+    // pub fn try_from_f64(v: f64) -> Result<Self, Error> {
+    //     Ok(try_from_number!(Number::try_from(v), "{} overflowed", v))
+    // }
+
     /// Compares two values using the rules common among SQL implementations.
     ///
     /// * Comparing with NULL always return `None`.
@@ -280,8 +153,7 @@ impl Value {
     pub fn sql_sign(&self) -> Ordering {
         match self {
             Self::Null => Ordering::Equal,
-            Self::Number(Number(N::Int(a))) => a.cmp(&0),
-            Self::Number(Number(N::Float(a))) => a.partial_cmp(&0.0).unwrap_or(Ordering::Equal),
+            Self::Number(a) => a.sql_sign(),
             Self::Bytes(a) => true.cmp(&a.is_empty()),
             Self::Timestamp(..) => Ordering::Greater,
             Self::Interval(a) => a.cmp(&0),
@@ -299,7 +171,7 @@ impl Value {
     /// The method uses a custom name when reporting errors.
     pub(crate) fn sql_add_named(&self, other: &Self, name: &'static str) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Self::Number(lhs), Self::Number(rhs)) => (*lhs + *rhs).into(),
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.add(*rhs), "{} + {}", lhs, rhs),
             (Self::Timestamp(ts, tz), Self::Interval(dur)) | (Self::Interval(dur), Self::Timestamp(ts, tz)) => {
                 Self::Timestamp(
                     try_or_overflow!(
@@ -326,7 +198,7 @@ impl Value {
     /// Subtracts two values using the rules common among SQL implementations.
     pub fn sql_sub(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Self::Number(lhs), Self::Number(rhs)) => (*lhs - *rhs).into(),
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.sub(*rhs), "{} - {}", lhs, rhs),
             (Self::Timestamp(ts, tz), Self::Interval(dur)) => Self::Timestamp(
                 try_or_overflow!(
                     ts.checked_sub_signed(Duration::microseconds(*dur)),
@@ -351,10 +223,9 @@ impl Value {
     /// Multiplies two values using the rules common among SQL implementations.
     pub fn sql_mul(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Self::Number(lhs), Self::Number(rhs)) => (*lhs * *rhs).into(),
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.mul(*rhs), "{} * {}", lhs, rhs),
             (Self::Number(m), Self::Interval(dur)) | (Self::Interval(dur), Self::Number(m)) => {
-                let mult_res = *m * Number::from(*dur);
-                Self::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
+                try_from_number_into_interval!(Number::from(*dur).mul(*m), "interval {} microsecond * {}", dur, m)
             }
             _ => {
                 return Err(Error::InvalidArguments {
@@ -368,20 +239,40 @@ impl Value {
     /// Divides two values using the rules common among SQL implementations.
     pub fn sql_float_div(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Self::Number(_), Self::Number(rhs)) | (Self::Interval(_), Self::Number(rhs))
-                if rhs.to_sql_bool() == Some(false) =>
-            {
-                Self::Null
-            }
-            (Self::Number(lhs), Self::Number(rhs)) => (*lhs / *rhs).into(),
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.float_div(*rhs), "{} / {}", lhs, rhs),
             (Self::Interval(dur), Self::Number(d)) => {
-                let mult_res = Number::from(*dur) / *d;
-                Self::Interval(try_or_overflow!(mult_res.to::<i64>(), "{} microseconds", mult_res))
+                try_from_number_into_interval!(Number::from(*dur).float_div(*d), "interval {} microsecond / {}", dur, d)
             }
             _ => {
                 return Err(Error::InvalidArguments {
                     name: "/",
                     cause: format!("cannot divide {} by {}", self, other),
+                });
+            }
+        })
+    }
+
+    /// Divides two values using the rules common among SQL implementations.
+    pub fn sql_div(&self, other: &Self) -> Result<Self, Error> {
+        Ok(match (self, other) {
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.div(*rhs), "div({}, {})", lhs, rhs),
+            _ => {
+                return Err(Error::InvalidArguments {
+                    name: "div",
+                    cause: format!("cannot divide {} by {}", self, other),
+                });
+            }
+        })
+    }
+
+    /// Computes the remainder when dividing two values using the rules common among SQL implementations.
+    pub fn sql_rem(&self, other: &Self) -> Result<Self, Error> {
+        Ok(match (self, other) {
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.rem(*rhs), "mod({}, {})", lhs, rhs),
+            _ => {
+                return Err(Error::InvalidArguments {
+                    name: "mod",
+                    cause: format!("cannot compute remainder of {} by {}", self, other),
                 });
             }
         })
@@ -419,7 +310,7 @@ impl Value {
     pub fn is_sql_true(&self, name: &'static str) -> Result<bool, Error> {
         match self {
             Self::Null => Ok(false),
-            Self::Number(n) => Ok(n.to_sql_bool() == Some(true)),
+            Self::Number(n) => Ok(n.sql_sign() != Ordering::Equal),
             _ => Err(Error::InvalidArguments {
                 name,
                 cause: format!("truth value of {} is undefined", self),
@@ -447,8 +338,8 @@ macro_rules! impl_try_from_value {
 
             fn try_from(value: Value) -> Result<Self, Self::Error> {
                 Number::try_from(value)?
-                    .to::<Self>()
-                    .ok_or(TryFromValueError($name))
+                    .try_into()
+                    .map_err(|_| TryFromValueError($name))
             }
         }
 
@@ -459,7 +350,7 @@ macro_rules! impl_try_from_value {
                 match value {
                     Value::Null => return Ok(None),
                     Value::Number(n) => {
-                        if let Some(v) = n.to::<$T>() {
+                        if let Ok(v) = n.try_into() {
                             return Ok(Some(v));
                         }
                     }
@@ -482,7 +373,6 @@ impl_try_from_value!(i32, "32-bit signed integer");
 impl_try_from_value!(i64, "64-bit signed integer");
 impl_try_from_value!(i128, "signed integer");
 impl_try_from_value!(isize, "signed integer");
-impl_try_from_value!(f32, "floating point number");
 impl_try_from_value!(f64, "floating point number");
 
 impl TryFrom<Value> for Number {
@@ -535,7 +425,7 @@ impl TryFrom<Value> for Option<bool> {
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Null => Ok(None),
-            Value::Number(n) => Ok(n.to_sql_bool()),
+            Value::Number(n) => Ok(Some(n.sql_sign() != Ordering::Equal)),
             _ => Err(TryFromValueError("nullable boolean")),
         }
     }

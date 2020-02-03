@@ -4,11 +4,12 @@ use super::{args_1, args_2, args_3, require, Arguments, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, Compiled, C},
-    value::{Number, Value},
+    number::Number,
+    value::Value,
 };
 use rand::distributions::BernoulliError;
 use rand_distr::NormalError;
-use std::sync::Arc;
+use std::{convert::TryFrom, sync::Arc};
 use zipf::ZipfDistribution;
 
 //------------------------------------------------------------------------------
@@ -26,9 +27,9 @@ macro_rules! impl_rand_range {
         fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
             let (lower, upper) = args_2::<Number, Number>($name, args, None, None)?;
             require($name, lower $cmp upper, || format!("{} {} {}", lower, stringify!($cmp), upper))?;
-            if let (Some(a), Some(b)) = (lower.to::<u64>(), upper.to::<u64>()) {
+            if let (Ok(a), Ok(b)) = (u64::try_from(lower), u64::try_from(upper)) {
                 Ok(Compiled(C::RandUniformU64(rand_distr::Uniform::$new(a, b))))
-            } else if let (Some(a), Some(b)) = (lower.to::<i64>(), upper.to::<i64>()) {
+            } else if let (Ok(a), Ok(b)) = (i64::try_from(lower), i64::try_from(upper)) {
                 Ok(Compiled(C::RandUniformI64(rand_distr::Uniform::$new(a, b))))
             } else {
                 Err(Error::IntegerOverflow(format!("{}({}, {})", $name, lower, upper)))
