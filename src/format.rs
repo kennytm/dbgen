@@ -3,7 +3,7 @@
 use crate::{bytes::ByteString, value::Value};
 
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
-use chrono_tz::Tz;
+use tzfile::ArcTz;
 use memchr::{memchr2_iter, memchr3_iter, memchr_iter};
 use std::{
     io::{Error, Write},
@@ -44,7 +44,7 @@ pub struct CsvFormat {
 }
 
 /// Writes a timestamp in ISO 8601 format.
-fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &DateTime<Tz>) -> Result<(), Error> {
+fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &DateTime<ArcTz>) -> Result<(), Error> {
     write!(
         writer,
         "{}{:04}-{:02}-{:02} {:02}:{:02}:{:02}",

@@ -10,7 +10,6 @@ use crate::{
 
 use anyhow::{bail, Context, Error};
 use chrono::{NaiveDateTime, ParseResult, Utc};
-use chrono_tz::Tz;
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use flate2::write::GzEncoder;
 use muldiv::MulDiv;
@@ -108,7 +107,11 @@ pub struct Args {
 
     /// Time zone used for timestamps
     #[structopt(long, default_value = "UTC")]
-    pub time_zone: Tz,
+    pub time_zone: String,
+
+    /// Directory containing the tz database.
+    #[structopt(long, parse(from_os_str), default_value = "/usr/share/zoneinfo")]
+    pub zoneinfo: PathBuf,
 
     /// Override the current timestamp (always in UTC), in the format "YYYY-mm-dd HH:MM:SS.fff".
     #[structopt(long, parse(try_from_str = now_from_str))]
@@ -158,7 +161,8 @@ impl Default for Args {
             jobs: 0,
             rng: RngName::Hc128,
             quiet: true,
-            time_zone: Tz::UTC,
+            time_zone: "UTC".to_owned(),
+            zoneinfo: PathBuf::from("/usr/share/zoneinfo"),
             now: None,
             format: FormatName::Sql,
             compression: None,
@@ -239,7 +243,8 @@ pub fn run(args: Args) -> Result<(), Error> {
     }
 
     let mut ctx = CompileContext::new(template.variables_count);
-    ctx.time_zone = args.time_zone;
+    ctx.zoneinfo = args.zoneinfo;
+    ctx.time_zone = ctx.parse_time_zone(&args.time_zone)?;
     ctx.current_timestamp = args.now.unwrap_or_else(|| Utc::now().naive_utc());
     let tables = template
         .tables

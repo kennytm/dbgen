@@ -8,7 +8,6 @@ use crate::{
 };
 
 use chrono::TimeZone;
-use chrono_tz::Tz;
 
 /// The `timestamp` SQL function
 #[derive(Debug)]
@@ -17,7 +16,7 @@ pub struct Timestamp;
 impl Function for Timestamp {
     fn compile(&self, ctx: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
         let input = args_1::<String>("timestamp", args, None)?;
-        let tz = ctx.time_zone;
+        let tz = ctx.time_zone.clone();
         let timestamp = tz
             .datetime_from_str(&input, TIMESTAMP_FORMAT)
             .map_err(|source| Error::InvalidTimestampString {
@@ -38,11 +37,9 @@ impl Function for TimestampWithTimeZone {
         let name = "timestamp with time zone";
         let mut input = &*args_1::<String>(name, args, None)?;
         let tz = match input.find(|c: char| c.is_ascii_alphabetic()) {
-            None => ctx.time_zone,
+            None => ctx.time_zone.clone(),
             Some(i) => {
-                let tz = input[i..]
-                    .parse::<Tz>()
-                    .map_err(|cause| Error::InvalidArguments { name, cause })?;
+                let tz = ctx.parse_time_zone(&input[i..])?;
                 input = input[..i].trim_end();
                 tz
             }

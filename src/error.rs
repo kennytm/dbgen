@@ -1,7 +1,7 @@
 //! Error types for the `dbgen` library.
 
 use crate::parser::Rule;
-use std::fmt;
+use std::{fmt, path::PathBuf};
 use thiserror::Error as ThisError;
 
 /// The error returned for `impl TryFrom<Value>`.
@@ -120,5 +120,23 @@ pub enum Error {
         table: String,
         /// Source of error.
         source: TryFromValueError,
+    },
+
+    /// Generic IO error.
+    #[error("failed to read {path}")]
+    Io {
+        /// File path causing the I/O error.
+        path: PathBuf,
+        /// Source of error.
+        source: eieio::Error,
+    },
+
+    /// Invalid time zone file.
+    #[error("failed to parse time zone file ({time_zone})")]
+    InvalidTimeZone {
+        /// Time zone name.
+        time_zone: String,
+        /// Source of error.
+        source: tzfile::Error,
     },
 }

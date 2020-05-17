@@ -1,7 +1,7 @@
 //! Values
 
 use chrono::{Duration, NaiveDateTime, TimeZone};
-use chrono_tz::Tz;
+use tzfile::ArcTz;
 use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
@@ -30,7 +30,7 @@ pub enum Value {
     /// A string or byte string.
     Bytes(ByteString),
     /// A timestamp. The `NaiveDateTime` field must be in the UTC time zone.
-    Timestamp(NaiveDateTime, Tz),
+    Timestamp(NaiveDateTime, ArcTz),
     /// A time interval, as multiple of microseconds.
     Interval(i64),
     /// An array of values.
@@ -108,7 +108,7 @@ impl fmt::Display for Value {
 
 impl Value {
     /// Creates a timestamp value.
-    pub fn new_timestamp(ts: NaiveDateTime, tz: Tz) -> Self {
+    pub fn new_timestamp(ts: NaiveDateTime, tz: ArcTz) -> Self {
         Self::Timestamp(ts, tz)
     }
 
@@ -180,7 +180,7 @@ impl Value {
                         ts,
                         dur
                     ),
-                    *tz,
+                    tz.clone(),
                 )
             }
             (Self::Interval(a), Self::Interval(b)) => {
@@ -206,7 +206,7 @@ impl Value {
                     ts,
                     dur
                 ),
-                *tz,
+                tz.clone(),
             ),
             (Self::Interval(a), Self::Interval(b)) => {
                 Self::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
