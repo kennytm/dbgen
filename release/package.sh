@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# release/package.sh packages the built binaries into a .tar.xz package.
+
 set -eux
 
 P=$(dirname "$(realpath "$(dirname "$0")")")

@@ -1,5 +1,4 @@
 use dbgen::schemagen_cli::{print_script, Args};
-// use std::process::exit;
 use structopt::StructOpt;
 
 fn main() {

@@ -15,7 +15,7 @@
 /// The full version of this library, for use in the CLI
 pub const FULL_VERSION: &str = concat!(
     "\nVersion: v",
-    structopt::clap::crate_version!(),
+    env!("CARGO_PKG_VERSION"),
     "\nCommit:  ",
     env!("VERGEN_SHA"),
     "\nTarget:  ",
@@ -23,6 +23,7 @@ pub const FULL_VERSION: &str = concat!(
 );
 
 pub mod bytes;
+#[cfg(feature = "cli")]
 pub mod cli;
 pub mod error;
 pub mod eval;
@@ -30,5 +31,6 @@ pub mod format;
 pub mod functions;
 pub mod number;
 pub mod parser;
+#[cfg(feature = "cli")]
 pub mod schemagen_cli;
 pub mod value;

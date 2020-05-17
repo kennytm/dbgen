@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# release/release.sh builds the dbgen binaries for release.
+
 set -eux
 
 if [ $(uname) != 'Linux' ]; then
