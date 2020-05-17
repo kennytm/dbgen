@@ -34,3 +34,4 @@ pub mod parser;
 #[cfg(feature = "cli")]
 pub mod schemagen_cli;
 pub mod value;
+pub mod writer;

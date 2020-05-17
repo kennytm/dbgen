@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     bytes::ByteString,
-    error::Error,
+    error::{Error, TryFromValueError},
     number::{Number, NumberError},
 };
 
@@ -318,18 +318,6 @@ impl Value {
         }
     }
 }
-
-/// The error indicating the expected type.
-#[derive(Debug)]
-pub struct TryFromValueError(&'static str);
-
-impl fmt::Display for TryFromValueError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0)
-    }
-}
-
-impl std::error::Error for TryFromValueError {}
 
 macro_rules! impl_try_from_value {
     ($T:ty, $name:expr) => {

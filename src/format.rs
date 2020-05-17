@@ -10,7 +10,7 @@ use std::{
     slice,
 };
 
-/// Wrapper of a writer which could serialize a value into a string.
+/// An shared format description of how to serialize values into strings.
 pub trait Format {
     /// Writes a single value to the writer, formatted according to specific
     /// rules of this formatter.

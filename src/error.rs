@@ -1,7 +1,20 @@
 //! Error types for the `dbgen` library.
 
 use crate::parser::Rule;
+use std::fmt;
 use thiserror::Error as ThisError;
+
+/// The error returned for `impl TryFrom<Value>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TryFromValueError(pub(crate) &'static str);
+
+impl fmt::Display for TryFromValueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for TryFromValueError {}
 
 /// Errors produced by the `dbgen` library.
 #[derive(ThisError, Debug, Clone, PartialEq, Eq)]
@@ -98,5 +111,14 @@ pub enum Error {
         for_each_row: String,
         /// The table name in the CREATE TABLE statement
         create_table: String,
+    },
+
+    /// Number of rows generated for the table is not an integer.
+    #[error("number of rows to generate for {table} is not an integer")]
+    NonIntegralGeneratedNumberOfRows {
+        /// Qualified name of the derived table.
+        table: String,
+        /// Source of error.
+        source: TryFromValueError,
     },
 }

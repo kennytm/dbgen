@@ -4,7 +4,8 @@ use crate::{
     eval::{CompileContext, State, Table},
     format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
-    value::TIMESTAMP_FORMAT,
+    value::{Value, TIMESTAMP_FORMAT},
+    writer,
 };
 
 use anyhow::{bail, Context, Error};
@@ -24,7 +25,6 @@ use rayon::{
 };
 use serde_derive::Deserialize;
 use std::{
-    convert::TryInto,
     error,
     fs::{create_dir_all, read_to_string, File},
     io::{self, sink, stdin, BufWriter, Read, Write},
@@ -466,33 +466,67 @@ impl CompressionName {
     }
 }
 
-/// Wrapping of a [`Write`] which counts how many bytes are written.
-struct WriteCountWrapper<W: Write> {
-    inner: W,
+/// A [`Writer`] which counts how many bytes are written.
+struct FormatWriter<'a> {
+    writer: BufWriter<Box<dyn Write>>,
     count: u64,
+    path: PathBuf,
+    format: &'a dyn Format,
 }
-impl<W: Write> WriteCountWrapper<W> {
-    /// Creates a new [`WriteCountWrapper`] by wrapping another [`Write`].
-    fn new(inner: W) -> Self {
-        Self { inner, count: 0 }
+impl<'a> FormatWriter<'a> {
+    /// Creates a new [`WriteWrapper`] by wrapping another [`Write`].
+    fn new(writer: Box<dyn Write>, path: PathBuf, format: &'a dyn Format) -> Self {
+        Self {
+            writer: BufWriter::new(writer),
+            count: 0,
+            path,
+            format,
+        }
     }
 
     /// Commits the number of bytes written into the [`WRITTEN_SIZE`] global variable, and resets
     /// the byte count of all iterated `WriteCountWrapper` instances to zero.
-    fn commit_bytes_written(instances: &mut [Self]) {
-        let total = instances.iter_mut().map(|w| mem::take(&mut w.count)).sum();
+    fn commit_bytes_written<'b>(instances: impl Iterator<Item = &'b mut Self>)
+    where
+        'a: 'b,
+    {
+        let total = instances.map(|w| mem::take(&mut w.count)).sum();
         WRITTEN_SIZE.fetch_add(total, Ordering::Relaxed);
     }
 }
 
-impl<W: Write> Write for WriteCountWrapper<W> {
+impl Write for FormatWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let bytes_written = self.inner.write(buf)?;
+        let bytes_written = self.writer.write(buf)?;
         self.count += bytes_written as u64;
         Ok(bytes_written)
     }
     fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
+        self.writer.flush()
+    }
+}
+
+impl writer::Writer for FormatWriter<'_> {
+    type Error = Error;
+
+    fn write_value(&mut self, value: &Value) -> Result<(), Self::Error> {
+        self.format.write_value(&mut self.writer, value).with_path(&self.path)
+    }
+    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), Self::Error> {
+        self.format
+            .write_header(&mut self.writer, qualified_table_name)
+            .with_path(&self.path)
+    }
+    fn write_value_separator(&mut self) -> Result<(), Self::Error> {
+        self.format
+            .write_value_separator(&mut self.writer)
+            .with_path(&self.path)
+    }
+    fn write_row_separator(&mut self) -> Result<(), Self::Error> {
+        self.format.write_row_separator(&mut self.writer).with_path(&self.path)
+    }
+    fn write_trailer(&mut self) -> Result<(), Self::Error> {
+        self.format.write_trailer(&mut self.writer).with_path(&self.path)
     }
 }
 
@@ -514,18 +548,6 @@ struct FileInfo {
     file_index: u32,
     inserts_count: u32,
     last_insert_rows_count: u32,
-}
-
-struct FileWriterEnv<'a> {
-    env: &'a Env,
-    state: &'a mut State,
-    format: Box<dyn Format>,
-    files: Vec<WriteCountWrapper<BufWriter<Box<dyn Write>>>>,
-    paths: Vec<PathBuf>,
-    /// For each single main row, records whether the table has been visited.
-    visited: Vec<bool>,
-    /// For each INSERT statement, records number of rows included.
-    actual_rows: Vec<u64>,
 }
 
 impl Env {
@@ -569,34 +591,11 @@ impl Env {
         );
         let format = self.format.create(self.escape_backslash);
 
-        let mut files = Vec::with_capacity(self.tables.len());
-        let mut paths = Vec::with_capacity(self.tables.len());
-        for table in &self.tables {
+        let mut fwe = writer::Env::new(&self.tables, state, self.qualified, |table| {
             let mut path = self.out_dir.join([table.name.unique_name(), &path_suffix].concat());
             let inner_writer = self.open_data_file(&mut path)?;
-            files.push(WriteCountWrapper::new(BufWriter::new(inner_writer)));
-            paths.push(path);
-        }
-
-        let mut fwe = FileWriterEnv {
-            env: self,
-            state,
-            format,
-            files,
-            paths,
-            visited: vec![false; self.tables.len()],
-            actual_rows: vec![0; self.tables.len()],
-        };
-
-        // for ((file, path), table) in files.iter_mut().zip(&self.tables) {
-        //     format.write_header(file, table.name.table_name(self.qualified)).with_path(path)?;
-        // }
-
-        // if row_index != 0 {
-        //     format.write_row_separator(&mut file).with_path(&path)?;
-        // }
-
-        // format.write_trailer(&mut file).with_path(&path)?;
+            Ok(FormatWriter::new(inner_writer, path, &*format))
+        })?;
 
         for i in 0..info.inserts_count {
             let rows_count = if i == info.inserts_count - 1 {
@@ -609,74 +608,8 @@ impl Env {
             }
             fwe.write_trailer()?;
 
-            WriteCountWrapper::commit_bytes_written(&mut fwe.files);
+            FormatWriter::commit_bytes_written(fwe.tables().map(|p| p.1));
             WRITE_PROGRESS.fetch_add(rows_count.into(), Ordering::Relaxed);
-        }
-        Ok(())
-    }
-}
-
-impl FileWriterEnv<'_> {
-    fn write_one_row(&mut self, i: usize) -> Result<(), Error> {
-        let file = &mut self.files[i];
-        let table = &self.env.tables[i];
-        let actual_rows = &mut self.actual_rows[i];
-
-        if self.state.sub_row_num == 1 && *actual_rows == 0 {
-            self.format
-                .write_header(file, table.name.table_name(self.env.qualified))
-        } else {
-            self.format.write_row_separator(file)
-        }?;
-
-        let values = table.row.eval(self.state)?;
-        *actual_rows += 1;
-
-        for (col_index, value) in values.iter().enumerate() {
-            if col_index != 0 {
-                self.format.write_value_separator(file)?;
-            }
-            self.format.write_value(file, value)?;
-        }
-
-        for (child, count) in &table.derived {
-            let count = count.eval(self.state)?;
-            let count: u64 = count.try_into().with_context(|| {
-                format!(
-                    "number of rows to generate for {} is not an integer",
-                    self.env.tables[*child].name.table_name(true),
-                )
-            })?;
-
-            self.visited[*child] = true;
-            for r in 1..=count {
-                self.state.sub_row_num = r;
-                self.write_one_row(*child)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn write_row(&mut self) -> Result<(), Error> {
-        for visited in &mut self.visited {
-            *visited = false;
-        }
-        for i in 0..self.visited.len() {
-            if !mem::replace(&mut self.visited[i], true) {
-                self.state.sub_row_num = 1;
-                self.write_one_row(i)?;
-            }
-        }
-        self.state.increase_row_num();
-        Ok(())
-    }
-
-    fn write_trailer(&mut self) -> Result<(), Error> {
-        for ((file, path), actual_rows) in self.files.iter_mut().zip(&self.paths).zip(&mut self.actual_rows) {
-            if mem::take(actual_rows) > 0 {
-                self.format.write_trailer(file).with_path(path)?;
-            }
         }
         Ok(())
     }
