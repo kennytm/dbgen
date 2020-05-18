@@ -18,7 +18,7 @@ impl From<Error> for DisplayError {
 impl fmt::Debug for DisplayError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{}\n", self.0)?;
-        for (e, i) in self.0.chain().zip(1..) {
+        for (i, e) in self.0.chain().enumerate().skip(1) {
             writeln!(f, "{:=^80}\n{}\n", format!(" ERROR CAUSE #{} ", i), e)?;
         }
         Ok(())
