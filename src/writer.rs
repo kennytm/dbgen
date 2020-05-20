@@ -100,9 +100,6 @@ impl<'a, W: Writer> Env<'a, W> {
         }
 
         for (child, count) in &table.table.derived {
-            let child_table = &mut self.tables[*child];
-            child_table.fresh = false;
-
             let count = count.eval(self.state)?.try_into().span_err(count.0.span)?;
 
             for r in 1..=count {
@@ -114,13 +111,23 @@ impl<'a, W: Writer> Env<'a, W> {
         Ok(())
     }
 
+    fn mark_descendant_visited(&mut self, root: usize) {
+        let mut ids = vec![root];
+        while let Some(id) = ids.pop() {
+            let table = &mut self.tables[id];
+            table.fresh = false;
+            ids.extend(table.table.derived.iter().map(|child| child.0));
+        }
+    }
+
     /// Writes one row from each root table
     pub fn write_row(&mut self) -> Result<(), S<Error>> {
         for table in &mut self.tables {
             table.fresh = true;
         }
         for i in 0..self.tables.len() {
-            if mem::take(&mut self.tables[i].fresh) {
+            if self.tables[i].fresh {
+                self.mark_descendant_visited(i);
                 self.state.sub_row_num = 1;
                 self.write_one_row(i)?;
             }
