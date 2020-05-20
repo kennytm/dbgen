@@ -337,7 +337,7 @@ impl ByteString {
             valid_len += replacement.valid_len();
         }
 
-        self.bytes.splice(range.clone(), replacement.bytes);
+        self.bytes.splice(range, replacement.bytes);
         self.recompute_error(valid_len);
 
         self.debug_validate();

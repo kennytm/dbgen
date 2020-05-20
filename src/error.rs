@@ -1,5 +1,7 @@
 //! Error types for the `dbgen` library.
 
+#![allow(clippy::used_underscore_binding)]
+
 use crate::{parser::Rule, span::S};
 use std::{convert::Infallible, fmt, path::PathBuf};
 use thiserror::Error as ThisError;

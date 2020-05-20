@@ -234,25 +234,23 @@ impl Value {
 
     /// Divides two values using the rules common among SQL implementations.
     pub fn sql_div(&self, other: &Self) -> Result<Self, Error> {
-        Ok(match (self, other) {
-            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.div(*rhs), "div({}, {})", lhs, rhs),
-            _ => {
-                return Err(Error::InvalidArguments(format!("cannot divide {} by {}", self, other)));
-            }
-        })
+        if let (Self::Number(lhs), Self::Number(rhs)) = (self, other) {
+            Ok(try_from_number!(lhs.div(*rhs), "div({}, {})", lhs, rhs))
+        } else {
+            Err(Error::InvalidArguments(format!("cannot divide {} by {}", self, other)))
+        }
     }
 
     /// Computes the remainder when dividing two values using the rules common among SQL implementations.
     pub fn sql_rem(&self, other: &Self) -> Result<Self, Error> {
-        Ok(match (self, other) {
-            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.rem(*rhs), "mod({}, {})", lhs, rhs),
-            _ => {
-                return Err(Error::InvalidArguments(format!(
-                    "cannot compute remainder of {} by {}",
-                    self, other
-                )));
-            }
-        })
+        if let (Self::Number(lhs), Self::Number(rhs)) = (self, other) {
+            Ok(try_from_number!(lhs.rem(*rhs), "mod({}, {})", lhs, rhs))
+        } else {
+            Err(Error::InvalidArguments(format!(
+                "cannot compute remainder of {} by {}",
+                self, other
+            )))
+        }
     }
 
     /// Concatenates multiple values into a string.

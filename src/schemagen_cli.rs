@@ -10,6 +10,7 @@ use rand::{
 use rand_distr::{weighted::WeightedIndex, Distribution, LogNormal, Pareto};
 use std::{
     collections::{BTreeSet, HashSet},
+    f64::consts::LOG2_10,
     fmt::Write,
     iter::repeat_with,
     str::FromStr,
@@ -162,8 +163,6 @@ fn gen_serial_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
         nullable: false,
     }
 }
-
-const LOG2_10: f64 = 3.321_928_094_887_362;
 
 #[allow(clippy::cast_precision_loss)]
 fn gen_decimal_column(_: Dialect, rng: &mut dyn RngCore) -> Column {

@@ -272,7 +272,8 @@ impl Template {
                 Rule::dependency_directive => {
                     // register the next table as derived from the specified parent table.
                     let child_index = template.tables.len();
-                    let (parent, child, count) = alloc.dependency_directive_from_pairs(pair.into_inner())?;
+                    let DependencyDirective { parent, child, count } =
+                        alloc.dependency_directive_from_pairs(pair.into_inner())?;
                     if let Some(parent_index) = table_map.get(parent.inner.unique_name()) {
                         template.tables[*parent_index].derived.push((child_index, count));
                         expected_child_name = Some(child);
@@ -298,6 +299,13 @@ struct Allocator<'a> {
     override_schema: [Option<&'a str>; 2],
     map: HashMap<String, usize>,
     span_registry: &'a mut Registry,
+}
+
+#[derive(Default)]
+struct DependencyDirective {
+    parent: S<QName>,
+    child: S<QName>,
+    count: S<Expr>,
 }
 
 impl<'a> Allocator<'a> {
@@ -363,26 +371,21 @@ impl<'a> Allocator<'a> {
     }
 
     /// Parses a dependency directive.
-    fn dependency_directive_from_pairs(
-        &mut self,
-        pairs: Pairs<'_, Rule>,
-    ) -> Result<(S<QName>, S<QName>, S<Expr>), S<Error>> {
-        let mut parent = S::default();
-        let mut child = S::default();
-        let mut count = S::default();
+    fn dependency_directive_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<DependencyDirective, S<Error>> {
+        let mut res = DependencyDirective::default();
         let mut is_parent = true;
 
         for pair in pairs {
             let span = pair.as_span();
             match pair.as_rule() {
                 Rule::kw_for | Rule::kw_each | Rule::kw_rows | Rule::kw_of | Rule::kw_generate => {}
-                Rule::expr => count = self.expr_from_pairs(pair.into_inner())?.span(self.register(span)),
+                Rule::expr => res.count = self.expr_from_pairs(pair.into_inner())?.span(self.register(span)),
                 Rule::qname => {
                     let target = if is_parent {
                         is_parent = false;
-                        &mut parent
+                        &mut res.parent
                     } else {
-                        &mut child
+                        &mut res.child
                     };
                     *target = QName::from_pairs(pair.into_inner(), self.override_schema).span(self.register(span));
                 }
@@ -390,7 +393,7 @@ impl<'a> Allocator<'a> {
             }
         }
 
-        Ok((parent, child, count))
+        Ok(res)
     }
 
     /// Creates a statement expression `a; b; c`.

@@ -100,6 +100,7 @@ impl fmt::Display for Number {
     }
 }
 
+#[allow(clippy::should_implement_trait)]
 impl Number {
     pub(crate) fn from_finite_f64(v: f64) -> Self {
         debug_assert!(v.is_finite(), "failed: ({:?}).is_finite()", v);
@@ -210,6 +211,7 @@ macro_rules! impl_partial_ord_method {
     }
 }
 
+#[allow(clippy::partialeq_ne_impl)]
 impl PartialEq for Number {
     impl_partial_ord_method! {
         fn eq(...) -> bool = num_eq;

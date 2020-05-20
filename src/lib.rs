@@ -8,7 +8,11 @@
     missing_docs,
     rust_2018_idioms
 )]
-#![allow(clippy::module_name_repetitions, clippy::must_use_candidate)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::must_use_candidate,
+    clippy::missing_errors_doc
+)]
 
 //! The reusable library powering `dbgen`.
 

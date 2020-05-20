@@ -30,7 +30,7 @@ impl Registry {
     }
 
     /// Describes a spanned error as a human-readable string.
-    pub fn describe<E: std::error::Error + 'static>(&self, err: S<E>) -> String {
+    pub fn describe<E: std::error::Error + 'static>(&self, err: &S<E>) -> String {
         use std::fmt::Write;
         let mut buf = format!("Error: {}\n", err.inner);
 
