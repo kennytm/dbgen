@@ -5,6 +5,7 @@ use self::derived::TemplateParser;
 use crate::{
     error::Error,
     functions::{self, Function},
+    span::{Registry, ResultExt, Span, SpanExt, S},
     value::Value,
 };
 
@@ -150,10 +151,10 @@ pub struct Table {
     pub content: String,
 
     /// The expressions to populate the table.
-    pub exprs: Vec<Expr>,
+    pub exprs: Vec<S<Expr>>,
 
     /// The indices of the derived tables, and the number of rows to generate.
-    pub derived: Vec<(usize, Expr)>,
+    pub derived: Vec<(usize, S<Expr>)>,
 }
 
 /// A parsed template.
@@ -162,7 +163,7 @@ pub struct Template {
     /// The expressions shared among all tables and rows.
     ///
     /// These should be evaluated only once.
-    pub global_exprs: Vec<Expr>,
+    pub global_exprs: Vec<S<Expr>>,
 
     /// Number of variables involved in the expressions (including globals).
     pub variables_count: usize,
@@ -185,22 +186,22 @@ pub enum Expr {
     /// Symbol of a local variable `@x`.
     GetVariable(usize),
     /// A variable assignment expression `@x := y`.
-    SetVariable(usize, Box<Expr>),
+    SetVariable(usize, Box<S<Expr>>),
     /// A function call.
     Function {
         /// The function.
         function: &'static dyn Function,
         /// Function arguments.
-        args: Vec<Expr>,
+        args: Vec<S<Expr>>,
     },
     /// A `CASE … WHEN` expression.
     CaseValueWhen {
         /// The expression to match against.
-        value: Option<Box<Expr>>,
+        value: Option<Box<S<Expr>>>,
         /// The conditions and their corresponding results.
-        conditions: Vec<(Expr, Expr)>,
+        conditions: Vec<(S<Expr>, S<Expr>)>,
         /// The result when all conditions failed.
-        otherwise: Option<Box<Expr>>,
+        otherwise: Option<Box<S<Expr>>>,
     },
 }
 
@@ -216,40 +217,53 @@ fn is_ident_char(c: char) -> bool {
 
 impl Template {
     /// Parses a raw string into a structured template.
-    pub fn parse(input: &str, init_globals: &[String], override_schema: Option<&str>) -> Result<Self, Error> {
-        let mut alloc = Allocator::default();
+    pub fn parse(
+        input: &str,
+        init_globals: &[String],
+        override_schema: Option<&str>,
+        span_registry: &mut Registry,
+    ) -> Result<Self, S<Error>> {
+        let mut alloc = Allocator {
+            override_schema: [None; 2],
+            map: HashMap::new(),
+            span_registry,
+        };
         if let Some(schema) = override_schema {
-            alloc.set_schema_name(schema)?;
+            alloc.set_schema_name(schema).span_err(Span::default())?;
         }
         let mut template = Self::default();
 
         template.global_exprs = init_globals
             .iter()
             .map(|init_global_input| {
-                let pairs = TemplateParser::parse(Rule::stmt, init_global_input)?;
-                alloc.stmt_from_pairs(pairs)
+                let pairs = TemplateParser::parse(Rule::stmt, init_global_input).span_err(Span::default())?;
+                Ok(alloc.stmt_from_pairs(pairs)?.span(Span::default()))
             })
             .collect::<Result<_, _>>()?;
 
-        let pairs = TemplateParser::parse(Rule::create_table, input)?;
+        let pairs = TemplateParser::parse(Rule::create_table, input).span_err(Span::default())?;
         let mut table_map = HashMap::new();
-        let mut expected_child_name = None::<QName>;
+        let mut expected_child_name = None::<S<QName>>;
 
         for pair in pairs {
+            let span = pair.as_span();
             match pair.as_rule() {
                 Rule::EOI => {}
-                Rule::stmt => template
-                    .global_exprs
-                    .push(alloc.expr_binary_from_pairs(pair.into_inner())?),
+                Rule::stmt => template.global_exprs.push(
+                    alloc
+                        .expr_binary_from_pairs(pair.into_inner())?
+                        .span(alloc.register(span)),
+                ),
                 Rule::single_table => {
                     let table = alloc.table_from_pairs(pair.into_inner())?;
                     let table_name = table.name.unique_name();
                     if let Some(child_name) = &expected_child_name {
-                        if child_name.unique_name() != &*table_name {
+                        if child_name.inner.unique_name() != &*table_name {
                             return Err(Error::DerivedTableNameMismatch {
-                                for_each_row: child_name.table_name(true).to_owned(),
+                                for_each_row: child_name.inner.table_name(true).to_owned(),
                                 create_table: table.name.table_name(true).to_owned(),
-                            });
+                            }
+                            .span(child_name.span));
                         }
                     }
                     table_map.insert(table_name.to_owned(), template.tables.len());
@@ -259,13 +273,14 @@ impl Template {
                     // register the next table as derived from the specified parent table.
                     let child_index = template.tables.len();
                     let (parent, child, count) = alloc.dependency_directive_from_pairs(pair.into_inner())?;
-                    if let Some(parent_index) = table_map.get(parent.unique_name()) {
+                    if let Some(parent_index) = table_map.get(parent.inner.unique_name()) {
                         template.tables[*parent_index].derived.push((child_index, count));
                         expected_child_name = Some(child);
                     } else {
                         return Err(Error::UnknownParentTable {
-                            parent: parent.table_name(true).to_owned(),
-                        });
+                            parent: parent.inner.table_name(true).to_owned(),
+                        }
+                        .span(parent.span));
                     }
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
@@ -279,10 +294,10 @@ impl Template {
 
 /// Local variable allocator. This structure keeps record of local variables `@x` and assigns a
 /// unique number of each variable, so that they can be referred using a number instead of a string.
-#[derive(Default)]
 struct Allocator<'a> {
     override_schema: [Option<&'a str>; 2],
     map: HashMap<String, usize>,
+    span_registry: &'a mut Registry,
 }
 
 impl<'a> Allocator<'a> {
@@ -302,22 +317,25 @@ impl<'a> Allocator<'a> {
         *self.map.entry(var_name).or_insert(count)
     }
 
+    fn register(&mut self, span: pest::Span<'_>) -> Span {
+        self.span_registry.register(span)
+    }
+
     /// Creates a single table.
-    fn table_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Table, Error> {
+    fn table_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Table, S<Error>> {
         let mut table = Table::default();
         let mut previous_end_line = 0;
 
         for pair in pairs {
+            let span = pair.as_span();
             match pair.as_rule() {
                 Rule::kw_create | Rule::kw_table => {}
                 Rule::qname => table.name = QName::from_pairs(pair.into_inner(), self.override_schema),
                 Rule::open_paren | Rule::close_paren => {
-                    let span = pair.as_span();
                     previous_end_line = span.end_pos().line_col().0;
                     table.content.push_str(span.as_str());
                 }
                 Rule::any_text => {
-                    let span = pair.as_span();
                     let start_line = span.start_pos().line_col().0;
                     let end_line = span.end_pos().line_col().0;
                     let s = span.as_str();
@@ -333,7 +351,10 @@ impl<'a> Allocator<'a> {
 
                     previous_end_line = end_line;
                 }
-                Rule::stmt => table.exprs.push(self.expr_binary_from_pairs(pair.into_inner())?),
+                Rule::stmt => table.exprs.push(
+                    self.expr_binary_from_pairs(pair.into_inner())?
+                        .span(self.register(span)),
+                ),
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
@@ -342,16 +363,20 @@ impl<'a> Allocator<'a> {
     }
 
     /// Parses a dependency directive.
-    fn dependency_directive_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<(QName, QName, Expr), Error> {
-        let mut parent = QName::default();
-        let mut child = QName::default();
-        let mut count = Expr::default();
+    fn dependency_directive_from_pairs(
+        &mut self,
+        pairs: Pairs<'_, Rule>,
+    ) -> Result<(S<QName>, S<QName>, S<Expr>), S<Error>> {
+        let mut parent = S::default();
+        let mut child = S::default();
+        let mut count = S::default();
         let mut is_parent = true;
 
         for pair in pairs {
+            let span = pair.as_span();
             match pair.as_rule() {
                 Rule::kw_for | Rule::kw_each | Rule::kw_rows | Rule::kw_of | Rule::kw_generate => {}
-                Rule::expr => count = self.expr_from_pairs(pair.into_inner())?,
+                Rule::expr => count = self.expr_from_pairs(pair.into_inner())?.span(self.register(span)),
                 Rule::qname => {
                     let target = if is_parent {
                         is_parent = false;
@@ -359,7 +384,7 @@ impl<'a> Allocator<'a> {
                     } else {
                         &mut child
                     };
-                    *target = QName::from_pairs(pair.into_inner(), self.override_schema);
+                    *target = QName::from_pairs(pair.into_inner(), self.override_schema).span(self.register(span));
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
@@ -369,12 +394,12 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates a statement expression `a; b; c`.
-    fn stmt_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn stmt_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         self.expr_binary_from_pairs(pairs.next().unwrap().into_inner())
     }
 
     /// Creates an assignment expression `@x := @y := z`.
-    fn expr_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut indices = Vec::new();
 
         for pair in pairs {
@@ -383,9 +408,13 @@ impl<'a> Allocator<'a> {
                     indices.push(self.allocate(pair.as_str()));
                 }
                 Rule::expr_or => {
+                    let span = pair.as_span();
                     let mut expr = self.expr_binary_from_pairs(pair.into_inner())?;
-                    for i in indices.into_iter().rev() {
-                        expr = Expr::SetVariable(i, Box::new(expr));
+                    if !indices.is_empty() {
+                        let span = self.register(span);
+                        for i in indices.into_iter().rev() {
+                            expr = Expr::SetVariable(i, Box::new(expr.span(span)));
+                        }
                     }
                     return Ok(expr);
                 }
@@ -397,19 +426,21 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates any expression involving a binary operator `x + y`, `x * y`, etc.
-    fn expr_binary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_binary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut args = Vec::with_capacity(1);
         let mut op = None;
 
         for pair in pairs {
             let rule = pair.as_rule();
+            let span = pair.as_span();
             match rule {
-                Rule::expr_bit_or | Rule::expr_bit_and | Rule::expr_and | Rule::expr_add | Rule::expr_mul => {
-                    args.push(self.expr_binary_from_pairs(pair.into_inner())?)
-                }
-                Rule::expr_not => args.push(self.expr_not_from_pairs(pair.into_inner())?),
-                Rule::expr_unary => args.push(self.expr_unary_from_pairs(pair.into_inner())?),
-                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
+                Rule::expr_bit_or | Rule::expr_bit_and | Rule::expr_and | Rule::expr_add | Rule::expr_mul => args.push(
+                    self.expr_binary_from_pairs(pair.into_inner())?
+                        .span(self.register(span)),
+                ),
+                Rule::expr_not => args.push(self.expr_not_from_pairs(pair.into_inner())?.span(self.register(span))),
+                Rule::expr_unary => args.push(self.expr_unary_from_pairs(pair.into_inner())?.span(self.register(span))),
+                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?.span(self.register(span))),
                 Rule::kw_or
                 | Rule::kw_and
                 | Rule::is_not
@@ -434,7 +465,8 @@ impl<'a> Allocator<'a> {
                             args = vec![Expr::Function {
                                 function: function_from_rule(o),
                                 args,
-                            }];
+                            }
+                            .span(self.register(span))];
                         }
                         _ => {}
                     }
@@ -451,12 +483,12 @@ impl<'a> Allocator<'a> {
             }
         } else {
             debug_assert_eq!(args.len(), 1);
-            args.swap_remove(0)
+            args.swap_remove(0).inner
         })
     }
 
     /// Creates a NOT expression `NOT NOT NOT x`.
-    fn expr_not_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_not_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut has_not = false;
         for pair in pairs {
             match pair.as_rule() {
@@ -464,11 +496,12 @@ impl<'a> Allocator<'a> {
                     has_not = !has_not;
                 }
                 Rule::expr_cmp => {
+                    let span = pair.as_span();
                     let expr = self.expr_binary_from_pairs(pair.into_inner())?;
                     return Ok(if has_not {
                         Expr::Function {
                             function: &functions::ops::Not,
-                            args: vec![expr],
+                            args: vec![expr.span(self.register(span))],
                         }
                     } else {
                         expr
@@ -481,7 +514,7 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates a primary expression.
-    fn expr_primary_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_primary_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let pair = pairs.next().unwrap();
         Ok(match pair.as_rule() {
             Rule::kw_rownum => Expr::RowNum,
@@ -491,7 +524,6 @@ impl<'a> Allocator<'a> {
             Rule::kw_true => Expr::Value(1_u64.into()),
             Rule::kw_false => Expr::Value(0_u64.into()),
             Rule::expr_group => self.expr_group_from_pairs(pair.into_inner())?,
-            Rule::number => Expr::Value(parse_number(pair.as_str())?),
             Rule::expr_timestamp => self.expr_timestamp_from_pairs(pair.into_inner())?,
             Rule::expr_interval => self.expr_interval_from_pairs(pair.into_inner())?,
             Rule::expr_get_variable => self.expr_get_variable_from_pairs(pair.into_inner())?,
@@ -500,6 +532,11 @@ impl<'a> Allocator<'a> {
             Rule::expr_substring_function => self.expr_substring_from_pairs(pair.into_inner())?,
             Rule::expr_overlay_function => self.expr_overlay_from_pairs(pair.into_inner())?,
             Rule::expr_case_value_when => self.expr_case_value_when_from_pairs(pair.into_inner())?,
+
+            Rule::number => match parse_number(pair.as_str()) {
+                Ok(v) => Expr::Value(v),
+                Err(e) => return Err(e.span(self.register(pair.as_span()))),
+            },
 
             Rule::single_quoted => {
                 let mut string = String::with_capacity(pair.as_str().len());
@@ -512,17 +549,21 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates a function call expression `x.y.z(a, b, c)`.
-    fn expr_function_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_function_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut function: &dyn Function = &functions::ops::Last;
         let mut args = Vec::new();
 
         for pair in pairs {
+            let span = pair.as_span();
             match pair.as_rule() {
                 Rule::qname => {
                     let q_name = QName::from_pairs(pair.into_inner(), [None; 2]);
-                    function = function_from_name(q_name.unique_name())?;
+                    match function_from_name(q_name.unique_name()) {
+                        Ok(f) => function = f,
+                        Err(e) => return Err(e.span(self.register(span))),
+                    }
                 }
-                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
+                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?.span(self.register(span))),
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
@@ -531,13 +572,16 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates an array expression `ARRAY[a, b, c]`.
-    fn expr_array_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_array_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut args = Vec::new();
 
         for pair in pairs {
             match pair.as_rule() {
                 Rule::kw_array => {}
-                Rule::expr => args.push(self.expr_from_pairs(pair.into_inner())?),
+                Rule::expr => {
+                    let span = pair.as_span();
+                    args.push(self.expr_from_pairs(pair.into_inner())?.span(self.register(span)));
+                }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
@@ -549,60 +593,70 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates a group expression `(x)`.
-    fn expr_group_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_group_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         self.expr_from_pairs(pairs.next().unwrap().into_inner())
     }
 
     /// Creates a local variable expression `@x`.
-    fn expr_get_variable_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_get_variable_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let pair = pairs.next().unwrap();
         Ok(Expr::GetVariable(self.allocate(pair.as_str())))
     }
 
     /// Creates any expression involving a unary operator `+x`, `-x`, `x[i]`, etc.
-    fn expr_unary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
-        let mut op_stack = Vec::<&dyn Function>::new();
+    fn expr_unary_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
+        let mut op_stack = Vec::<(&dyn Function, pest::Span<'_>)>::new();
         let mut base = Expr::default();
+        let mut base_span = pest::Span::new("", 0, 0).unwrap();
         for pair in pairs {
+            let span = pair.as_span();
             match pair.as_rule() {
                 Rule::op_add => {}
-                Rule::op_sub => op_stack.push(&functions::ops::Neg),
-                Rule::op_bit_not => op_stack.push(&functions::ops::BitNot),
+                Rule::op_sub => op_stack.push((&functions::ops::Neg, span)),
+                Rule::op_bit_not => op_stack.push((&functions::ops::BitNot, span)),
                 Rule::expr_primary => {
                     base = self.expr_primary_from_pairs(pair.into_inner())?;
+                    base_span = span;
                 }
                 Rule::expr => {
                     base = Expr::Function {
                         function: &functions::array::Subscript,
-                        args: vec![base, self.expr_from_pairs(pair.into_inner())?],
-                    }
+                        args: vec![
+                            base.span(self.register(base_span)),
+                            self.expr_from_pairs(pair.into_inner())?
+                                .span(self.register(span.clone())),
+                        ],
+                    };
+                    base_span = span;
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
-        for function in op_stack.into_iter().rev() {
+        for (function, function_span) in op_stack.into_iter().rev() {
             base = Expr::Function {
                 function,
-                args: vec![base],
+                args: vec![base.span(self.register(base_span.clone()))],
             };
+            base_span = pest::Position::span(&function_span.start_pos(), &base_span.end_pos());
         }
         Ok(base)
     }
 
     /// Creates a `CASE … WHEN` expression.
-    fn expr_case_value_when_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_case_value_when_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut value = None;
-        let mut pattern = Expr::default();
+        let mut pattern = S::default();
         let mut conditions = Vec::with_capacity(2);
         let mut otherwise = None;
 
         for pair in pairs {
             let rule = pair.as_rule();
+            let span = pair.as_span();
             match rule {
                 Rule::kw_case | Rule::kw_when | Rule::kw_then | Rule::kw_else | Rule::kw_end => {}
                 Rule::case_value_when_value | Rule::case_value_when_pattern => {
-                    let expr = self.expr_group_from_pairs(pair.into_inner())?;
+                    let expr = self.expr_group_from_pairs(pair.into_inner())?.span(self.register(span));
                     match rule {
                         Rule::case_value_when_value => value = Some(Box::new(expr)),
                         Rule::case_value_when_pattern => pattern = expr,
@@ -610,7 +664,7 @@ impl<'a> Allocator<'a> {
                     }
                 }
                 Rule::case_value_when_result | Rule::case_value_when_else => {
-                    let expr = self.stmt_from_pairs(pair.into_inner())?;
+                    let expr = self.stmt_from_pairs(pair.into_inner())?.span(self.register(span));
                     match rule {
                         Rule::case_value_when_result => conditions.push((mem::take(&mut pattern), expr)),
                         Rule::case_value_when_else => otherwise = Some(Box::new(expr)),
@@ -629,7 +683,7 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates a `TIMESTAMP` expression.
-    fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut function: &dyn Function = &functions::time::Timestamp;
         for pair in pairs {
             match pair.as_rule() {
@@ -638,9 +692,12 @@ impl<'a> Allocator<'a> {
                     function = &functions::time::TimestampWithTimeZone;
                 }
                 Rule::expr_primary => {
+                    let span = pair.as_span();
                     return Ok(Expr::Function {
                         function,
-                        args: vec![self.expr_primary_from_pairs(pair.into_inner())?],
+                        args: vec![self
+                            .expr_primary_from_pairs(pair.into_inner())?
+                            .span(self.register(span))],
                     });
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
@@ -651,14 +708,20 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates an `INTERVAL` expression.
-    fn expr_interval_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_interval_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut unit = 1;
-        let mut expr = Expr::default();
+        let mut span = pest::Span::new("", 0, 0).unwrap();
+        let mut expr = S::default();
 
         for pair in pairs {
+            span = pair.as_span();
             match pair.as_rule() {
                 Rule::kw_interval => {}
-                Rule::expr => expr = self.expr_from_pairs(pair.into_inner())?,
+                Rule::expr => {
+                    expr = self
+                        .expr_from_pairs(pair.into_inner())?
+                        .span(self.register(span.clone()))
+                }
                 Rule::kw_week => unit = 604_800_000_000,
                 Rule::kw_day => unit = 86_400_000_000,
                 Rule::kw_hour => unit = 3_600_000_000,
@@ -672,16 +735,16 @@ impl<'a> Allocator<'a> {
 
         Ok(Expr::Function {
             function: &functions::ops::Arith::Mul,
-            args: vec![expr, Expr::Value(Value::Interval(unit))],
+            args: vec![expr, Expr::Value(Value::Interval(unit)).span(self.register(span))],
         })
     }
 
     /// Creates a `substring` function expression.
-    fn expr_substring_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_substring_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         use functions::string::{Substring, Unit};
 
         let mut function = &Substring(Unit::Characters);
-        let mut input = Expr::default();
+        let mut input = S::default();
         let mut from = None;
         let mut length = None;
 
@@ -692,7 +755,8 @@ impl<'a> Allocator<'a> {
                 Rule::kw_octets => function = &Substring(Unit::Octets),
                 Rule::kw_characters => function = &Substring(Unit::Characters),
                 Rule::substring_input | Rule::substring_from | Rule::substring_for => {
-                    let expr = self.expr_group_from_pairs(pair.into_inner())?;
+                    let span = pair.as_span();
+                    let expr = self.expr_group_from_pairs(pair.into_inner())?.span(self.register(span));
                     match rule {
                         Rule::substring_input => input = expr,
                         Rule::substring_from => from = Some(expr),
@@ -704,7 +768,10 @@ impl<'a> Allocator<'a> {
             }
         }
 
-        let mut args = vec![input, from.unwrap_or_else(|| Expr::Value(1.into()))];
+        let mut args = vec![
+            input,
+            from.unwrap_or_else(|| Expr::Value(1.into()).span(Span::default())),
+        ];
         if let Some(length) = length {
             args.push(length);
         }
@@ -712,13 +779,13 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates an `overlay` function expression.
-    fn expr_overlay_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, Error> {
+    fn expr_overlay_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         use functions::string::{Overlay, Unit};
 
         let mut function = &Overlay(Unit::Characters);
-        let mut input = Expr::default();
-        let mut placing = Expr::default();
-        let mut from = Expr::default();
+        let mut input = S::default();
+        let mut placing = S::default();
+        let mut from = S::default();
         let mut length = None;
 
         for pair in pairs {
@@ -728,7 +795,8 @@ impl<'a> Allocator<'a> {
                 Rule::kw_octets => function = &Overlay(Unit::Octets),
                 Rule::kw_characters => function = &Overlay(Unit::Characters),
                 Rule::substring_input | Rule::substring_from | Rule::substring_for | Rule::overlay_placing => {
-                    let expr = self.expr_group_from_pairs(pair.into_inner())?;
+                    let span = pair.as_span();
+                    let expr = self.expr_group_from_pairs(pair.into_inner())?.span(self.register(span));
                     match rule {
                         Rule::substring_input => input = expr,
                         Rule::substring_from => from = expr,
@@ -794,7 +862,7 @@ fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
         "octet_length" => &string::OctetLength,
         "coalesce" => &ops::Coalesce,
         "generate_series" => &array::GenerateSeries,
-        _ => return Err(Error::UnknownFunction(name.to_owned())),
+        _ => return Err(Error::UnknownFunction),
     })
 }
 
@@ -850,6 +918,7 @@ fn function_from_rule(rule: Rule) -> &'static dyn Function {
 
 #[test]
 fn test_parse_template_error() {
+    let mut registry = Registry::default();
     let test_cases = [
         "create table a ({{ 4 = 4 = 4 }});",
         "create table a ({{ 4 is 4 is 4 }});",
@@ -867,7 +936,7 @@ fn test_parse_template_error() {
         "create table a (); {{ for each row of a generate (*) rows of b }} create table b ();",
     ];
     for tc in &test_cases {
-        let res = Template::parse(tc, &[], None);
+        let res = Template::parse(tc, &[], None, &mut registry);
         assert!(res.is_err(), "unexpected for case {}:\n{:#?}", tc, res);
     }
 }

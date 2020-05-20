@@ -1,7 +1,6 @@
 //! CLI driver of `dbschemagen`.
 
-use crate::parser::QName;
-use anyhow::{bail, Error};
+use crate::{error::Error, parser::QName};
 use data_encoding::HEXLOWER_PERMISSIVE;
 use rand::{
     rngs::{OsRng, StdRng},
@@ -74,7 +73,12 @@ impl FromStr for Dialect {
             "mysql" => Self::MySQL,
             "postgresql" => Self::PostgreSQL,
             "sqlite" => Self::SQLite,
-            _ => bail!("Unsupported SQL dialect {}", dialect),
+            _ => {
+                return Err(Error::UnsupportedCliParameter {
+                    kind: "SQL dialect",
+                    value: dialect.to_owned(),
+                })
+            }
         })
     }
 }

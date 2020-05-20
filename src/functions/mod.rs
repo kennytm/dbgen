@@ -1,8 +1,11 @@
 //! Defines functions for evaluation.
 
-use crate::error::Error;
-use crate::eval::{CompileContext, Compiled};
-use crate::value::Value;
+use crate::{
+    error::Error,
+    eval::{CompileContext, C},
+    span::{ResultExt, Span, SpanExt, S},
+    value::Value,
+};
 
 use std::{convert::TryFrom, fmt::Debug};
 
@@ -13,12 +16,39 @@ pub mod string;
 pub mod time;
 
 /// Container of the arguments passed to functions.
-pub type Arguments = smallvec::SmallVec<[Value; 2]>;
+pub type Arguments = smallvec::SmallVec<[S<Value>; 2]>;
 
 /// An SQL function.
 pub trait Function: Sync + Debug {
     /// Compiles or evaluates this function taking the provided arguments.
-    fn compile(&self, ctx: &CompileContext, args: Arguments) -> Result<Compiled, Error>;
+    fn compile(&self, ctx: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>>;
+}
+
+trait TryFromSpannedValue: Sized {
+    fn try_from_spanned_value(value: S<Value>) -> Result<Self, S<Error>>;
+}
+
+impl<T> TryFromSpannedValue for T
+where
+    T: TryFrom<Value>,
+    Error: From<T::Error>,
+{
+    fn try_from_spanned_value(value: S<Value>) -> Result<Self, S<Error>> {
+        let span = value.span;
+        Self::try_from(value.inner).span_err(span)
+    }
+}
+
+impl TryFromSpannedValue for S<String> {
+    fn try_from_spanned_value(value: S<Value>) -> Result<Self, S<Error>> {
+        String::try_from(value.inner).span_ok_err(value.span)
+    }
+}
+
+impl TryFromSpannedValue for S<Value> {
+    fn try_from_spanned_value(value: S<Value>) -> Result<Self, S<Error>> {
+        Ok(value)
+    }
 }
 
 macro_rules! declare_arg_fn {
@@ -27,25 +57,17 @@ macro_rules! declare_arg_fn {
         fn $name:ident($($def:ident: $ty:ident),+);
     ) => {
         $(#[$meta])*
-        fn $name<$($ty),+>(name: &'static str, args: Arguments, $($def: Option<$ty>),+) -> Result<($($ty),+), Error>
+        fn $name<$($ty),+>(span: Span, args: Arguments, $($def: Option<$ty>),+) -> Result<($($ty),+), S<Error>>
         where
-            $($ty: TryFrom<Value>,
-            $ty::Error: ToString,)+
+            $($ty: TryFromSpannedValue,)+
         {
             let mut it = args.into_iter();
-            let mut index = 0;
             $(
                 let $def = if let Some(arg) = it.next() {
-                    $ty::try_from(arg).map_err(|e| Error::InvalidArgumentType {
-                        name,
-                        index,
-                        expected: e.to_string(),
-                    })
+                    $ty::try_from_spanned_value(arg)
                 } else {
-                    $def.ok_or(Error::NotEnoughArguments(name))
+                    $def.ok_or(Error::NotEnoughArguments.span(span))
                 }?;
-                #[allow(unused_assignments)]
-                {index += 1;}
             )+
             Ok(($($def),+))
         }
@@ -71,24 +93,17 @@ declare_arg_fn! {
 }
 
 /// Converts a slice of arguments all into a specific type.
-fn iter_args<T>(name: &'static str, args: Arguments) -> impl Iterator<Item = Result<T, Error>>
+fn iter_args<T>(args: Arguments) -> impl Iterator<Item = Result<T, S<Error>>>
 where
-    T: TryFrom<Value>,
-    T::Error: ToString,
+    T: TryFromSpannedValue,
 {
-    args.into_iter().enumerate().map(move |(index, arg)| {
-        T::try_from(arg).map_err(|e| Error::InvalidArgumentType {
-            name,
-            index,
-            expected: e.to_string(),
-        })
-    })
+    args.into_iter().map(T::try_from_spanned_value)
 }
 
-fn require(name: &'static str, cond: bool, cause: impl FnOnce() -> String) -> Result<(), Error> {
+fn require(span: Span, cond: bool, cause: impl FnOnce() -> String) -> Result<(), S<Error>> {
     if cond {
         Ok(())
     } else {
-        Err(Error::InvalidArguments { name, cause: cause() })
+        Err(Error::InvalidArguments(cause()).span(span))
     }
 }

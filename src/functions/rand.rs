@@ -3,8 +3,9 @@
 use super::{args_1, args_2, args_3, require, Arguments, Function};
 use crate::{
     error::Error,
-    eval::{CompileContext, Compiled, C},
+    eval::{CompileContext, C},
     number::Number,
+    span::{ResultExt, Span, SpanExt, S},
     value::Value,
 };
 use rand::distributions::BernoulliError;
@@ -24,15 +25,15 @@ pub struct RangeInclusive;
 
 macro_rules! impl_rand_range {
     ($name:expr, $cmp:tt, $new:ident) => {
-        fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-            let (lower, upper) = args_2::<Number, Number>($name, args, None, None)?;
-            require($name, lower $cmp upper, || format!("{} {} {}", lower, stringify!($cmp), upper))?;
+        fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+            let (lower, upper) = args_2::<Number, Number>(span, args, None, None)?;
+            require(span, lower $cmp upper, || format!("assertion failed: {} {} {}", lower, stringify!($cmp), upper))?;
             if let (Ok(a), Ok(b)) = (u64::try_from(lower), u64::try_from(upper)) {
-                Ok(Compiled(C::RandUniformU64(rand_distr::Uniform::$new(a, b))))
+                Ok(C::RandUniformU64(rand_distr::Uniform::$new(a, b)))
             } else if let (Ok(a), Ok(b)) = (i64::try_from(lower), i64::try_from(upper)) {
-                Ok(Compiled(C::RandUniformI64(rand_distr::Uniform::$new(a, b))))
+                Ok(C::RandUniformI64(rand_distr::Uniform::$new(a, b)))
             } else {
-                Err(Error::IntegerOverflow(format!("{}({}, {})", $name, lower, upper)))
+                Err(Error::IntegerOverflow(format!("{}({}, {})", $name, lower, upper)).span(span))
             }
         }
     }
@@ -57,21 +58,21 @@ pub struct Uniform;
 pub struct UniformInclusive;
 
 macro_rules! impl_rand_uniform {
-    ($name:expr, $cmp:tt, $new:ident) => {
-        fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-            let (lower, upper) = args_2::<f64, f64>($name, args, None, None)?;
-            require($name, lower $cmp upper, || format!("{} {} {}", lower, stringify!($cmp), upper))?;
-            Ok(Compiled(C::RandUniformF64(rand_distr::Uniform::$new(lower, upper))))
+    ($cmp:tt, $new:ident) => {
+        fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+            let (lower, upper) = args_2::<f64, f64>(span, args, None, None)?;
+            require(span, lower $cmp upper, || format!("assertion failed: {} {} {}", lower, stringify!($cmp), upper))?;
+            Ok(C::RandUniformF64(rand_distr::Uniform::$new(lower, upper)))
         }
     }
 }
 
 impl Function for Uniform {
-    impl_rand_uniform!("rand.uniform", <, new);
+    impl_rand_uniform!(<, new);
 }
 
 impl Function for UniformInclusive {
-    impl_rand_uniform!("rand.uniform_inclusive", <=, new_inclusive);
+    impl_rand_uniform!(<=, new_inclusive);
 }
 
 //------------------------------------------------------------------------------
@@ -81,15 +82,15 @@ impl Function for UniformInclusive {
 pub struct Zipf;
 
 impl Function for Zipf {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = "rand.zipf";
-        let (count, exponent) = args_2(name, args, None, None)?;
-        Ok(Compiled(C::RandZipf(ZipfDistribution::new(count, exponent).map_err(
-            |_| Error::InvalidArguments {
-                name,
-                cause: format!("count ({}) and exponent ({}) must be positive", count, exponent),
-            },
-        )?)))
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let (count, exponent) = args_2(span, args, None, None)?;
+        Ok(C::RandZipf(ZipfDistribution::new(count, exponent).map_err(|_| {
+            Error::InvalidArguments(format!(
+                "count ({}) and exponent ({}) must be positive",
+                count, exponent
+            ))
+            .span(span)
+        })?))
     }
 }
 
@@ -100,18 +101,14 @@ impl Function for Zipf {
 pub struct LogNormal;
 
 impl Function for LogNormal {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = "rand.log_normal";
-        let (mean, std_dev) = args_2::<f64, f64>(name, args, None, None)?;
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let (mean, std_dev) = args_2::<f64, f64>(span, args, None, None)?;
         let std_dev = std_dev.abs();
-        Ok(Compiled(C::RandLogNormal(
-            rand_distr::LogNormal::new(mean, std_dev).map_err(|NormalError::StdDevTooSmall| {
-                Error::InvalidArguments {
-                    name,
-                    cause: format!("standard deviation ({}) must >= 0", std_dev),
-                }
-            })?,
-        )))
+        Ok(C::RandLogNormal(rand_distr::LogNormal::new(mean, std_dev).map_err(
+            |NormalError::StdDevTooSmall| {
+                Error::InvalidArguments(format!("standard deviation ({}) must >= 0", std_dev)).span(span)
+            },
+        )?))
     }
 }
 
@@ -122,15 +119,13 @@ impl Function for LogNormal {
 pub struct Bool;
 
 impl Function for Bool {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = "rand.bool";
-        let p = args_1(name, args, None)?;
-        Ok(Compiled(C::RandBool(rand_distr::Bernoulli::new(p).map_err(
-            |BernoulliError::InvalidProbability| Error::InvalidArguments {
-                name,
-                cause: format!("probability ({}) must be inside [0, 1]", p),
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let p = args_1(span, args, None)?;
+        Ok(C::RandBool(rand_distr::Bernoulli::new(p).map_err(
+            |BernoulliError::InvalidProbability| {
+                Error::InvalidArguments(format!("probability ({}) must be inside [0, 1]", p)).span(span)
             },
-        )?)))
+        )?))
     }
 }
 
@@ -153,29 +148,26 @@ pub struct U31Timestamp;
 pub struct Uuid;
 
 impl Function for FiniteF32 {
-    fn compile(&self, _: &CompileContext, _: Arguments) -> Result<Compiled, Error> {
-        Ok(Compiled(C::RandFiniteF32(rand_distr::Uniform::new(0, 0xff00_0000))))
+    fn compile(&self, _: &CompileContext, _: Span, _: Arguments) -> Result<C, S<Error>> {
+        Ok(C::RandFiniteF32(rand_distr::Uniform::new(0, 0xff00_0000)))
     }
 }
 
 impl Function for FiniteF64 {
-    fn compile(&self, _: &CompileContext, _: Arguments) -> Result<Compiled, Error> {
-        Ok(Compiled(C::RandFiniteF64(rand_distr::Uniform::new(
-            0,
-            0xffe0_0000_0000_0000,
-        ))))
+    fn compile(&self, _: &CompileContext, _: Span, _: Arguments) -> Result<C, S<Error>> {
+        Ok(C::RandFiniteF64(rand_distr::Uniform::new(0, 0xffe0_0000_0000_0000)))
     }
 }
 
 impl Function for U31Timestamp {
-    fn compile(&self, _: &CompileContext, _: Arguments) -> Result<Compiled, Error> {
-        Ok(Compiled(C::RandU31Timestamp(rand_distr::Uniform::new(1, 0x8000_0000))))
+    fn compile(&self, _: &CompileContext, _: Span, _: Arguments) -> Result<C, S<Error>> {
+        Ok(C::RandU31Timestamp(rand_distr::Uniform::new(1, 0x8000_0000)))
     }
 }
 
 impl Function for Uuid {
-    fn compile(&self, _: &CompileContext, _: Arguments) -> Result<Compiled, Error> {
-        Ok(Compiled(C::RandUuid))
+    fn compile(&self, _: &CompileContext, _: Span, _: Arguments) -> Result<C, S<Error>> {
+        Ok(C::RandUuid)
     }
 }
 
@@ -186,12 +178,10 @@ impl Function for Uuid {
 pub struct Regex;
 
 impl Function for Regex {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = "rand.regex";
-        let (regex, flags, max_repeat) =
-            args_3::<String, String, u32>(name, args, None, Some("".to_owned()), Some(100))?;
-        let generator = compile_regex_generator(&regex, &flags, max_repeat)?;
-        Ok(Compiled(C::RandRegex(generator)))
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let (regex, flags, max_repeat) = args_3::<String, String, _>(span, args, None, Some("".to_owned()), Some(100))?;
+        let generator = compile_regex_generator(&regex, &flags, max_repeat).span_err(span)?;
+        Ok(C::RandRegex(generator))
     }
 }
 
@@ -211,14 +201,8 @@ fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<
         };
     }
 
-    let hir = parser.build().parse(regex).map_err(|source| Error::InvalidRegex {
-        pattern: regex.to_owned(),
-        source: source.into(),
-    })?;
-    rand_regex::Regex::with_hir(hir, max_repeat).map_err(|source| Error::InvalidRegex {
-        pattern: regex.to_owned(),
-        source,
-    })
+    let hir = parser.build().parse(regex)?;
+    Ok(rand_regex::Regex::with_hir(hir, max_repeat)?)
 }
 
 //------------------------------------------------------------------------------
@@ -228,8 +212,8 @@ fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<
 pub struct Shuffle;
 
 impl Function for Shuffle {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let array = args_1::<Arc<[Value]>>("rand.shuffle", args, None)?;
-        Ok(Compiled(C::RandShuffle(array)))
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let array = args_1::<Arc<[Value]>>(span, args, None)?;
+        Ok(C::RandShuffle(array))
     }
 }

@@ -3,7 +3,8 @@
 use super::{args_2, args_3, Arguments, Function};
 use crate::{
     error::Error,
-    eval::{CompileContext, Compiled, C},
+    eval::{CompileContext, C},
+    span::{ResultExt, Span, SpanExt, S},
     value::Value,
 };
 use std::{cmp::Ordering, sync::Arc};
@@ -13,8 +14,10 @@ use std::{cmp::Ordering, sync::Arc};
 pub struct Array;
 
 impl Function for Array {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        Ok(Compiled(C::Constant(Value::Array(args.into_vec().into()))))
+    fn compile(&self, _: &CompileContext, _: Span, args: Arguments) -> Result<C, S<Error>> {
+        Ok(C::Constant(Value::Array(
+            args.into_iter().map(|arg| arg.inner).collect(),
+        )))
     }
 }
 
@@ -23,13 +26,13 @@ impl Function for Array {
 pub struct Subscript;
 
 impl Function for Subscript {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let (base, index) = args_2::<Arc<[Value]>, usize>("[]", args, None, None)?;
-        Ok(Compiled(C::Constant(if index == 0 || index > base.len() {
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let (base, index) = args_2::<Arc<[Value]>, usize>(span, args, None, None)?;
+        Ok(C::Constant(if index == 0 || index > base.len() {
             Value::Null
         } else {
             base[index - 1].clone()
-        })))
+        }))
     }
 }
 
@@ -38,30 +41,27 @@ impl Function for Subscript {
 pub struct GenerateSeries;
 
 impl Function for GenerateSeries {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = "generate_series";
-        let (start, end, step) = args_3::<Value, Value, Value>(name, args, None, None, Some(1.into()))?;
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let (start, end, step) =
+            args_3::<S<Value>, S<Value>, S<Value>>(span, args, None, None, Some(Value::from(1).span(span)))?;
 
-        let step_sign = step.sql_sign();
+        let step_sign = step.inner.sql_sign();
         if step_sign == Ordering::Equal {
-            return Err(Error::InvalidArguments {
-                name,
-                cause: format!("cannot use zero step {}", step),
-            });
+            return Err(Error::InvalidArguments(format!("cannot use zero step {}", step.inner)).span(step.span));
         }
 
-        let mut value = start;
+        let mut value = start.inner;
         let mut result = Vec::new();
         loop {
-            let cur_cmp = value.sql_cmp(&end, name)?;
+            let cur_cmp = value.sql_cmp(&end.inner).span_err(end.span)?;
             if cur_cmp.is_none() || cur_cmp == Some(step_sign) {
                 break;
             }
-            let next = value.sql_add_named(&step, name)?;
+            let next = value.sql_add(&step.inner).span_err(start.span)?;
             result.push(value);
             value = next;
         }
 
-        Ok(Compiled(C::Constant(Value::Array(result.into()))))
+        Ok(C::Constant(Value::Array(result.into())))
     }
 }

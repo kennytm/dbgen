@@ -1,8 +1,11 @@
-use anyhow::Error;
-use dbgen::cli::{run, Args};
+use dbgen::{
+    cli::{run, Args},
+    span::Registry,
+};
 use diff::{lines, Result as DiffResult};
 use serde_json::from_reader;
 use std::{
+    error::Error,
     fs::{read, read_dir, remove_file, File},
     path::Path,
     str::from_utf8,
@@ -14,7 +17,7 @@ fn run_test() {
     main().unwrap();
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let out_dir = tempdir()?;
 
     let data_dir = Path::new(file!()).with_file_name("data");
@@ -32,7 +35,8 @@ fn main() -> Result<(), Error> {
         args.out_dir = out_dir.path().to_owned();
         args.zoneinfo = zoneinfo_dir.clone();
 
-        run(args)?;
+        let mut registry = Registry::default();
+        run(args, &mut registry)?;
 
         for result_entry in read_dir(out_dir.path())? {
             let result_entry = result_entry?;

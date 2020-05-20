@@ -1,14 +1,15 @@
 //! CLI driver of `dbgen`.
 
 use crate::{
+    error::Error,
     eval::{CompileContext, State, Table},
     format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
+    span::{Registry, ResultExt, SpanExt, S},
     value::{Value, TIMESTAMP_FORMAT},
     writer,
 };
 
-use anyhow::{bail, Context, Error};
 use chrono::{NaiveDateTime, ParseResult, Utc};
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use flate2::write::GzEncoder;
@@ -24,7 +25,6 @@ use rayon::{
 };
 use serde_derive::Deserialize;
 use std::{
-    error,
     fs::{create_dir_all, read_to_string, File},
     io::{self, sink, stdin, BufWriter, Read, Write},
     mem,
@@ -44,6 +44,7 @@ use xz2::write::XzEncoder;
 #[derive(StructOpt, Debug, Deserialize)]
 #[serde(default)]
 #[structopt(long_version(crate::FULL_VERSION), settings(&[NextLineHelp, UnifiedHelpMessage]))]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
     #[structopt(long)]
@@ -197,13 +198,20 @@ fn now_from_str(s: &str) -> ParseResult<NaiveDateTime> {
 /// Extension trait for `Result` to annotate it with a file path.
 trait PathResultExt {
     type Ok;
-    fn with_path(self, path: &Path) -> Result<Self::Ok, Error>;
+    fn with_path(self, action: &'static str, path: &Path) -> Result<Self::Ok, S<Error>>;
 }
 
-impl<T, E: error::Error + Send + Sync + 'static> PathResultExt for Result<T, E> {
+impl<T> PathResultExt for io::Result<T> {
     type Ok = T;
-    fn with_path(self, path: &Path) -> Result<T, Error> {
-        self.with_context(|| format!("with file {}...", path.display()))
+    fn with_path(self, action: &'static str, path: &Path) -> Result<T, S<Error>> {
+        self.map_err(|source| {
+            Error::Io {
+                action,
+                path: path.to_owned(),
+                source,
+            }
+            .no_span()
+        })
     }
 }
 
@@ -215,36 +223,33 @@ static WRITE_PROGRESS: AtomicU64 = AtomicU64::new(0);
 static WRITTEN_SIZE: AtomicU64 = AtomicU64::new(0);
 
 /// Reads the template file
-fn read_template_file(path: &Path) -> Result<String, Error> {
+fn read_template_file(path: &Path) -> Result<String, S<Error>> {
     if path == Path::new("-") {
         let mut buf = String::new();
         stdin().read_to_string(&mut buf).map(move |_| buf)
     } else {
         read_to_string(path)
     }
-    .context("failed to read template")
+    .with_path("read template", path)
 }
 
 /// Runs the CLI program.
-pub fn run(args: Args) -> Result<(), Error> {
+pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     let input = read_template_file(&args.template)?;
-    let mut template = Template::parse(&input, &args.initialize, args.schema_name.as_deref())?;
+    let mut template = Template::parse(&input, &args.initialize, args.schema_name.as_deref(), span_registry)?;
 
-    let pool = ThreadPoolBuilder::new()
-        .num_threads(args.jobs)
-        .build()
-        .context("failed to configure thread pool")?;
+    let pool = ThreadPoolBuilder::new().num_threads(args.jobs).build().no_span_err()?;
 
     if let Some(override_table_name) = &args.table_name {
         if template.tables.len() != 1 {
-            bail!("cannot use --table-name when template contains multiple tables");
+            return Err(Error::CannotUseTableNameForMultipleTables.no_span());
         }
-        template.tables[0].name = QName::parse(override_table_name)?;
+        template.tables[0].name = QName::parse(override_table_name).no_span_err()?;
     }
 
     let mut ctx = CompileContext::new(template.variables_count);
     ctx.zoneinfo = args.zoneinfo;
-    ctx.time_zone = ctx.parse_time_zone(&args.time_zone)?;
+    ctx.time_zone = ctx.parse_time_zone(&args.time_zone).no_span_err()?;
     ctx.current_timestamp = args.now.unwrap_or_else(|| Utc::now().naive_utc());
     let tables = template
         .tables
@@ -252,7 +257,7 @@ pub fn run(args: Args) -> Result<(), Error> {
         .map(|t| ctx.compile_table(t))
         .collect::<Result<_, _>>()?;
 
-    create_dir_all(&args.out_dir).context("failed to create output directory")?;
+    create_dir_all(&args.out_dir).with_path("create output directory", &args.out_dir)?;
 
     let compress_level = args.compress_level;
     let env = Env {
@@ -366,7 +371,12 @@ impl FromStr for RngName {
             "xorshift" => Self::XorShift,
             "pcg32" => Self::Pcg32,
             "step" => Self::Step,
-            _ => bail!("Unsupported RNG {}", name),
+            _ => {
+                return Err(Error::UnsupportedCliParameter {
+                    kind: "RNG",
+                    value: name.to_owned(),
+                })
+            }
         })
     }
 }
@@ -401,7 +411,12 @@ impl FromStr for FormatName {
         Ok(match name {
             "sql" => Self::Sql,
             "csv" => Self::Csv,
-            _ => bail!("Unsupported output format {}", name),
+            _ => {
+                return Err(Error::UnsupportedCliParameter {
+                    kind: "output format",
+                    value: name.to_owned(),
+                })
+            }
         })
     }
 }
@@ -442,7 +457,12 @@ impl FromStr for CompressionName {
             "gzip" | "gz" => Self::Gzip,
             "xz" => Self::Xz,
             "zstd" | "zst" => Self::Zstd,
-            _ => bail!("Unsupported compression format {}", name),
+            _ => {
+                return Err(Error::UnsupportedCliParameter {
+                    kind: "compression format",
+                    value: name.to_owned(),
+                })
+            }
         })
     }
 }
@@ -512,26 +532,28 @@ impl Write for FormatWriter<'_> {
 }
 
 impl writer::Writer for FormatWriter<'_> {
-    type Error = Error;
-
-    fn write_value(&mut self, value: &Value) -> Result<(), Self::Error> {
-        self.format.write_value(&mut self.writer, value).with_path(&self.path)
-    }
-    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), Self::Error> {
+    fn write_value(&mut self, value: &Value) -> Result<(), S<Error>> {
         self.format
-            .write_header(&mut self.writer, qualified_table_name)
-            .with_path(&self.path)
+            .write_value(self, value)
+            .with_path("write value", &self.path)
     }
-    fn write_value_separator(&mut self) -> Result<(), Self::Error> {
+    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), S<Error>> {
         self.format
-            .write_value_separator(&mut self.writer)
-            .with_path(&self.path)
+            .write_header(self, qualified_table_name)
+            .with_path("write value", &self.path)
     }
-    fn write_row_separator(&mut self) -> Result<(), Self::Error> {
-        self.format.write_row_separator(&mut self.writer).with_path(&self.path)
+    fn write_value_separator(&mut self) -> Result<(), S<Error>> {
+        self.format
+            .write_value_separator(self)
+            .with_path("write value", &self.path)
     }
-    fn write_trailer(&mut self) -> Result<(), Self::Error> {
-        self.format.write_trailer(&mut self.writer).with_path(&self.path)
+    fn write_row_separator(&mut self) -> Result<(), S<Error>> {
+        self.format
+            .write_row_separator(self)
+            .with_path("write value", &self.path)
+    }
+    fn write_trailer(&mut self) -> Result<(), S<Error>> {
+        self.format.write_trailer(self).with_path("write value", &self.path)
     }
 }
 
@@ -557,22 +579,22 @@ struct FileInfo {
 
 impl Env {
     /// Writes the `CREATE TABLE` schema files.
-    fn write_schema(&self) -> Result<(), Error> {
+    fn write_schema(&self) -> Result<(), S<Error>> {
         for table in &self.tables {
             let path = self.out_dir.join(format!("{}-schema.sql", table.name.unique_name()));
-            let mut file = BufWriter::new(File::create(&path).with_path(&path)?);
+            let mut file = BufWriter::new(File::create(&path).with_path("create schema file", &path)?);
             write!(
                 file,
                 "CREATE TABLE {} {}",
                 table.name.table_name(self.qualified),
                 table.content
             )
-            .with_path(&path)?;
+            .with_path("write schema file", &path)?;
         }
         Ok(())
     }
 
-    fn open_data_file(&self, path: &mut PathBuf) -> Result<Box<dyn Write>, Error> {
+    fn open_data_file(&self, path: &mut PathBuf) -> Result<Box<dyn Write>, S<Error>> {
         Ok(if self.no_data {
             Box::new(sink())
         } else if let Some((compression, level)) = self.compression {
@@ -580,14 +602,14 @@ impl Env {
             path_string.push(".");
             path_string.push(compression.extension());
             *path = PathBuf::from(path_string);
-            compression.wrap(File::create(&path).with_path(&path)?, level)
+            compression.wrap(File::create(&path).with_path("create data file", &path)?, level)
         } else {
-            Box::new(File::create(&path).with_path(&path)?)
+            Box::new(File::create(&path).with_path("create data file", &path)?)
         })
     }
 
     /// Writes the data file.
-    fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), Error> {
+    fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), S<Error>> {
         let path_suffix = format!(
             ".{0:01$}.{2}",
             info.file_index,

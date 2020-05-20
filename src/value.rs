@@ -1,7 +1,6 @@
 //! Values
 
 use chrono::{Duration, NaiveDateTime, TimeZone};
-use tzfile::ArcTz;
 use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
@@ -9,10 +8,11 @@ use std::{
     string::FromUtf8Error,
     sync::Arc,
 };
+use tzfile::ArcTz;
 
 use crate::{
     bytes::ByteString,
-    error::{Error, TryFromValueError},
+    error::Error,
     number::{Number, NumberError},
 };
 
@@ -21,7 +21,6 @@ pub const TIMESTAMP_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
 
 /// A scalar value.
 #[derive(Clone, Debug, PartialEq)]
-#[non_exhaustive]
 pub enum Value {
     /// Null.
     Null,
@@ -117,12 +116,6 @@ impl Value {
         Self::Number(Number::from_finite_f64(v))
     }
 
-    // /// Creates a potentially non-finite floating point value. Returns error if
-    // /// the value is indeed non-finite.
-    // pub fn try_from_f64(v: f64) -> Result<Self, Error> {
-    //     Ok(try_from_number!(Number::try_from(v), "{} overflowed", v))
-    // }
-
     /// Compares two values using the rules common among SQL implementations.
     ///
     /// * Comparing with NULL always return `None`.
@@ -132,19 +125,19 @@ impl Value {
     /// * Arrays are ordered lexicographically.
     /// * Comparing between different types are inconsistent among database
     ///     engines, thus this function will just error with `InvalidArguments`.
-    pub fn sql_cmp(&self, other: &Self, name: &'static str) -> Result<Option<Ordering>, Error> {
+    pub fn sql_cmp(&self, other: &Self) -> Result<Option<Ordering>, Error> {
         Ok(match (self, other) {
             (Self::Null, _) | (_, Self::Null) => None,
             (Self::Number(a), Self::Number(b)) => a.partial_cmp(b),
             (Self::Bytes(a), Self::Bytes(b)) => a.partial_cmp(b),
             (Self::Timestamp(a, _), Self::Timestamp(b, _)) => a.partial_cmp(b),
             (Self::Interval(a), Self::Interval(b)) => a.partial_cmp(b),
-            (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), |a, b| a.sql_cmp(b, name))?,
+            (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), |a, b| a.sql_cmp(b))?,
             _ => {
-                return Err(Error::InvalidArguments {
-                    name,
-                    cause: format!("cannot compare {} with {}", self, other),
-                });
+                return Err(Error::InvalidArguments(format!(
+                    "cannot compare {} with {}",
+                    self, other
+                )));
             }
         })
     }
@@ -163,13 +156,6 @@ impl Value {
 
     /// Adds two values using the rules common among SQL implementations.
     pub fn sql_add(&self, other: &Self) -> Result<Self, Error> {
-        self.sql_add_named(other, "+")
-    }
-
-    /// Adds two values using the rules common among SQL implementations.
-    ///
-    /// The method uses a custom name when reporting errors.
-    pub(crate) fn sql_add_named(&self, other: &Self, name: &'static str) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.add(*rhs), "{} + {}", lhs, rhs),
             (Self::Timestamp(ts, tz), Self::Interval(dur)) | (Self::Interval(dur), Self::Timestamp(ts, tz)) => {
@@ -187,10 +173,7 @@ impl Value {
                 Self::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
             }
             _ => {
-                return Err(Error::InvalidArguments {
-                    name,
-                    cause: format!("cannot add {} to {}", self, other),
-                });
+                return Err(Error::InvalidArguments(format!("cannot add {} to {}", self, other)));
             }
         })
     }
@@ -212,10 +195,10 @@ impl Value {
                 Self::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
             }
             _ => {
-                return Err(Error::InvalidArguments {
-                    name: "-",
-                    cause: format!("cannot subtract {} from {}", self, other),
-                });
+                return Err(Error::InvalidArguments(format!(
+                    "cannot subtract {} from {}",
+                    self, other
+                )));
             }
         })
     }
@@ -228,10 +211,10 @@ impl Value {
                 try_from_number_into_interval!(Number::from(*dur).mul(*m), "interval {} microsecond * {}", dur, m)
             }
             _ => {
-                return Err(Error::InvalidArguments {
-                    name: "*",
-                    cause: format!("cannot multiply {} with {}", self, other),
-                });
+                return Err(Error::InvalidArguments(format!(
+                    "cannot multiply {} with {}",
+                    self, other
+                )));
             }
         })
     }
@@ -244,10 +227,7 @@ impl Value {
                 try_from_number_into_interval!(Number::from(*dur).float_div(*d), "interval {} microsecond / {}", dur, d)
             }
             _ => {
-                return Err(Error::InvalidArguments {
-                    name: "/",
-                    cause: format!("cannot divide {} by {}", self, other),
-                });
+                return Err(Error::InvalidArguments(format!("cannot divide {} by {}", self, other)));
             }
         })
     }
@@ -257,10 +237,7 @@ impl Value {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.div(*rhs), "div({}, {})", lhs, rhs),
             _ => {
-                return Err(Error::InvalidArguments {
-                    name: "div",
-                    cause: format!("cannot divide {} by {}", self, other),
-                });
+                return Err(Error::InvalidArguments(format!("cannot divide {} by {}", self, other)));
             }
         })
     }
@@ -270,10 +247,10 @@ impl Value {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.rem(*rhs), "mod({}, {})", lhs, rhs),
             _ => {
-                return Err(Error::InvalidArguments {
-                    name: "mod",
-                    cause: format!("cannot compute remainder of {} by {}", self, other),
-                });
+                return Err(Error::InvalidArguments(format!(
+                    "cannot compute remainder of {} by {}",
+                    self, other
+                )));
             }
         })
     }
@@ -293,10 +270,9 @@ impl Value {
                 }
                 Self::Interval(interval) => write!(res, "INTERVAL {} MICROSECOND", interval).unwrap(),
                 Self::Array(_) => {
-                    return Err(Error::InvalidArguments {
-                        name: "||",
-                        cause: "cannot concatenate arrays using || operator".to_owned(),
-                    });
+                    return Err(Error::InvalidArguments(
+                        "cannot concatenate arrays using || operator".to_owned(),
+                    ))
                 }
             }
         }
@@ -307,14 +283,18 @@ impl Value {
     ///
     /// All nonzero numbers are considered "true", and both NULL and zero are
     /// considered "false". All other types cause the `InvalidArguments` error.
-    pub fn is_sql_true(&self, name: &'static str) -> Result<bool, Error> {
+    pub fn is_sql_true(&self) -> Result<bool, Error> {
         match self {
             Self::Null => Ok(false),
             Self::Number(n) => Ok(n.sql_sign() != Ordering::Equal),
-            _ => Err(Error::InvalidArguments {
-                name,
-                cause: format!("truth value of {} is undefined", self),
-            }),
+            _ => Err(Error::InvalidArguments(format!("truth value of {} is undefined", self))),
+        }
+    }
+
+    fn to_unexpected_value_type_error(&self, expected: &'static str) -> Error {
+        Error::UnexpectedValueType {
+            expected,
+            value: self.to_string(),
         }
     }
 }
@@ -322,17 +302,20 @@ impl Value {
 macro_rules! impl_try_from_value {
     ($T:ty, $name:expr) => {
         impl TryFrom<Value> for $T {
-            type Error = TryFromValueError;
+            type Error = Error;
 
             fn try_from(value: Value) -> Result<Self, Self::Error> {
-                Number::try_from(value)?
-                    .try_into()
-                    .map_err(|_| TryFromValueError($name))
+                if let Value::Number(n) = value {
+                    if let Ok(v) = n.try_into() {
+                        return Ok(v);
+                    }
+                }
+                Err(value.to_unexpected_value_type_error($name))
             }
         }
 
         impl TryFrom<Value> for Option<$T> {
-            type Error = TryFromValueError;
+            type Error = Error;
 
             fn try_from(value: Value) -> Result<Self, Self::Error> {
                 match value {
@@ -344,7 +327,7 @@ macro_rules! impl_try_from_value {
                     }
                     _ => {}
                 }
-                Err(TryFromValueError(concat!("nullable ", $name)))
+                Err(value.to_unexpected_value_type_error(concat!("nullable ", $name)))
             }
         }
     };
@@ -364,68 +347,68 @@ impl_try_from_value!(isize, "signed integer");
 impl_try_from_value!(f64, "floating point number");
 
 impl TryFrom<Value> for Number {
-    type Error = TryFromValueError;
+    type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Number(n) => Ok(n),
-            _ => Err(TryFromValueError("number")),
+            _ => Err(value.to_unexpected_value_type_error("number")),
         }
     }
 }
 
 impl TryFrom<Value> for ByteString {
-    type Error = TryFromValueError;
+    type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Bytes(bytes) => Ok(bytes),
-            _ => Err(TryFromValueError("byte string")),
+            _ => Err(value.to_unexpected_value_type_error("byte string")),
         }
     }
 }
 
 impl TryFrom<Value> for String {
-    type Error = TryFromValueError;
+    type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Bytes(bytes) => bytes.try_into().map_err(|_| TryFromValueError("string")),
-            _ => Err(TryFromValueError("string")),
+            Value::Bytes(bytes) if bytes.is_utf8() => Ok(bytes.try_into().unwrap()),
+            _ => Err(value.to_unexpected_value_type_error("string")),
         }
     }
 }
 
 impl TryFrom<Value> for Vec<u8> {
-    type Error = TryFromValueError;
+    type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Bytes(bytes) => Ok(bytes.into_bytes()),
-            _ => Err(TryFromValueError("bytes")),
+            _ => Err(value.to_unexpected_value_type_error("bytes")),
         }
     }
 }
 
 impl TryFrom<Value> for Option<bool> {
-    type Error = TryFromValueError;
+    type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Null => Ok(None),
             Value::Number(n) => Ok(Some(n.sql_sign() != Ordering::Equal)),
-            _ => Err(TryFromValueError("nullable boolean")),
+            _ => Err(value.to_unexpected_value_type_error("nullable boolean")),
         }
     }
 }
 
 impl TryFrom<Value> for Arc<[Value]> {
-    type Error = TryFromValueError;
+    type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
             Value::Array(v) => Ok(v),
-            _ => Err(TryFromValueError("array")),
+            _ => Err(value.to_unexpected_value_type_error("array")),
         }
     }
 }

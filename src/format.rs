@@ -3,12 +3,12 @@
 use crate::{bytes::ByteString, value::Value};
 
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
-use tzfile::ArcTz;
 use memchr::{memchr2_iter, memchr3_iter, memchr_iter};
 use std::{
     io::{Error, Write},
     slice,
 };
+use tzfile::ArcTz;
 
 /// An shared format description of how to serialize values into strings.
 pub trait Format {

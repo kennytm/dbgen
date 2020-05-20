@@ -4,7 +4,8 @@ use super::{args_1, args_3, args_4, Arguments, Function};
 use crate::{
     bytes::ByteString,
     error::Error,
-    eval::{CompileContext, Compiled, C},
+    eval::{CompileContext, C},
+    span::{Span, SpanExt, S},
     value::Value,
 };
 use std::{convert::TryInto, isize, ops::Range};
@@ -103,9 +104,8 @@ pub struct Substring(
 );
 
 impl Function for Substring {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = "substring";
-        let (mut input, start, length) = args_3(name, args, None, None, Some(None))?;
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let (mut input, start, length) = args_3(span, args, None, None, Some(None))?;
         let range = self.0.parse_sql_range(&input, start, length.unwrap_or(0));
         if length.is_some() {
             input.truncate(range.end);
@@ -113,7 +113,7 @@ impl Function for Substring {
         if range.start > 0 {
             input.drain_init(range.start);
         }
-        Ok(Compiled(C::Constant(input.into())))
+        Ok(C::Constant(input.into()))
     }
 }
 
@@ -128,16 +128,16 @@ pub struct CharLength;
 pub struct OctetLength;
 
 impl Function for CharLength {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let input = args_1::<ByteString>("char_length", args, None)?;
-        Ok(Compiled(C::Constant(input.char_len().into())))
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let input = args_1::<ByteString>(span, args, None)?;
+        Ok(C::Constant(input.char_len().into()))
     }
 }
 
 impl Function for OctetLength {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let input = args_1::<ByteString>("octet_length", args, None)?;
-        Ok(Compiled(C::Constant(input.len().into())))
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let input = args_1::<ByteString>(span, args, None)?;
+        Ok(C::Constant(input.len().into()))
     }
 }
 
@@ -151,14 +151,13 @@ pub struct Overlay(
 );
 
 impl Function for Overlay {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let name = "overlay";
-        let (mut input, placing, start, length) = args_4(name, args, None, None, None, Some(None))?;
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let (mut input, placing, start, length) = args_4(span, args, None, None, None, Some(None))?;
         #[allow(clippy::cast_possible_wrap)] // length will never > isize::MAX.
         let length = length.unwrap_or_else(|| self.0.length_of(&placing) as isize);
         let range = self.0.parse_sql_range(&input, start, length);
         input.splice(range, placing);
-        Ok(Compiled(C::Constant(input.into())))
+        Ok(C::Constant(input.into()))
     }
 }
 
@@ -169,8 +168,10 @@ impl Function for Overlay {
 pub struct Concat;
 
 impl Function for Concat {
-    fn compile(&self, _: &CompileContext, args: Arguments) -> Result<Compiled, Error> {
-        let result = Value::sql_concat(args.iter())?;
-        Ok(Compiled(C::Constant(result)))
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        match Value::sql_concat(args.iter().map(|arg| &arg.inner)) {
+            Ok(result) => Ok(C::Constant(result)),
+            Err(e) => Err(e.span(span)),
+        }
     }
 }

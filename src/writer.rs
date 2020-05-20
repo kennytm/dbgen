@@ -3,29 +3,27 @@
 use crate::{
     error::Error,
     eval::{State, Table},
+    span::{ResultExt, S},
     value::Value,
 };
 use std::{convert::TryInto, mem};
 
 /// A generic writer which could accept rows of values.
 pub trait Writer {
-    /// The error type returned by the write methods.
-    type Error: From<Error>;
-
     /// Writes a single value.
-    fn write_value(&mut self, value: &Value) -> Result<(), Self::Error>;
+    fn write_value(&mut self, value: &Value) -> Result<(), S<Error>>;
 
     /// Writes the content of an INSERT statement before all rows.
-    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), Self::Error>;
+    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), S<Error>>;
 
     /// Writes the separator between the every value.
-    fn write_value_separator(&mut self) -> Result<(), Self::Error>;
+    fn write_value_separator(&mut self) -> Result<(), S<Error>>;
 
     /// Writes the separator between the every row.
-    fn write_row_separator(&mut self) -> Result<(), Self::Error>;
+    fn write_row_separator(&mut self) -> Result<(), S<Error>>;
 
     /// Writes the content of an INSERT statement after all rows.
-    fn write_trailer(&mut self) -> Result<(), Self::Error>;
+    fn write_trailer(&mut self) -> Result<(), S<Error>>;
 }
 
 /// The state of a table within [`Env`].
@@ -59,13 +57,13 @@ impl<'a, W: Writer> Env<'a, W> {
         tables: &'a [Table],
         state: &'a mut State,
         qualified: bool,
-        mut new_writer: impl FnMut(&Table) -> Result<W, W::Error>,
-    ) -> Result<Self, W::Error> {
+        mut new_writer: impl FnMut(&Table) -> Result<W, S<Error>>,
+    ) -> Result<Self, S<Error>> {
         Ok(Self {
             tables: tables
                 .iter()
                 .map(|table| {
-                    Ok::<_, W::Error>(TableState {
+                    Ok::<_, S<Error>>(TableState {
                         table,
                         writer: new_writer(table)?,
                         fresh: true,
@@ -83,7 +81,7 @@ impl<'a, W: Writer> Env<'a, W> {
         self.tables.iter_mut().map(|table| (table.table, &mut table.writer))
     }
 
-    fn write_one_row(&mut self, table_index: usize) -> Result<(), W::Error> {
+    fn write_one_row(&mut self, table_index: usize) -> Result<(), S<Error>> {
         let table = &mut self.tables[table_index];
 
         if mem::take(&mut table.empty) {
@@ -105,14 +103,7 @@ impl<'a, W: Writer> Env<'a, W> {
             let child_table = &mut self.tables[*child];
             child_table.fresh = false;
 
-            let count =
-                count
-                    .eval(self.state)?
-                    .try_into()
-                    .map_err(|source| Error::NonIntegralGeneratedNumberOfRows {
-                        table: child_table.table.name.table_name(true).to_owned(),
-                        source,
-                    })?;
+            let count = count.eval(self.state)?.try_into().span_err(count.0.span)?;
 
             for r in 1..=count {
                 self.state.sub_row_num = r;
@@ -124,7 +115,7 @@ impl<'a, W: Writer> Env<'a, W> {
     }
 
     /// Writes one row from each root table
-    pub fn write_row(&mut self) -> Result<(), W::Error> {
+    pub fn write_row(&mut self) -> Result<(), S<Error>> {
         for table in &mut self.tables {
             table.fresh = true;
         }
@@ -142,7 +133,7 @@ impl<'a, W: Writer> Env<'a, W> {
     ///
     /// This method delegates to [`Writer::write_trailer()`] if any rows have been written out
     /// previously for a table. Otherwise, if no rows have been written, this method does nothing.
-    pub fn write_trailer(&mut self) -> Result<(), W::Error> {
+    pub fn write_trailer(&mut self) -> Result<(), S<Error>> {
         for table in &mut self.tables {
             if !mem::replace(&mut table.empty, true) {
                 table.writer.write_trailer()?;

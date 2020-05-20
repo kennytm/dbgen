@@ -33,5 +33,6 @@ pub mod number;
 pub mod parser;
 #[cfg(feature = "cli")]
 pub mod schemagen_cli;
+pub mod span;
 pub mod value;
 pub mod writer;

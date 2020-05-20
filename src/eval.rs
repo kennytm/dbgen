@@ -4,20 +4,14 @@ use crate::{
     error::Error,
     functions::{Arguments, Function},
     parser::{Expr, QName},
+    span::{ResultExt, Span, SpanExt, S},
     value::Value,
 };
-use chrono::{Utc, NaiveDateTime};
-use tzfile::{ArcTz, Tz};
+use chrono::{NaiveDateTime, Utc};
 use rand::{distributions::Bernoulli, seq::SliceRandom, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
-use std::{
-    cmp::Ordering,
-    convert::{TryFrom, TryInto},
-    fmt,
-    sync::Arc,
-    fs,
-    path::PathBuf,
-};
+use std::{cmp::Ordering, fmt, fs, path::PathBuf, sync::Arc};
+use tzfile::{ArcTz, Tz};
 use zipf::ZipfDistribution;
 
 /// Environment information shared by all compilations
@@ -50,8 +44,15 @@ impl CompileContext {
             Utc.into()
         } else {
             let path = self.zoneinfo.join(tz);
-            let content = fs::read(&path).map_err(|e| Error::Io { path, source: e.into() })?;
-            Tz::parse(tz, &content).map_err(|source| Error::InvalidTimeZone { time_zone: tz.to_owned(), source })?
+            let content = fs::read(&path).map_err(|source| Error::Io {
+                action: "read time zone file",
+                path,
+                source,
+            })?;
+            Tz::parse(tz, &content).map_err(|source| Error::InvalidTimeZone {
+                time_zone: tz.to_owned(),
+                source,
+            })?
         }))
     }
 }
@@ -119,7 +120,7 @@ pub struct Table {
 
 impl CompileContext {
     /// Compiles a table.
-    pub fn compile_table(&self, table: crate::parser::Table) -> Result<Table, Error> {
+    pub fn compile_table(&self, table: crate::parser::Table) -> Result<Table, S<Error>> {
         Ok(Table {
             name: table.name,
             content: table.content,
@@ -139,17 +140,17 @@ pub struct Row(Vec<Compiled>);
 
 impl CompileContext {
     /// Compiles a vector of parsed expressions into a row.
-    pub fn compile_row(&self, exprs: Vec<Expr>) -> Result<Row, Error> {
+    pub fn compile_row(&self, exprs: Vec<S<Expr>>) -> Result<Row, S<Error>> {
         Ok(Row(exprs
             .into_iter()
             .map(|e| self.compile(e))
-            .collect::<Result<Vec<_>, Error>>()?))
+            .collect::<Result<_, _>>()?))
     }
 }
 
 impl Row {
     /// Evaluates the row into a vector of values.
-    pub fn eval(&self, state: &mut State) -> Result<Vec<Value>, Error> {
+    pub fn eval(&self, state: &mut State) -> Result<Vec<Value>, S<Error>> {
         let mut result = Vec::with_capacity(self.0.len());
         for compiled in &self.0 {
             result.push(compiled.eval(state)?);
@@ -160,7 +161,7 @@ impl Row {
 
 /// Interior of a compiled expression.
 #[derive(Clone, Debug)]
-pub(crate) enum C {
+pub enum C {
     /// The row number.
     RowNum,
     /// The derived row number.
@@ -214,25 +215,20 @@ pub(crate) enum C {
     RandUuid,
 }
 
-/// A compiled expression
-#[derive(Clone, Debug)]
-pub struct Compiled(pub(crate) C);
-
-impl TryFrom<Compiled> for Value {
-    type Error = ();
-
-    fn try_from(compiled: Compiled) -> Result<Self, Self::Error> {
-        match compiled.0 {
-            C::Constant(value) => Ok(value),
-            _ => Err(()),
-        }
+impl C {
+    fn span(self, span: Span) -> Compiled {
+        Compiled(S { span, inner: self })
     }
 }
 
+/// A compiled expression
+#[derive(Clone, Debug)]
+pub struct Compiled(pub(crate) S<C>);
+
 impl CompileContext {
     /// Compiles an expression.
-    pub fn compile(&self, expr: Expr) -> Result<Compiled, Error> {
-        Ok(Compiled(match expr {
+    pub fn compile(&self, expr: S<Expr>) -> Result<Compiled, S<Error>> {
+        Ok(match expr.inner {
             Expr::RowNum => C::RowNum,
             Expr::SubRowNum => C::SubRowNum,
             Expr::CurrentTimestamp => C::Constant(Value::Timestamp(self.current_timestamp, self.time_zone.clone())),
@@ -245,8 +241,14 @@ impl CompileContext {
                     .map(|e| self.compile(e))
                     .collect::<Result<Vec<_>, _>>()?;
                 if args.iter().all(Compiled::is_constant) {
-                    let args = args.into_iter().map(|c| c.try_into().unwrap()).collect();
-                    function.compile(self, args)?.0
+                    let args = args
+                        .into_iter()
+                        .map(|c| match c.0.inner {
+                            C::Constant(v) => v.span(c.0.span),
+                            _ => unreachable!(),
+                        })
+                        .collect();
+                    function.compile(self, expr.span, args)?
                 } else {
                     C::RawFunction {
                         function,
@@ -259,16 +261,16 @@ impl CompileContext {
                 conditions,
                 otherwise,
             } => {
-                let value = value.map(|v| Ok::<_, Error>(Box::new(self.compile(*v)?))).transpose()?;
+                let value = value.map(|v| Ok::<_, _>(Box::new(self.compile(*v)?))).transpose()?;
                 let conditions = conditions
                     .into_iter()
                     .map(|(p, r)| Ok((self.compile(p)?, self.compile(r)?)))
-                    .collect::<Result<Vec<_>, Error>>()?
+                    .collect::<Result<Vec<_>, _>>()?
                     .into_boxed_slice();
                 let otherwise = Box::new(if let Some(o) = otherwise {
                     self.compile(*o)?
                 } else {
-                    Compiled(C::Constant(Value::Null))
+                    C::Constant(Value::Null).span(expr.span)
                 });
                 C::CaseValueWhen {
                     value,
@@ -276,32 +278,33 @@ impl CompileContext {
                     otherwise,
                 }
             }
-        }))
+        }
+        .span(expr.span))
     }
 }
 
 impl Compiled {
     /// Returns whether this compiled value is a constant.
     pub fn is_constant(&self) -> bool {
-        match self.0 {
-            C::Constant(_) => true,
-            _ => false,
-        }
+        matches!(self.0.inner, C::Constant(_))
     }
 
     /// Evaluates a compiled expression and updates the state. Returns the evaluated value.
-    pub fn eval(&self, state: &mut State) -> Result<Value, Error> {
-        Ok(match &self.0 {
+    pub fn eval(&self, state: &mut State) -> Result<Value, S<Error>> {
+        let span = self.0.span;
+        Ok(match &self.0.inner {
             C::RowNum => state.row_num.into(),
             C::SubRowNum => state.sub_row_num.into(),
             C::Constant(v) => v.clone(),
             C::RawFunction { function, args } => {
                 let mut eval_args = Arguments::with_capacity(args.len());
                 for c in &**args {
-                    eval_args.push(c.eval(state)?);
+                    eval_args.push(c.eval(state)?.span(c.0.span));
                 }
-                let compiled = (*function).compile(&state.compile_context, eval_args)?;
-                compiled.eval(state)?
+                (*function)
+                    .compile(&state.compile_context, span, eval_args)?
+                    .span(span)
+                    .eval(state)?
             }
             C::GetVariable(index) => state.compile_context.variables[*index].clone(),
             C::SetVariable(index, c) => {
@@ -317,8 +320,9 @@ impl Compiled {
             } => {
                 let value = value.eval(state)?;
                 for (p, r) in &**conditions {
+                    let p_span = p.0.span;
                     let p = p.eval(state)?;
-                    if value.sql_cmp(&p, "when")? == Some(Ordering::Equal) {
+                    if value.sql_cmp(&p).span_err(p_span)? == Some(Ordering::Equal) {
                         return r.eval(state);
                     }
                 }
@@ -331,7 +335,7 @@ impl Compiled {
                 otherwise,
             } => {
                 for (p, r) in &**conditions {
-                    if p.eval(state)?.is_sql_true("when")? {
+                    if p.eval(state)?.is_sql_true().span_err(p.0.span)? {
                         return r.eval(state);
                     }
                 }
