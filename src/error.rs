@@ -113,6 +113,13 @@ pub enum Error {
         /// Value provided by user.
         value: String,
     },
+
+    /// Forced panic.
+    #[error("runtime panic: {message}")]
+    Panic {
+        /// The panic message.
+        message: String,
+    },
 }
 
 impl fmt::Display for S<Error> {

@@ -838,7 +838,7 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 
 /// Obtains a function from its name.
 fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
-    use functions::{array, ops, rand, string};
+    use functions::{array, ops, rand, string, debug};
 
     Ok(match name {
         "rand.regex" => &rand::Regex,
@@ -865,6 +865,7 @@ fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
         "octet_length" => &string::OctetLength,
         "coalesce" => &ops::Coalesce,
         "generate_series" => &array::GenerateSeries,
+        "debug.panic" => &debug::Panic,
         _ => return Err(Error::UnknownFunction),
     })
 }

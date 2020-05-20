@@ -14,6 +14,7 @@ pub mod ops;
 pub mod rand;
 pub mod string;
 pub mod time;
+pub mod debug;
 
 /// Container of the arguments passed to functions.
 pub type Arguments = smallvec::SmallVec<[S<Value>; 2]>;

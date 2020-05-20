@@ -428,6 +428,26 @@ From highest to lowest precedence:
 
     Returns a new array by shuffling *arr*.
 
+### Debugging
+
+* **debug.panic('X', 'Y', 'Z')**
+
+    Causes the generation to fail with error when this function is executed. The input to
+    `debug.panic()` will be evaluated and printed out, in the form like:
+
+    ```
+    Error: runtime panic:
+     1. X
+     2. Y
+     3. Z
+      --> 99:3
+       |
+    99 | {{ debug.panic('X', 'Y', 'Z') }}␊
+       |    ^-------------------------^
+       |
+       =
+    ```
+
 ### Miscellaneous
 
 * **CASE *value* WHEN *p1* THEN *r1* WHEN *p2* THEN *r2* ELSE *ro* END**
