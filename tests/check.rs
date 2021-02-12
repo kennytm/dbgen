@@ -5,7 +5,9 @@ use dbgen::{
 use diff::{lines, Result as DiffResult};
 use serde_json::from_reader;
 use std::{
+    env,
     error::Error,
+    ffi::OsStr,
     fs::{read, read_dir, remove_file, File},
     path::Path,
     str::from_utf8,
@@ -20,8 +22,12 @@ fn run_test() {
 fn main() -> Result<(), Box<dyn Error>> {
     let out_dir = tempdir()?;
 
+    let no_print_diff = env::var_os("DIFF").as_deref() == Some(OsStr::new("0"));
+
     let data_dir = Path::new(file!()).with_file_name("data");
     let zoneinfo_dir = Path::new(file!()).with_file_name("zoneinfo");
+    let mut content_differed = false;
+
     for child_dir in read_dir(data_dir)? {
         let child_dir = child_dir?;
         if !child_dir.file_type()?.is_dir() {
@@ -46,9 +52,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             let expected_content = read(expected_path)?;
             let actual_content = read(&actual_path)?;
             if expected_content != actual_content {
-                if let (Ok(expected_string), Ok(actual_string)) =
-                    (from_utf8(&expected_content), from_utf8(&actual_content))
-                {
+                content_differed = true;
+                let expected_string = from_utf8(&expected_content)?;
+                let actual_string = from_utf8(&actual_content)?;
+                if no_print_diff {
+                    eprintln!("\x1b[32m{}\x1b[0m", actual_string);
+                } else {
                     for diff in lines(&expected_string, &actual_string) {
                         match diff {
                             DiffResult::Left(missing) => {
@@ -63,11 +72,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                 }
-                panic!("CONTENT DIFFERED");
             }
             remove_file(actual_path)?;
         }
     }
+
+    assert!(!content_differed);
 
     Ok(())
 }
