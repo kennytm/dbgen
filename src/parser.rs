@@ -231,15 +231,16 @@ impl Template {
         if let Some(schema) = override_schema {
             alloc.set_schema_name(schema).span_err(Span::default())?;
         }
-        let mut template = Self::default();
-
-        template.global_exprs = init_globals
-            .iter()
-            .map(|init_global_input| {
-                let pairs = TemplateParser::parse(Rule::stmt, init_global_input).span_err(Span::default())?;
-                Ok(alloc.stmt_from_pairs(pairs)?.span(Span::default()))
-            })
-            .collect::<Result<_, _>>()?;
+        let mut template = Self {
+            global_exprs: init_globals
+                .iter()
+                .map(|init_global_input| {
+                    let pairs = TemplateParser::parse(Rule::stmt, init_global_input).span_err(Span::default())?;
+                    Ok(alloc.stmt_from_pairs(pairs)?.span(Span::default()))
+                })
+                .collect::<Result<_, _>>()?,
+            ..Self::default()
+        };
 
         let pairs = TemplateParser::parse(Rule::create_table, input).span_err(Span::default())?;
         let mut table_map = HashMap::new();
@@ -601,6 +602,8 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates a local variable expression `@x`.
+    // allow clippy::unnecessary_wraps for consistency with other similarly named functions.
+    #[allow(clippy::unnecessary_wraps)]
     fn expr_get_variable_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let pair = pairs.next().unwrap();
         Ok(Expr::GetVariable(self.allocate(pair.as_str())))

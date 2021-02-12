@@ -114,12 +114,10 @@ impl Function for Logic {
             if let Some(v) = arg? {
                 if v == self.identity {
                     continue;
-                } else {
-                    return Ok(C::Constant(v.into()));
                 }
-            } else {
-                result = None;
+                return Ok(C::Constant(v.into()));
             }
+            result = None;
         }
         Ok(C::Constant(result.into()))
     }
