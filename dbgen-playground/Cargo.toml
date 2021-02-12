@@ -1,0 +1,17 @@
+[package]
+name = "dbgen-playground"
+version = "0.8.0"
+authors = ["kennytm <kennytm@gmail.com>"]
+edition = "2018"
+description = "dbgen playground"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dbgen = { path = "../", default-features = false }
+chrono = { version = "0.4", default-features = false }
+wasm-bindgen = { version = "0.2", features = ["serde-serialize"] }
+rand = { version = "0.8", default-features = false }
+rand_hc = "0.3"

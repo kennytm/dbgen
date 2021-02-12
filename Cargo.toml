@@ -11,11 +11,8 @@ readme = "README.md"
 keywords = ["cli", "generator", "database", "fake"]
 categories = ["command-line-utilities", "simulation"]
 
-[badges]
-travis-ci = { repository = "kennytm/dbgen" }
-is-it-maintained-issue-resolution = { repository = "kennytm/dbgen" }
-is-it-maintained-open-issues = { repository = "kennytm/dbgen" }
-maintenance = { status = "actively-developed" }
+[workspace]
+members = ["dbgen-playground"]
 
 [dependencies]
 structopt = { version = "0.3", optional = true }
