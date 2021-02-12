@@ -21,4 +21,3 @@ impl Function for Panic {
         Err(Error::Panic { message }.span(span))
     }
 }
-

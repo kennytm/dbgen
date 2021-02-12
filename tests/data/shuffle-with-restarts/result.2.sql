@@ -1,22 +1,22 @@
 INSERT INTO result VALUES
+('Five'),
+('Two'),
+('One'),
+('Four'),
 ('Three'),
-('Five'),
+('Three'),
 ('Two'),
-('Four'),
-('One'),
 ('One'),
 ('Five'),
-('Two'),
-('Four'),
-('Three');
+('Four');
 INSERT INTO result VALUES
+('Four'),
 ('Five'),
+('Two'),
 ('Three'),
 ('One'),
-('Two'),
-('Four'),
-('Two'),
-('One'),
 ('Three'),
+('One'),
 ('Four'),
+('Two'),
 ('Five');

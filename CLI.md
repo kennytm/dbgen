@@ -65,15 +65,16 @@ More options
     Choose a random number generator. The default is `hc128` which should be the best in most
     situations. Supported alternatives are:
 
-    | RNG name          | Algorithm         |
-    |-------------------|-------------------|
-    | `chacha`          | [ChaCha20]        |
-    | `hc128`           | [HC-128]          |
-    | `isaac`           | [ISAAC]           |
-    | `isaac64`         | [ISAAC-64][ISAAC] |
-    | `xorshift`        | [Xorshift]        |
-    | `pcg32`           | [PCG32]           |
-    | `step`            | Step sequence     |
+    | RNG name          | Algorithm             |
+    |-------------------|-----------------------|
+    | `chacha12`        | [ChaCha12][ChaCha20]  |
+    | `chacha20`        | [ChaCha20]            |
+    | `hc128`           | [HC-128]              |
+    | `isaac`           | [ISAAC]               |
+    | `isaac64`         | [ISAAC-64][ISAAC]     |
+    | `xorshift`        | [Xorshift]            |
+    | `pcg32`           | [PCG32]               |
+    | `step`            | Step sequence         |
 
 * `-j «N»`, `--jobs «N»`
 

@@ -1,6 +1,6 @@
 INSERT INTO head VALUES
-(1, 1, 2300);
+(1, 1, 4500);
 INSERT INTO head VALUES
-(2, 1, 4000);
+(2, 1, 1100);
 INSERT INTO head VALUES
 (3, 1, 8800);

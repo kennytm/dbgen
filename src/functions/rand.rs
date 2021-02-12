@@ -8,8 +8,6 @@ use crate::{
     span::{ResultExt, Span, SpanExt, S},
     value::Value,
 };
-use rand::distributions::BernoulliError;
-use rand_distr::NormalError;
 use std::{convert::TryFrom, sync::Arc};
 use zipf::ZipfDistribution;
 
@@ -84,7 +82,7 @@ pub struct Zipf;
 impl Function for Zipf {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
         let (count, exponent) = args_2(span, args, None, None)?;
-        Ok(C::RandZipf(ZipfDistribution::new(count, exponent).map_err(|_| {
+        Ok(C::RandZipf(ZipfDistribution::new(count, exponent).map_err(|()| {
             Error::InvalidArguments(format!(
                 "count ({}) and exponent ({}) must be positive",
                 count, exponent
@@ -105,9 +103,7 @@ impl Function for LogNormal {
         let (mean, std_dev) = args_2::<f64, f64>(span, args, None, None)?;
         let std_dev = std_dev.abs();
         Ok(C::RandLogNormal(rand_distr::LogNormal::new(mean, std_dev).map_err(
-            |NormalError::StdDevTooSmall| {
-                Error::InvalidArguments(format!("standard deviation ({}) must >= 0", std_dev)).span(span)
-            },
+            |e| Error::InvalidArguments(format!("standard deviation ({}) {}", std_dev, e)).span(span),
         )?))
     }
 }
@@ -121,11 +117,9 @@ pub struct Bool;
 impl Function for Bool {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
         let p = args_1(span, args, None)?;
-        Ok(C::RandBool(rand_distr::Bernoulli::new(p).map_err(
-            |BernoulliError::InvalidProbability| {
-                Error::InvalidArguments(format!("probability ({}) must be inside [0, 1]", p)).span(span)
-            },
-        )?))
+        Ok(C::RandBool(rand_distr::Bernoulli::new(p).map_err(|e| {
+            Error::InvalidArguments(format!("probability ({}) {}", p, e)).span(span)
+        })?))
     }
 }
 

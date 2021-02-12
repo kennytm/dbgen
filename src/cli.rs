@@ -16,7 +16,7 @@ use flate2::write::GzEncoder;
 use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
 use rand::{
-    rngs::{mock::StepRng, OsRng, StdRng},
+    rngs::{mock::StepRng, OsRng},
     Rng, RngCore, SeedableRng,
 };
 use rayon::{
@@ -39,6 +39,8 @@ use structopt::{
     StructOpt,
 };
 use xz2::write::XzEncoder;
+
+pub(crate) type Seed = <rand_hc::Hc128Rng as SeedableRng>::Seed;
 
 /// Arguments to the `dbgen` CLI program.
 #[derive(StructOpt, Debug, Deserialize)]
@@ -92,7 +94,7 @@ pub struct Args {
 
     /// Random number generator seed (should have 64 hex digits).
     #[structopt(short, long, parse(try_from_str = seed_from_str))]
-    pub seed: Option<<StdRng as SeedableRng>::Seed>,
+    pub seed: Option<Seed>,
 
     /// Number of jobs to run in parallel, default to number of CPUs.
     #[structopt(short, long, default_value = "0")]
@@ -176,8 +178,8 @@ impl Default for Args {
 }
 
 /// Parses a 64-digit hex string into an RNG seed.
-pub(crate) fn seed_from_str(s: &str) -> Result<<StdRng as SeedableRng>::Seed, DecodeError> {
-    let mut seed = <StdRng as SeedableRng>::Seed::default();
+pub(crate) fn seed_from_str(s: &str) -> Result<Seed, DecodeError> {
+    let mut seed = Seed::default();
 
     if HEXLOWER_PERMISSIVE.decode_len(s.len())? != seed.len() {
         return Err(DecodeError {
@@ -281,7 +283,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     if show_progress {
         println!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&meta_seed));
     }
-    let mut seeding_rng = StdRng::from_seed(meta_seed);
+    let mut seeding_rng = rand_hc::Hc128Rng::from_seed(meta_seed);
 
     let files_count = args.files_count;
     let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
@@ -344,8 +346,10 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
 /// Names of random number generators supported by `dbgen`.
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub enum RngName {
+    /// ChaCha12
+    ChaCha12,
     /// ChaCha20
-    ChaCha,
+    ChaCha20,
     /// HC-128
     Hc128,
     /// ISAAC
@@ -364,7 +368,8 @@ impl FromStr for RngName {
     type Err = Error;
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Ok(match name {
-            "chacha" => Self::ChaCha,
+            "chacha12" => Self::ChaCha12,
+            "chacha" | "chacha20" => Self::ChaCha20,
             "hc128" => Self::Hc128,
             "isaac" => Self::Isaac,
             "isaac64" => Self::Isaac64,
@@ -383,9 +388,10 @@ impl FromStr for RngName {
 
 impl RngName {
     /// Creates an RNG engine given the name. The RNG engine instance will be seeded from `src`.
-    fn create(self, src: &mut StdRng) -> Box<dyn RngCore + Send> {
+    fn create(self, src: &mut rand_hc::Hc128Rng) -> Box<dyn RngCore + Send> {
         match self {
-            Self::ChaCha => Box::new(rand_chacha::ChaChaRng::from_seed(src.gen())),
+            Self::ChaCha12 => Box::new(rand_chacha::ChaCha12Rng::from_seed(src.gen())),
+            Self::ChaCha20 => Box::new(rand_chacha::ChaCha20Rng::from_seed(src.gen())),
             Self::Hc128 => Box::new(rand_hc::Hc128Rng::from_seed(src.gen())),
             Self::Isaac => Box::new(rand_isaac::IsaacRng::from_seed(src.gen())),
             Self::Isaac64 => Box::new(rand_isaac::Isaac64Rng::from_seed(src.gen())),
@@ -650,7 +656,7 @@ fn run_progress_thread(total_rows: u64) {
     #[allow(clippy::non_ascii_literal)]
     const TICK_FORMAT: &str = "🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛";
 
-    let mut mb = MultiBar::new();
+    let mb = MultiBar::new();
 
     let mut pb = mb.create_bar(total_rows);
 

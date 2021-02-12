@@ -2,12 +2,8 @@
 
 use crate::{error::Error, parser::QName};
 use data_encoding::HEXLOWER_PERMISSIVE;
-use rand::{
-    rngs::{OsRng, StdRng},
-    seq::SliceRandom,
-    Rng, RngCore, SeedableRng,
-};
-use rand_distr::{weighted::WeightedIndex, Distribution, LogNormal, Pareto};
+use rand::{rngs::OsRng, seq::SliceRandom, Rng, RngCore, SeedableRng};
+use rand_distr::{Distribution, LogNormal, Pareto, WeightedIndex};
 use std::{
     collections::{BTreeSet, HashSet},
     f64::consts::LOG2_10,
@@ -50,7 +46,7 @@ pub struct Args {
 
     /// Random number generator seed (should have 64 hex digits).
     #[structopt(long, parse(try_from_str = crate::cli::seed_from_str))]
-    pub seed: Option<<StdRng as SeedableRng>::Seed>,
+    pub seed: Option<crate::cli::Seed>,
 
     /// Additional arguments passed to every `dbgen` invocation
     pub args: Vec<String>,
@@ -101,7 +97,7 @@ type ColumnGenerator = fn(Dialect, &mut dyn RngCore) -> Column;
 
 #[allow(clippy::cast_precision_loss)]
 fn gen_int_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
-    let bytes = rng.gen_range(0, 8);
+    let bytes = rng.gen_range(0..8);
     let unsigned = rng.gen::<bool>();
     #[allow(clippy::match_same_arms)]
     let ty = match (dialect, unsigned, bytes) {
@@ -166,8 +162,8 @@ fn gen_serial_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
 
 #[allow(clippy::cast_precision_loss)]
 fn gen_decimal_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
-    let before = rng.gen_range(1, 19);
-    let after = rng.gen_range(0, 31);
+    let before = rng.gen_range(1..19);
+    let after = rng.gen_range(0..31);
     let limit = "9".repeat(before);
     Column {
         ty: format!("decimal({}, {}) not null", before + after, after),
@@ -186,7 +182,7 @@ const AVERAGE_LEN_PER_CHAR: f64 = 3.940_954_837_131_676;
 const VALID_CHARS_COUNT: f64 = 1_112_064.0;
 
 fn gen_varchar_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
-    let len = rng.gen_range(1, 255);
+    let len = rng.gen_range(1..=255);
     let residue = (VALID_CHARS_COUNT / (VALID_CHARS_COUNT - 1.0)).log2();
     Column {
         ty: format!("varchar({}) not null", len),
@@ -198,7 +194,7 @@ fn gen_varchar_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
 }
 
 fn gen_char_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
-    let len = rng.gen_range(1, 255);
+    let len = rng.gen_range(1..=255);
     let factor = VALID_CHARS_COUNT.log2();
     Column {
         ty: format!("char({}) not null", len),
@@ -256,7 +252,7 @@ const NEG_LOG2_PROB_FINITE_F32: f64 = 31.994_353_436_858_86;
 const NEG_LOG2_PROB_FINITE_F64: f64 = 63.999_295_387_023_41;
 
 fn gen_float_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
-    let bits = rng.gen_range(1, 3) * 32;
+    let bits = rng.gen_range(1..=2) * 32;
     let ty = match (bits, dialect) {
         (32, Dialect::MySQL) => "float not null",
         (64, Dialect::MySQL) => "double not null",
@@ -360,7 +356,7 @@ struct Table {
     schema: String,
     target_size: f64,
     rows_count: u64,
-    seed: <StdRng as SeedableRng>::Seed,
+    seed: crate::cli::Seed,
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -458,7 +454,7 @@ pub fn print_script(args: &Args) {
 
     let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
 
-    let rng = StdRng::from_seed(meta_seed);
+    let rng = rand_hc::Hc128Rng::from_seed(meta_seed);
     let extra_args = args.args.iter().map(|s| shlex::quote(s)).collect::<Vec<_>>().join(" ");
     let rows_count_per_file = args.rows_count * args.inserts_count;
     for (i, table) in gen_tables(args.dialect, rng, args.size, args.tables_count).enumerate() {
