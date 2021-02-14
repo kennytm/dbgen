@@ -458,24 +458,9 @@ pub fn print_script(args: &Args) {
     let extra_args = args.args.iter().map(|s| shlex::quote(s)).collect::<Vec<_>>().join(" ");
     let rows_count_per_file = args.rows_count * args.inserts_count;
     for (i, table) in gen_tables(args.dialect, rng, args.size, args.tables_count).enumerate() {
-        let mut files = (table.rows_count / rows_count_per_file) + 1;
-        let residue = table.rows_count % rows_count_per_file;
-        let (last_inserts, last_rows) = if residue == 0 {
-            files -= 1;
-            (args.inserts_count, args.rows_count)
-        } else {
-            let inserts = residue / args.rows_count;
-            let rows_residue = residue % args.rows_count;
-            if rows_residue == 0 {
-                (inserts, args.rows_count)
-            } else {
-                (inserts + 1, rows_residue)
-            }
-        };
         println!(
             "# table: s{}, rows count: {}, estimated size: {}\n\
-             dbgen{} -i - -o . -s {} -t {}.s{} -n {} -r {} -k {} \
-             --last-file-inserts-count {} --last-insert-rows-count {} \
+             dbgen{} -i - -o . -s {} -t {}.s{} -R {} -r {} -N {} \
              {} <<SCHEMAEOF\n{}\nSCHEMAEOF\n",
             i,
             table.rows_count,
@@ -484,11 +469,9 @@ pub fn print_script(args: &Args) {
             HEXLOWER_PERMISSIVE.encode(&table.seed),
             quoted_schema_name,
             i,
-            args.inserts_count,
+            rows_count_per_file,
             args.rows_count,
-            files,
-            last_inserts,
-            last_rows,
+            table.rows_count,
             extra_args,
             table.schema,
         );

@@ -2,7 +2,7 @@ CLI usage
 =========
 
 ```sh
-dbgen -i template.sql -o out_dir -k 25 -n 3000 -r 100
+dbgen -i template.sql -o out_dir -N 7500000 -R 300000 -r 100
 ```
 
 Common options
@@ -17,19 +17,17 @@ Common options
     The directory to store the generated files. If the directory does not exist, `dbgen` will try to
     create it.
 
-* `-k «N»`, `--files-count «N»`
+* `-N «N»`, `--total-count «N»`
 
-    Number of data files to generate.
+    Total number of rows to generate. Default is 1.
 
-* `-n «N»`, `--inserts-count «N»`
+* `-R «N»`, `--rows-per-file «N»`
 
-    Number of INSERT statements per file to generate.
+    Maximum number of rows per file. Default is 1.
 
 * `-r «N»`, `--rows-count «N»`
 
-    Number of rows per INSERT statements to generate.
-
-The total number of rows generated will be (files-count) × (inserts-count) × (rows-count).
+    Maximum number of rows per INSERT statement. Default is 1.
 
 More options
 ------------
@@ -98,17 +96,28 @@ More options
     | SQLite3     | No                                                              |
     | TransactSQL | No                                                              |
 
+    Backslashes in template strings are always ignored, regardless of this setting.
+
+* `-k «N»`, `--files-count «N»`
+
+    (Deprecated) Number of data files to generate.
+
+* `-n «N»`, `--inserts-count «N»`
+
+    (Deprecated) Number of INSERT statements per file to generate.
+
 * `--last-file-inserts-count «N»`
 
-    In the last data file, generate *N* INSERT statements instead of the value
+    (Deprecated) In the last data file, generate *N* INSERT statements instead of the value
     given by `--inserts-count`.
 
 * `--last-insert-rows-count «N»`
 
-    In the last INSERT statement of the last data file, generate *N* rows instead of the value
-    given by `--rows-count`.
+    (Deprecated) In the last INSERT statement of the last data file, generate *N* rows instead of
+    the value given by `--rows-count`.
 
-    These two options allow one to fine-tune the actual rows count of the table.
+    These four options provide an alternative way to specify the total number of rows. But they are
+    more difficult to manage, and are no longer recommended since v0.8.0.
 
 * `--time-zone «TZ»`
 

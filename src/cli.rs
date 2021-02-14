@@ -42,6 +42,32 @@ use xz2::write::XzEncoder;
 
 pub(crate) type Seed = <rand_hc::Hc128Rng as SeedableRng>::Seed;
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+struct RowArgs {
+    /// Number of files to generate (*k*).
+    files_count: u32,
+    /// Number of INSERT statements per normal file (*n*).
+    inserts_count: u32,
+    /// Number of INSERT statements in the last file.
+    last_file_inserts_count: u32,
+    /// Number of rows per INSERT statement (*r*).
+    rows_count: u32,
+    /// Number of rows in the final INSERT statement in a normal file.
+    final_insert_rows_count: u32,
+    /// Number of rows in the final INSERT statement in the last file.
+    last_file_final_insert_rows_count: u32,
+
+    /// Number of rows per normal file (*R*).
+    ///
+    /// Must be same as `(n - 1) * r + final_insert_rows_count`.
+    rows_per_file: u64,
+
+    /// Total number of rows to generate (*N*).
+    ///
+    /// Must be same as `(k - 1) * R + (last_file_inserts_count - 1) * r + last_file_final_insert_rows_count`.
+    total_count: u64,
+}
+
 /// Arguments to the `dbgen` CLI program.
 #[derive(StructOpt, Debug, Deserialize)]
 #[serde(default)]
@@ -83,6 +109,14 @@ pub struct Args {
     /// Number of rows of the last INSERT statement of the last file.
     #[structopt(long)]
     pub last_insert_rows_count: Option<u32>,
+
+    /// Total number of rows of all generated files.
+    #[structopt(short = "N", long, conflicts_with_all(&["files-count", "last-file-inserts-count", "last-insert-rows-count"]))]
+    pub total_count: Option<u64>,
+
+    /// Number of rows per file.
+    #[structopt(short = "R", long, conflicts_with_all(&["inserts-count"]))]
+    pub rows_per_file: Option<u64>,
 
     /// Escape backslashes when writing a string.
     #[structopt(long)]
@@ -158,6 +192,8 @@ impl Default for Args {
             rows_count: 1,
             last_file_inserts_count: None,
             last_insert_rows_count: None,
+            total_count: None,
+            rows_per_file: None,
             escape_backslash: false,
             template: PathBuf::default(),
             seed: None,
@@ -174,6 +210,64 @@ impl Default for Args {
             no_data: false,
             initialize: Vec::new(),
         }
+    }
+}
+
+impl Args {
+    /// Computes the row-related arguments.
+    fn row_args(&self) -> RowArgs {
+        let mut res = RowArgs {
+            rows_count: self.rows_count,
+            ..RowArgs::default()
+        };
+
+        // compute the rows per file.
+        let rows_count = u64::from(self.rows_count);
+        if let Some(rows_per_file) = self.rows_per_file {
+            let (div, rem) = (rows_per_file / rows_count, rows_per_file % rows_count);
+            if rem == 0 {
+                res.inserts_count = div as u32;
+                res.final_insert_rows_count = res.rows_count;
+            } else {
+                res.inserts_count = (div as u32) + 1;
+                res.final_insert_rows_count = rem as u32;
+            }
+            res.rows_per_file = rows_per_file;
+        } else {
+            res.inserts_count = self.inserts_count;
+            res.final_insert_rows_count = self.rows_count;
+            res.rows_per_file = u64::from(self.inserts_count) * rows_count;
+        }
+
+        // compute the total number of rows.
+        if let Some(total_rows_count) = self.total_count {
+            let (div, rem) = (total_rows_count / res.rows_per_file, total_rows_count % res.rows_per_file);
+            if rem == 0 {
+                res.files_count = div as u32;
+                res.last_file_inserts_count = res.inserts_count;
+                res.last_file_final_insert_rows_count = res.final_insert_rows_count;
+            } else {
+                res.files_count = (div as u32) + 1;
+                let (div, rem) = (rem / rows_count, rem % rows_count);
+                if rem == 0 {
+                    res.last_file_inserts_count = div as u32;
+                    res.last_file_final_insert_rows_count = res.final_insert_rows_count;
+                } else {
+                    res.last_file_inserts_count = (div as u32) + 1;
+                    res.last_file_final_insert_rows_count = rem as u32;
+                }
+            }
+            res.total_count = total_rows_count;
+        } else {
+            res.files_count = self.files_count;
+            res.last_file_inserts_count = self.last_file_inserts_count.unwrap_or(res.inserts_count);
+            res.last_file_final_insert_rows_count = self.last_insert_rows_count.unwrap_or(res.final_insert_rows_count);
+            res.total_count = u64::from(res.files_count - 1) * res.rows_per_file
+                + u64::from(res.last_file_inserts_count - 1) * rows_count
+                + u64::from(res.last_file_final_insert_rows_count);
+        }
+
+        res
     }
 }
 
@@ -237,6 +331,7 @@ fn read_template_file(path: &Path) -> Result<String, S<Error>> {
 
 /// Runs the CLI program.
 pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
+    let row_args = args.row_args();
     let input = read_template_file(&args.template)?;
     let mut template = Template::parse(&input, &args.initialize, args.schema_name.as_deref(), span_registry)?;
 
@@ -285,13 +380,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     }
     let mut seeding_rng = rand_hc::Hc128Rng::from_seed(meta_seed);
 
-    let files_count = args.files_count;
-    let rows_per_file = u64::from(args.inserts_count) * u64::from(args.rows_count);
     let rng_name = args.rng;
-    let mut inserts_count = args.inserts_count;
-    let mut rows_count = args.rows_count;
-    let last_file_inserts_count = args.last_file_inserts_count.unwrap_or(inserts_count);
-    let last_insert_rows_count = args.last_insert_rows_count.unwrap_or(rows_count);
 
     // Evaluate the global expressions if necessary.
     if !template.global_exprs.is_empty() {
@@ -303,29 +392,29 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
 
     let progress_bar_thread = spawn(move || {
         if show_progress {
-            run_progress_thread(
-                u64::from(files_count - 1) * rows_per_file
-                    + u64::from(last_file_inserts_count - 1) * u64::from(rows_count)
-                    + u64::from(last_insert_rows_count),
-            );
+            run_progress_thread(row_args.total_count);
         }
     });
 
-    let iv = (0..files_count)
+    let iv = (0..row_args.files_count)
         .map(move |i| {
             let file_index = i + 1;
-            if file_index == files_count {
-                inserts_count = last_file_inserts_count;
-                rows_count = last_insert_rows_count;
-            }
             (
                 rng_name.create(&mut seeding_rng),
                 FileInfo {
                     file_index,
-                    inserts_count,
-                    last_insert_rows_count: rows_count,
+                    inserts_count: if file_index == row_args.files_count {
+                        row_args.last_file_inserts_count
+                    } else {
+                        row_args.inserts_count
+                    },
+                    last_insert_rows_count: if file_index == row_args.files_count {
+                        row_args.last_file_final_insert_rows_count
+                    } else {
+                        row_args.final_insert_rows_count
+                    },
                 },
-                u64::from(i) * rows_per_file + 1,
+                u64::from(i) * row_args.rows_per_file + 1,
             )
         })
         .collect::<Vec<_>>();
@@ -691,4 +780,149 @@ fn run_progress_thread(total_rows: u64) {
     speed_bar.finish();
 
     mb_thread.join().unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_row_args() {
+        let test_cases = vec![
+            (
+                Args {
+                    files_count: 11,
+                    inserts_count: 181,
+                    rows_count: 97,
+                    ..Args::default()
+                },
+                RowArgs {
+                    files_count: 11,
+                    inserts_count: 181,
+                    last_file_inserts_count: 181,
+                    rows_count: 97,
+                    final_insert_rows_count: 97,
+                    last_file_final_insert_rows_count: 97,
+                    rows_per_file: 17_557,
+                    total_count: 193_127,
+                },
+            ),
+            (
+                Args {
+                    files_count: 11,
+                    inserts_count: 181,
+                    rows_count: 97,
+                    last_file_inserts_count: Some(151),
+                    last_insert_rows_count: Some(53),
+                    ..Args::default()
+                },
+                RowArgs {
+                    files_count: 11,
+                    inserts_count: 181,
+                    last_file_inserts_count: 151,
+                    rows_count: 97,
+                    final_insert_rows_count: 97,
+                    last_file_final_insert_rows_count: 53,
+                    rows_per_file: 17_557,
+                    total_count: 190_173,
+                },
+            ),
+            (
+                Args {
+                    files_count: 11,
+                    rows_per_file: Some(18_013),
+                    rows_count: 97,
+                    ..Args::default()
+                },
+                RowArgs {
+                    files_count: 11,
+                    inserts_count: 186,
+                    last_file_inserts_count: 186,
+                    rows_count: 97,
+                    final_insert_rows_count: 68,
+                    last_file_final_insert_rows_count: 68,
+                    rows_per_file: 18_013,
+                    total_count: 198_143,
+                },
+            ),
+            (
+                Args {
+                    files_count: 11,
+                    rows_per_file: Some(17_557),
+                    rows_count: 97,
+                    last_file_inserts_count: Some(151),
+                    last_insert_rows_count: Some(53),
+                    ..Args::default()
+                },
+                RowArgs {
+                    files_count: 11,
+                    inserts_count: 181,
+                    last_file_inserts_count: 151,
+                    rows_count: 97,
+                    final_insert_rows_count: 97,
+                    last_file_final_insert_rows_count: 53,
+                    rows_per_file: 17_557,
+                    total_count: 190_173,
+                },
+            ),
+            (
+                Args {
+                    total_count: Some(190_173),
+                    rows_per_file: Some(17_557),
+                    rows_count: 97,
+                    ..Args::default()
+                },
+                RowArgs {
+                    files_count: 11,
+                    inserts_count: 181,
+                    last_file_inserts_count: 151,
+                    rows_count: 97,
+                    final_insert_rows_count: 97,
+                    last_file_final_insert_rows_count: 53,
+                    rows_per_file: 17_557,
+                    total_count: 190_173,
+                },
+            ),
+            (
+                Args {
+                    total_count: Some(198_143),
+                    rows_per_file: Some(18_013),
+                    rows_count: 97,
+                    ..Args::default()
+                },
+                RowArgs {
+                    files_count: 11,
+                    inserts_count: 186,
+                    last_file_inserts_count: 186,
+                    rows_count: 97,
+                    final_insert_rows_count: 68,
+                    last_file_final_insert_rows_count: 68,
+                    rows_per_file: 18_013,
+                    total_count: 198_143,
+                },
+            ),
+            (
+                Args {
+                    total_count: Some(199_909),
+                    rows_per_file: Some(18_013),
+                    rows_count: 97,
+                    ..Args::default()
+                },
+                RowArgs {
+                    files_count: 12,
+                    inserts_count: 186,
+                    last_file_inserts_count: 19,
+                    rows_count: 97,
+                    final_insert_rows_count: 68,
+                    last_file_final_insert_rows_count: 20,
+                    rows_per_file: 18_013,
+                    total_count: 199_909,
+                },
+            ),
+        ];
+
+        for (args, row_args) in test_cases {
+            assert_eq!(args.row_args(), row_args);
+        }
+    }
 }

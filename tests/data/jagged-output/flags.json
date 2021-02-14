@@ -1,7 +1,5 @@
 {
-    "files_count": 3,
-    "inserts_count": 5,
-    "rows_count": 7,
-    "last_file_inserts_count": 4,
-    "last_insert_rows_count": 1
+    "total_count": 92,
+    "rows_per_file": 35,
+    "rows_count": 7
 }
