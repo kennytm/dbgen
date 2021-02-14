@@ -55,25 +55,32 @@ impl Unit {
 #[test]
 fn test_parse_sql_range() {
     let b = ByteString::from("123456789".to_owned());
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 1, isize::MAX), 0..9);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 0, isize::MAX), 0..9);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, -100, isize::MAX), 0..9);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 3, isize::MAX), 2..9);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 9, isize::MAX), 8..9);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 100, isize::MAX), 9..9);
+    for unit in &[Unit::Octets, Unit::Characters] {
+        assert_eq!(unit.parse_sql_range(&b, 1, isize::MAX), 0..9);
+        assert_eq!(unit.parse_sql_range(&b, 0, isize::MAX), 0..9);
+        assert_eq!(unit.parse_sql_range(&b, -100, isize::MAX), 0..9);
+        assert_eq!(unit.parse_sql_range(&b, 3, isize::MAX), 2..9);
+        assert_eq!(unit.parse_sql_range(&b, 9, isize::MAX), 8..9);
+        assert_eq!(unit.parse_sql_range(&b, 100, isize::MAX), 9..9);
 
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 1, 1), 0..1);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 3, 5), 2..7);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 5, 99), 4..9);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 7, 0), 6..6);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 9, -99), 8..8);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 0, 5), 0..4);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, -70, 77), 0..6);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 70, 77), 9..9);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, -70, -77), 0..0);
-    assert_eq!(Unit::Octets.parse_sql_range(&b, 70, -77), 9..9);
+        assert_eq!(unit.parse_sql_range(&b, 1, 1), 0..1);
+        assert_eq!(unit.parse_sql_range(&b, 3, 5), 2..7);
+        assert_eq!(unit.parse_sql_range(&b, 5, 99), 4..9);
+        assert_eq!(unit.parse_sql_range(&b, 7, 0), 6..6);
+        assert_eq!(unit.parse_sql_range(&b, 9, -99), 8..8);
+        assert_eq!(unit.parse_sql_range(&b, 0, 5), 0..4);
+        assert_eq!(unit.parse_sql_range(&b, -70, 77), 0..6);
+        assert_eq!(unit.parse_sql_range(&b, 70, 77), 9..9);
+        assert_eq!(unit.parse_sql_range(&b, -70, -77), 0..0);
+        assert_eq!(unit.parse_sql_range(&b, 70, -77), 9..9);
+    }
 
     let b = ByteString::from("ßs≠🥰".to_owned());
+    // char 1 (ß) = index 0
+    // char 2 (s) = index 2
+    // char 3 (≠) = index 3
+    // char 4 (🥰) = index 6
+    // char ∞     = index 10
     assert_eq!(Unit::Characters.parse_sql_range(&b, 1, isize::MAX), 0..10);
     assert_eq!(Unit::Characters.parse_sql_range(&b, 2, isize::MAX), 2..10);
     assert_eq!(Unit::Characters.parse_sql_range(&b, 3, isize::MAX), 3..10);
@@ -92,6 +99,21 @@ fn test_parse_sql_range() {
     assert_eq!(Unit::Characters.parse_sql_range(&b, 70, 77), 10..10);
     assert_eq!(Unit::Characters.parse_sql_range(&b, -70, -77), 0..0);
     assert_eq!(Unit::Characters.parse_sql_range(&b, 70, -77), 10..10);
+
+    let b = ByteString::from("a-úţf".to_owned());
+    // char 1 (a) = index 0
+    // char 2 (-) = index 1
+    // char 3 (ú) = index 2
+    // char 4 (ţ) = index 4
+    // char 5 (f) = index 6
+    // char ∞     = index 7
+    assert_eq!(Unit::Characters.parse_sql_range(&b, 1, isize::MAX), 0..7);
+    assert_eq!(Unit::Characters.parse_sql_range(&b, 3, isize::MAX), 2..7);
+    assert_eq!(Unit::Characters.parse_sql_range(&b, 5, isize::MAX), 6..7);
+    assert_eq!(Unit::Characters.parse_sql_range(&b, 2, 3), 1..6);
+    assert_eq!(Unit::Characters.parse_sql_range(&b, 4, 1), 4..6);
+    assert_eq!(Unit::Characters.parse_sql_range(&b, 2, 0), 1..1);
+    assert_eq!(Unit::Characters.parse_sql_range(&b, 4, 0), 4..4);
 }
 
 //------------------------------------------------------------------------------

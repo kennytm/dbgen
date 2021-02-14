@@ -5,8 +5,7 @@ use rand_regex::{EncodedString, Encoding};
 use std::{
     cmp::Ordering,
     convert::TryFrom,
-    fmt,
-    io,
+    fmt, io,
     ops::Range,
     str::{from_utf8, from_utf8_unchecked},
 };
@@ -332,7 +331,8 @@ impl ByteString {
 
     /// Replaces the substring at `range` by a `replacement` string.
     pub fn splice(&mut self, range: Range<usize>, replacement: ByteString) {
-        if range.end <= self.ascii_len && replacement.ascii_len == replacement.len() {
+        let is_splice_ascii_into_ascii = range.end <= self.ascii_len && replacement.ascii_len == replacement.len();
+        if is_splice_ascii_into_ascii {
             // splice a full ASCII string into middle of ASCII region.
             self.ascii_len = self.ascii_len - range.len() + replacement.ascii_len;
         } else if range.start <= self.ascii_len {
@@ -342,7 +342,7 @@ impl ByteString {
         // in other cases the ASCII region is untouched, thus not changing ascii_len.
 
         let is_splice_utf8_into_utf8 = self.is_utf8 && replacement.is_utf8;
-        if is_splice_utf8_into_utf8 {
+        if is_splice_utf8_into_utf8 && !is_splice_ascii_into_ascii {
             // splicing UTF-8 text just requires the range to be at character boundaries.
             let s = unsafe { from_utf8_unchecked(&self.bytes) };
             self.is_utf8 = s.is_char_boundary(range.start) && s.is_char_boundary(range.end);
@@ -553,6 +553,7 @@ mod tests {
         let test_cases: Vec<(ByteString, usize, Encoding, &[u8])> = vec![
             ("abc".to_owned().into(), 2, Encoding::Ascii, b"c"),
             ("abc".to_owned().into(), 3, Encoding::Ascii, b""),
+            (b"\xc2\x80".to_vec().into(), 0, Encoding::Utf8, b"\xc2\x80"),
             (b"\xc2\x80".to_vec().into(), 1, Encoding::Binary, b"\x80"),
             (b"\xc2\x80".to_vec().into(), 2, Encoding::Ascii, b""),
             (b"\x80\xc2".to_vec().into(), 1, Encoding::Binary, b"\xc2"),
@@ -561,6 +562,74 @@ mod tests {
 
         for (mut target, drain_len, encoding, bytes) in test_cases {
             target.drain_init(drain_len);
+            assert_eq!(target.encoding(), encoding);
+            assert_eq!(target.as_bytes(), bytes);
+        }
+    }
+
+    #[test]
+    fn test_splice() {
+        let test_cases: Vec<(ByteString, Range<usize>, ByteString, Encoding, &[u8])> = vec![
+            (
+                "abcdef".to_owned().into(),
+                2..4,
+                "XYZ".to_owned().into(),
+                Encoding::Ascii,
+                b"abXYZef",
+            ),
+            (
+                "ghíj́ḱ".to_owned().into(),
+                1..4,
+                "lmnóṕ".to_owned().into(),
+                Encoding::Utf8,
+                "glmnóṕj́ḱ".as_bytes(),
+            ),
+            (
+                b"abc\xf1\xf2\xf3".to_vec().into(),
+                3..3,
+                "d".to_owned().into(),
+                Encoding::Binary,
+                b"abcd\xf1\xf2\xf3",
+            ),
+            (
+                b"abc\xf1\xf2\xf3".to_vec().into(),
+                4..4,
+                "d".to_owned().into(),
+                Encoding::Binary,
+                b"abc\xf1d\xf2\xf3",
+            ),
+            (
+                b"abc\xf1\xf2\xf3".to_vec().into(),
+                3..6,
+                "d".to_owned().into(),
+                Encoding::Ascii,
+                b"abcd",
+            ),
+            (
+                b"\xc2\x80\xc3\x81".to_vec().into(),
+                2..2,
+                b"\xc4\x82".to_vec().into(),
+                Encoding::Utf8,
+                b"\xc2\x80\xc4\x82\xc3\x81",
+            ),
+            (
+                b"\xc2\x80\xc3\x81".to_vec().into(),
+                1..3,
+                b"\xc4\x82".to_vec().into(),
+                Encoding::Binary,
+                b"\xc2\xc4\x82\x81",
+            ),
+            (
+                b"\xc2\x80\xc3\x81".to_vec().into(),
+                1..1,
+                b"\x82\xc4".to_vec().into(),
+                Encoding::Utf8,
+                b"\xc2\x82\xc4\x80\xc3\x81",
+            ),
+        ];
+
+        for (mut target, range, replacement, encoding, bytes) in test_cases {
+            target.splice(range, replacement);
             assert_eq!(target.encoding(), encoding);
             assert_eq!(target.as_bytes(), bytes);
         }
