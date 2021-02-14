@@ -4,6 +4,7 @@ use crate::{bytes::ByteString, value::Value};
 
 use chrono::{DateTime, Datelike, TimeZone, Timelike};
 use memchr::{memchr2_iter, memchr3_iter, memchr_iter};
+use rand_regex::Encoding;
 use std::{
     io::{Error, Write},
     slice,
@@ -142,7 +143,7 @@ fn write_with_escape(writer: &mut dyn Write, bytes: &[u8], rules: &[(u8, &[u8])]
 
 impl SqlFormat {
     fn write_bytes(&self, writer: &mut dyn Write, bytes: &ByteString) -> Result<(), Error> {
-        if bytes.is_binary() {
+        if bytes.encoding() == Encoding::Binary {
             writer.write_all(b"X'")?;
             for b in bytes.as_bytes() {
                 write!(writer, "{:02X}", b)?;

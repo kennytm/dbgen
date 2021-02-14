@@ -1,11 +1,11 @@
 //! Values
 
 use chrono::{Duration, NaiveDateTime, TimeZone};
+use rand_regex::EncodedString;
 use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
     fmt,
-    string::FromUtf8Error,
     sync::Arc,
 };
 use tzfile::ArcTz;
@@ -261,7 +261,7 @@ impl Value {
         for item in values {
             match item {
                 Self::Null => return Ok(Self::Null),
-                Self::Number(n) => write!(res, "{}", n).unwrap(),
+                Self::Number(n) => res.extend_number(n),
                 Self::Bytes(b) => res.extend_byte_string(b),
                 Self::Timestamp(timestamp, tz) => {
                     write!(res, "{}", tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)).unwrap()
@@ -369,11 +369,14 @@ impl TryFrom<Value> for ByteString {
 impl TryFrom<Value> for String {
     type Error = Error;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::Bytes(bytes) if bytes.is_utf8() => Ok(bytes.try_into().unwrap()),
-            _ => Err(value.to_unexpected_value_type_error("string")),
+    fn try_from(mut value: Value) -> Result<Self, Self::Error> {
+        if let Value::Bytes(bytes) = value {
+            match bytes.try_into() {
+                Ok(s) => return Ok(s),
+                Err(e) => value = Value::Bytes(e.0),
+            }
         }
+        Err(value.to_unexpected_value_type_error("string"))
     }
 }
 
@@ -435,8 +438,8 @@ impl From<ByteString> for Value {
     }
 }
 
-impl From<Result<String, FromUtf8Error>> for Value {
-    fn from(result: Result<String, FromUtf8Error>) -> Self {
+impl From<EncodedString> for Value {
+    fn from(result: EncodedString) -> Self {
         Self::Bytes(result.into())
     }
 }

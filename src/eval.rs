@@ -10,6 +10,7 @@ use crate::{
 use chrono::{NaiveDateTime, Utc};
 use rand::{distributions::Bernoulli, seq::SliceRandom, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
+use rand_regex::EncodedString;
 use std::{cmp::Ordering, fmt, fs, path::PathBuf, sync::Arc};
 use tzfile::{ArcTz, Tz};
 use zipf::ZipfDistribution;
@@ -342,7 +343,7 @@ impl Compiled {
                 otherwise.eval(state)?
             }
 
-            C::RandRegex(generator) => state.rng.sample::<Result<_, _>, _>(generator).into(),
+            C::RandRegex(generator) => state.rng.sample::<EncodedString, _>(generator).into(),
             C::RandUniformU64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformI64(uniform) => state.rng.sample(uniform).into(),
             C::RandUniformF64(uniform) => Value::from_finite_f64(state.rng.sample(uniform)),
