@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use dbgen::{
     error::Error,
-    eval::{CompileContext, State},
+    eval::{CompileContext, Schema, State},
     format::{Format, SqlFormat},
     parser::Template,
     span::{Registry, ResultExt, S},
@@ -11,7 +11,8 @@ use dbgen::{
 };
 use rand::{Rng, SeedableRng};
 use rand_hc::Hc128Rng;
-use std::{collections::HashMap, convert::TryFrom, mem};
+use serde::Serialize;
+use std::{convert::TryFrom, mem};
 use wasm_bindgen::prelude::*;
 
 #[derive(Default)]
@@ -19,20 +20,27 @@ struct TableWriter {
     rows: Vec<Vec<String>>,
 }
 
+#[derive(Serialize)]
+struct Table {
+    name: String,
+    column_names: Vec<String>,
+    rows: Vec<Vec<String>>,
+}
+
 impl Writer for TableWriter {
     fn write_value(&mut self, value: &Value) -> Result<(), S<Error>> {
         let mut output = Vec::new();
-        SqlFormat {
-            escape_backslash: false,
-        }
-        .write_value(&mut output, value)
-        .unwrap_throw();
+        SqlFormat::default().write_value(&mut output, value).unwrap_throw();
         let output = String::from_utf8(output).unwrap_throw();
         self.rows.last_mut().unwrap_throw().push(output);
         Ok(())
     }
 
-    fn write_header(&mut self, _: &str) -> Result<(), S<Error>> {
+    fn write_file_header(&mut self, _: &Schema<'_>) -> Result<(), S<Error>> {
+        Ok(())
+    }
+
+    fn write_header(&mut self, _: &Schema<'_>) -> Result<(), S<Error>> {
         self.write_row_separator()
     }
 
@@ -46,7 +54,6 @@ impl Writer for TableWriter {
         Ok(())
     }
 
-    /// Writes the content of an INSERT statement after all rows.
     fn write_trailer(&mut self) -> Result<(), S<Error>> {
         Ok(())
     }
@@ -58,7 +65,7 @@ fn try_generate_rows(
     now: &str,
     seed: &[u8],
     span_registry: &mut Registry,
-) -> Result<HashMap<String, Vec<Vec<String>>>, S<Error>> {
+) -> Result<Vec<Table>, S<Error>> {
     let now = NaiveDateTime::parse_from_str(now, TIMESTAMP_FORMAT).no_span_err()?;
     let seed = <&<Hc128Rng as SeedableRng>::Seed>::try_from(seed)
         .map_err(|e| Error::InvalidArguments(format!("invalid seed: {}", e)))
@@ -92,7 +99,14 @@ fn try_generate_rows(
 
     Ok(env
         .tables()
-        .map(|(table, writer)| (table.name.table_name(false).to_owned(), mem::take(&mut writer.rows)))
+        .map(|(table, writer)| {
+            let schema = table.schema(false);
+            Table {
+                name: schema.name.to_owned(),
+                column_names: schema.column_names().map(|s| s.to_owned()).collect(),
+                rows: mem::take(&mut writer.rows),
+            }
+        })
         .collect())
 }
 

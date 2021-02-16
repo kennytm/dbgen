@@ -2,7 +2,7 @@
 
 use crate::{
     error::Error,
-    eval::{CompileContext, State, Table},
+    eval::{CompileContext, Schema, State, Table},
     format::{CsvFormat, Format, SqlFormat},
     parser::{QName, Template},
     span::{Registry, ResultExt, SpanExt, S},
@@ -158,6 +158,10 @@ pub struct Args {
     #[structopt(short, long, possible_values(&["sql", "csv"]), default_value = "sql")]
     pub format: FormatName,
 
+    /// Include column names or headers in the output
+    #[structopt(long)]
+    pub headers: bool,
+
     /// Compress data output
     #[structopt(short, long, possible_values(&["gzip", "gz", "xz", "zstd", "zst"]))]
     pub compression: Option<CompressionName>,
@@ -204,6 +208,7 @@ impl Default for Args {
             zoneinfo: PathBuf::from("/usr/share/zoneinfo"),
             now: None,
             format: FormatName::Sql,
+            headers: false,
             compression: None,
             compress_level: 6,
             no_schemas: false,
@@ -241,7 +246,10 @@ impl Args {
 
         // compute the total number of rows.
         if let Some(total_rows_count) = self.total_count {
-            let (div, rem) = (total_rows_count / res.rows_per_file, total_rows_count % res.rows_per_file);
+            let (div, rem) = (
+                total_rows_count / res.rows_per_file,
+                total_rows_count % res.rows_per_file,
+            );
             if rem == 0 {
                 res.files_count = div as u32;
                 res.last_file_inserts_count = res.inserts_count;
@@ -364,6 +372,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
         qualified: args.qualified,
         rows_count: args.rows_count,
         escape_backslash: args.escape_backslash,
+        headers: args.headers,
         format: args.format,
         compression: args.compression.map(|c| (c, compress_level)),
         no_data: args.no_data,
@@ -526,10 +535,16 @@ impl FormatName {
     }
 
     /// Creates a formatter writer given the name.
-    fn create(self, escape_backslash: bool) -> Box<dyn Format> {
+    fn create(self, escape_backslash: bool, headers: bool) -> Box<dyn Format> {
         match self {
-            Self::Sql => Box::new(SqlFormat { escape_backslash }),
-            Self::Csv => Box::new(CsvFormat { escape_backslash }),
+            Self::Sql => Box::new(SqlFormat {
+                escape_backslash,
+                headers,
+            }),
+            Self::Csv => Box::new(CsvFormat {
+                escape_backslash,
+                headers,
+            }),
         }
     }
 }
@@ -632,9 +647,14 @@ impl writer::Writer for FormatWriter<'_> {
             .write_value(self, value)
             .with_path("write value", &self.path)
     }
-    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), S<Error>> {
+    fn write_file_header(&mut self, schema: &Schema<'_>) -> Result<(), S<Error>> {
         self.format
-            .write_header(self, qualified_table_name)
+            .write_file_header(self, schema)
+            .with_path("write value", &self.path)
+    }
+    fn write_header(&mut self, schema: &Schema<'_>) -> Result<(), S<Error>> {
+        self.format
+            .write_header(self, schema)
             .with_path("write value", &self.path)
     }
     fn write_value_separator(&mut self) -> Result<(), S<Error>> {
@@ -660,6 +680,7 @@ struct Env {
     qualified: bool,
     rows_count: u32,
     escape_backslash: bool,
+    headers: bool,
     format: FormatName,
     compression: Option<(CompressionName, u8)>,
     no_data: bool,
@@ -711,7 +732,7 @@ impl Env {
             self.file_num_digits,
             self.format.extension()
         );
-        let format = self.format.create(self.escape_backslash);
+        let format = self.format.create(self.escape_backslash, self.headers);
 
         let mut fwe = writer::Env::new(&self.tables, state, self.qualified, |table| {
             let mut path = self.out_dir.join([table.name.unique_name(), &path_suffix].concat());

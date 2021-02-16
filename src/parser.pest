@@ -83,6 +83,7 @@ op_bit_and  = @{ "&" }
 op_bit_or   = @{ "|" }
 op_bit_xor  = @{ "^" }
 op_bit_not  = @{ "~" }
+op_comma    = @{ "," }
 
 balanced = _{
     "(" ~ balanced* ~ ")" |
@@ -114,7 +115,7 @@ dependency_directive = {
 }
 single_table = {
     kw_create ~ kw_table ~ qname ~
-    open_paren ~ (any_text | content)* ~ close_paren ~ any_text?
+    open_paren ~ (ident | op_comma | any_text | content)* ~ close_paren ~ any_text?
 }
 create_table = _{
     SOI ~ content* ~ single_table ~ (dependency_directive_content ~ single_table)* ~ EOI

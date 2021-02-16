@@ -11,7 +11,7 @@ use chrono::{NaiveDateTime, Utc};
 use rand::{distributions::Bernoulli, seq::SliceRandom, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
 use rand_regex::EncodedString;
-use std::{cmp::Ordering, fmt, fs, path::PathBuf, sync::Arc};
+use std::{cmp::Ordering, fmt, fs, ops::Range, path::PathBuf, sync::Arc};
 use tzfile::{ArcTz, Tz};
 use zipf::ZipfDistribution;
 
@@ -113,10 +113,41 @@ pub struct Table {
     pub name: QName,
     /// Content of table schema.
     pub content: String,
+    /// The ranges in `content` which column names appear.
+    pub column_name_ranges: Vec<Range<usize>>,
     /// Compiled row.
     pub row: Row,
     /// Information of dervied tables (index, and number of rows to generate)
     pub derived: Vec<(usize, Compiled)>,
+}
+
+/// The schema information extracted from the compiled table.
+#[derive(Debug, Copy, Clone)]
+pub struct Schema<'a> {
+    /// Table name (qualified or unqualified).
+    pub name: &'a str,
+    /// Content of table schema.
+    pub content: &'a str,
+    /// The ranges in `content` which column names appear.
+    column_name_ranges: &'a [Range<usize>],
+}
+
+impl<'a> Schema<'a> {
+    /// Returns an iterator of column names associated with the table.
+    pub fn column_names(&self) -> impl Iterator<Item = &str> + '_ {
+        self.column_name_ranges.iter().map(move |r| &self.content[r.clone()])
+    }
+}
+
+impl Table {
+    /// Gets the schema associated with the table.
+    pub fn schema(&self, qualified: bool) -> Schema<'_> {
+        Schema {
+            name: self.name.table_name(qualified),
+            content: &self.content,
+            column_name_ranges: &self.column_name_ranges,
+        }
+    }
 }
 
 impl CompileContext {
@@ -125,6 +156,7 @@ impl CompileContext {
         Ok(Table {
             name: table.name,
             content: table.content,
+            column_name_ranges: table.column_name_ranges,
             row: self.compile_row(table.exprs)?,
             derived: table
                 .derived

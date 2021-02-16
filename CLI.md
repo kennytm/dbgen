@@ -168,6 +168,26 @@ More options
     * `sql`
     * `csv`
 
+* `--headers`
+
+    Include column names into the output as headers.
+
+    In SQL format, this means insert statements include the complete column name list.
+
+    ```sql
+    INSERT INTO tbl (col1, col2, col3) VALUES
+    (1, 2, 3),
+    (4, 5, 6);
+    ```
+
+    In CSV format, this means files contain a header row of column names.
+
+    ```csv
+    "col1","col2","col3"
+    1,2,3
+    4,5,6
+    ```
+
 * `-c «ALG»`, `--compress «ALG»` / `--compress-level «LEVEL»`
 
     Compress the data output. Possible algorithms are:

@@ -10,7 +10,7 @@ use crate::{
 };
 
 use pest::{iterators::Pairs, Parser};
-use std::{cmp::Ordering, collections::HashMap, mem};
+use std::{cmp::Ordering, collections::HashMap, mem, ops::Range};
 
 mod derived {
     use pest_derive::Parser;
@@ -150,6 +150,9 @@ pub struct Table {
     /// The content of the CREATE TABLE statement.
     pub content: String,
 
+    /// The ranges in `content` which column names appear.
+    pub column_name_ranges: Vec<Range<usize>>,
+
     /// The expressions to populate the table.
     pub exprs: Vec<S<Expr>>,
 
@@ -212,7 +215,7 @@ impl Default for Expr {
 }
 
 fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
+    c.is_alphanumeric() || c == '_' || c == '`' || c == '"' || c == '[' || c == ']'
 }
 
 impl Template {
@@ -334,21 +337,25 @@ impl<'a> Allocator<'a> {
     fn table_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Table, S<Error>> {
         let mut table = Table::default();
         let mut previous_end_line = 0;
+        let mut column_name_range = 0..0;
+        let mut column_name_is_expired = true;
 
         for pair in pairs {
             let span = pair.as_span();
+            let end_line = span.end_pos().line_col().0;
+            let s = span.as_str();
             match pair.as_rule() {
                 Rule::kw_create | Rule::kw_table => {}
                 Rule::qname => table.name = QName::from_pairs(pair.into_inner(), self.override_schema),
                 Rule::open_paren | Rule::close_paren => {
-                    previous_end_line = span.end_pos().line_col().0;
-                    table.content.push_str(span.as_str());
+                    table.content.push_str(s);
                 }
-                Rule::any_text => {
+                Rule::op_comma => {
+                    column_name_is_expired = true;
+                    table.content.push_str(s);
+                }
+                r @ Rule::any_text | r @ Rule::ident => {
                     let start_line = span.start_pos().line_col().0;
-                    let end_line = span.end_pos().line_col().0;
-                    let s = span.as_str();
-
                     if previous_end_line != start_line {
                         // insert an indented '\n' if the whitespace we skipped included it.
                         table.content.push_str("\n    ");
@@ -356,16 +363,25 @@ impl<'a> Allocator<'a> {
                         // insert a space if needed to ensure word boundaries
                         table.content.push(' ');
                     }
+                    let table_content_len = table.content.len();
                     table.content.push_str(s);
-
-                    previous_end_line = end_line;
+                    if column_name_is_expired && r == Rule::ident {
+                        column_name_range = table_content_len..table.content.len();
+                        column_name_is_expired = false;
+                    }
                 }
-                Rule::stmt => table.exprs.push(
-                    self.expr_binary_from_pairs(pair.into_inner())?
-                        .span(self.register(span)),
-                ),
+                Rule::stmt => {
+                    table.column_name_ranges.push(column_name_range);
+                    column_name_is_expired = true;
+                    column_name_range = 0..0;
+                    table.exprs.push(
+                        self.expr_binary_from_pairs(pair.into_inner())?
+                            .span(self.register(span)),
+                    );
+                }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
+            previous_end_line = end_line;
         }
 
         Ok(table)

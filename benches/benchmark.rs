@@ -18,9 +18,7 @@ fn run_benchmark(b: &mut Bencher<'_>, path: &str) {
     let ctx = CompileContext::new(template.variables_count);
     let row = ctx.compile_row(template.tables.swap_remove(0).exprs).unwrap();
     let mut state = State::new(1, Box::new(Hc128Rng::from_seed([0x41; 32])), ctx);
-    let format = SqlFormat {
-        escape_backslash: false,
-    };
+    let format = SqlFormat::default();
     let mut sink: Box<dyn Write> = Box::new(sink());
 
     b.iter(move || {

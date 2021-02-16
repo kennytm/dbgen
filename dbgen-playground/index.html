@@ -59,18 +59,21 @@ section {
 table {
     border-collapse: collapse;
 }
-td {
+tbody td, thead th {
     border: 1px solid #aaa;
     padding: 2px 4px;
 }
-th {
+thead th {
+    background: #ffe;
+}
+tbody th {
     background: #ddd;
     color: #888;
     font-weight: normal;
     text-align: right;
     padding: 2px 4px;
 }
-tr:nth-child(even) th {
+tbody tr:nth-child(even) th {
     background: #eee;
 }
 caption {
@@ -257,10 +260,14 @@ genButton.onclick = function() {
     const innerHTML = [];
     try {
         const result = generate_rows(template, rows, now, seed);
-        for (const tableName in result) {
-            innerHTML.push('<table><caption>', sanitize(tableName), '</caption>');
+        for (const table of result) {
+            innerHTML.push('<table><caption>', sanitize(table.name), '</caption><thead><tr><td></td>');
+            for (const col of table.column_names) {
+                innerHTML.push('<th>', sanitize(col), '</th>');
+            }
+            innerHTML.push('</tr></thead><tbody>');
             let rowNum = 1;
-            for (const row of result[tableName]) {
+            for (const row of table.rows) {
                 innerHTML.push('<tr><th>', rowNum, '</th>');
                 for (const cell of row) {
                     innerHTML.push('<td>', sanitize(cell), '</td>');
@@ -268,7 +275,7 @@ genButton.onclick = function() {
                 innerHTML.push('</tr>');
                 ++ rowNum;
             }
-            innerHTML.push('</table>');
+            innerHTML.push('</tbody></table>');
         }
     } catch (e) {
         innerHTML.push('<div class="error">', sanitize(e), '</div>');

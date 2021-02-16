@@ -2,7 +2,7 @@
 
 use crate::{
     error::Error,
-    eval::{State, Table},
+    eval::{Schema, State, Table},
     span::{ResultExt, S},
     value::Value,
 };
@@ -13,8 +13,11 @@ pub trait Writer {
     /// Writes a single value.
     fn write_value(&mut self, value: &Value) -> Result<(), S<Error>>;
 
+    /// Writes the content at the beginning of each file.
+    fn write_file_header(&mut self, schema: &Schema<'_>) -> Result<(), S<Error>>;
+
     /// Writes the content of an INSERT statement before all rows.
-    fn write_header(&mut self, qualified_table_name: &str) -> Result<(), S<Error>>;
+    fn write_header(&mut self, schema: &Schema<'_>) -> Result<(), S<Error>>;
 
     /// Writes the separator between the every value.
     fn write_value_separator(&mut self) -> Result<(), S<Error>>;
@@ -31,6 +34,8 @@ pub trait Writer {
 struct TableState<'a, W: Writer> {
     /// The parsed table.
     table: &'a Table,
+    /// The table's schema.
+    schema: Schema<'a>,
     /// Writer associated with the table.
     writer: W,
     /// Records that, within an [`Env::write_row()`] call, whether this table has not been visited
@@ -63,9 +68,13 @@ impl<'a, W: Writer> Env<'a, W> {
             tables: tables
                 .iter()
                 .map(|table| {
+                    let mut writer = new_writer(table)?;
+                    let schema = table.schema(qualified);
+                    writer.write_file_header(&schema)?;
                     Ok::<_, S<Error>>(TableState {
                         table,
-                        writer: new_writer(table)?,
+                        schema,
+                        writer,
                         fresh: true,
                         empty: true,
                     })
@@ -85,7 +94,7 @@ impl<'a, W: Writer> Env<'a, W> {
         let table = &mut self.tables[table_index];
 
         if mem::take(&mut table.empty) {
-            table.writer.write_header(table.table.name.table_name(self.qualified))
+            table.writer.write_header(&table.schema)
         } else {
             table.writer.write_row_separator()
         }?;

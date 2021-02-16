@@ -95,9 +95,7 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::format::{Format, SqlFormat};
 
-        let format = SqlFormat {
-            escape_backslash: false,
-        };
+        let format = SqlFormat::default();
         let mut writer = Vec::new();
         format.write_value(&mut writer, self).map_err(|_| fmt::Error)?;
         let s = String::from_utf8(writer).map_err(|_| fmt::Error)?;
