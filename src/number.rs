@@ -1,6 +1,6 @@
 //! Number.
 
-use num_cmp::NumCmp;
+use numcmp::NumCmp;
 use std::{cmp::Ordering, convert::TryFrom, fmt, u64};
 
 /// Implementation of a number.
