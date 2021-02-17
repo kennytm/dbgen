@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>dbgen playground</title>
+<style>
+body {
+    margin: 0;
+}
+section {
+    display: grid;
+    grid-template-columns: 1fr 1fr 3fr;
+    grid-template-rows: 24px calc(100vh - 180px) 144px;
+    gap: 6px;
+    height: 100vh;
+}
+#samples {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+}
+#generate {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+}
+#template {
+    grid-column: 1 / span 2;
+    grid-row: 2;
+}
+#options {
+    grid-column: 1 / span 2;
+    grid-row: 3;
+    justify-self: center;
+    display: grid;
+    grid-template-columns: max-content max-content min-content;
+    gap: 6px;
+    align-items: center;
+}
+#options label {
+    justify-self: end;
+}
+#version {
+    grid-column: 1 / span 3;
+    justify-self: end;
+    font-size: 0.75em;
+    color: #ccc;
+}
+#output {
+    grid-column: 3;
+    grid-row: 1 / span 3;
+    overflow: auto;
+}
+.error {
+    color: #a00;
+    font-family: monospace;
+    white-space: pre;
+}
+table {
+    border-collapse: collapse;
+}
+tbody td, thead th {
+    border: 1px solid #aaa;
+    padding: 2px 4px;
+}
+thead th {
+    background: #ffe;
+}
+tbody th {
+    background: #ddd;
+    color: #888;
+    font-weight: normal;
+    text-align: right;
+    padding: 2px 4px;
+}
+tbody tr:nth-child(even) th {
+    background: #eee;
+}
+caption {
+    text-align: left;
+    font-weight: bold;
+    padding-left: 1em;
+    margin: 6px;
+}
+caption::before {
+    content: 'table ';
+    font-weight: normal;
+    font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<section>
+    <select id="samples">
+        <option value="">(Load sample template)</option>
+        <option value="sysbench">Sysbench OLTP</option>
+        <option value="tpcc-warehouse">TPC-C Warehouse</option>
+        <option value="fizz-buzz">FizzBuzz</option>
+        <option value="random-walk">Random walk</option>
+        <option value="date-arithmetics">Date arithmetics</option>
+        <option value="parent-children">Parent-children (Derived tables)</option>
+        <option value="syntax-error">Syntax error</option>
+        <option value="debug-panic">debug.panic</option>
+    </select>
+    <input type="button" value="Generate" id="generate" disabled />
+    <textarea id="template" rows="20"></textarea>
+    <div id="options">
+        <label for="rows">Rows</label>
+        <input id="rows" type="number" min="1" value="5" size="3" />
+        <span></span>
+        <label for="now">Current_Timestamp (UTC)</label>
+        <input id="now" type="datetime-local" value="1970-01-01T00:00:00.000" size="24" pattern="[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]+)?" />
+        <input id="set-now" type="button" value="⏲" />
+        <label for="seed">Seed (hc128)</label>
+        <input id="seed" type="text" maxlength="64" minlength="64" required pattern="[0-9a-fA-F]{64}" />
+        <input id="reseed" type="button" value="🔄" />
+        <div id="version"></div>
+    </div>
+    <div id="output">
+    </div>
+</section>
+
+<script src="playground.js"></script>
+<script>
+const { version, generate_rows } = wasm_bindgen;
+
+const sampleTemplates = {
+    'sysbench': `
+        CREATE TABLE sbtest1 (
+            id  SERIAL PRIMARY KEY,
+                /*{{ rownum }}*/
+            k   INTEGER DEFAULT '0' NOT NULL,
+                /*{{ rand.range_inclusive(-0x80000000, 0x7fffffff) }}*/
+            c   CHAR(120) DEFAULT '' NOT NULL,
+                /*{{ rand.regex('([0-9]{11}-){9}[0-9]{11}') }}*/
+            pad CHAR(60) DEFAULT '' NOT NULL
+                /*{{ rand.regex('([0-9]{11}-){4}[0-9]{11}') }}*/
+        );
+        CREATE INDEX k ON sbtest1(k);
+    `,
+    'tpcc-warehouse': `
+        create table bmsql_warehouse (
+            w_id        integer not null,
+                /*{{ rownum }}*/
+            w_ytd       decimal(12,2),
+                /*{{ 300000.0 }}*/
+            w_tax       decimal(4,4),
+                /*{{ rand.range_inclusive(0, 2000)/10000 }}*/
+            w_name      varchar(10),
+                /*{{ rand.regex('[0-9a-zA-Z]{6,10}') }}*/
+            w_street_1  varchar(20),
+                /*{{ rand.regex('[0-9a-zA-Z]{10,20}') }}*/
+            w_street_2  varchar(20),
+                /*{{ rand.regex('[0-9a-zA-Z]{10,20}') }}*/
+            w_city      varchar(20),
+                /*{{ rand.regex('[0-9a-zA-Z]{10,20}') }}*/
+            w_state     char(2),
+                /*{{ rand.regex('[A-Z]{2}') }}*/
+            w_zip       char(9),
+                /*{{ rand.regex('[0-9]{4}11111') }}*/
+            primary key (w_id)
+        );
+    `,
+    'fizz-buzz': `
+        CREATE TABLE FizzBuzz (
+            output VARCHAR(8) /*{{
+                CASE 0
+                    WHEN mod(rownum, 15) THEN 'FizzBuzz'
+                    WHEN mod(rownum, 5) THEN 'Buzz'
+                    WHEN mod(rownum, 3) THEN 'Fizz'
+                    ELSE rownum
+                END
+            }}*/
+        );
+    `,
+    'random-walk': `
+        {{ @x := 0; @y := 0 }}
+        CREATE TABLE "random-walk" (
+            dx INTEGER {{ @dx := rand.range_inclusive(-1, 1) }},
+            dy INTEGER {{ @dy := rand.range_inclusive(-1, 1) }},
+            x INTEGER {{ @x := @x + @dx }},
+            y INTEGER {{ @y := @y + @dy }}
+        );
+    `,
+    'date-arithmetics': `
+        CREATE TABLE dates (
+            seconds DATETIME
+                {{ current_timestamp + interval rownum second }},
+            days DATETIME
+                {{ current_timestamp + interval rownum day }},
+            fortnights DATETIME
+                {{ current_timestamp + interval (rownum * 14) day }}
+        );
+    `,
+    'parent-children': `
+        CREATE TABLE "parent" (
+            "parent_id" UUID PRIMARY KEY,
+                /*{{ @parent_id := rand.uuid() }}*/
+            "child_count" INT UNSIGNED NOT NULL
+                /*{{ @child_count := rand.range_inclusive(0, 4) }}*/
+        );
+
+        /*{{ for each row of "parent" generate @child_count rows of "child" }}*/
+        CREATE TABLE "child" (
+            "child_id" UUID PRIMARY KEY,
+                /*{{ rand.uuid() }}*/
+            "parent_id" UUID NOT NULL REFERENCES "parent"("parent_id")
+                /*{{ @parent_id }}*/
+        );
+    `,
+    'syntax-error': `
+        CREATE TABLE syntax_error (file TEXT {{ rand.regex('*.txt') }});
+    `,
+    'debug-panic': `
+        -- try to adjust the number of rows between 4 and 5.
+        CREATE TABLE debug.panic (
+            {{
+                CASE WHEN rownum > 4 THEN
+                    debug.panic('rownum = ', rownum)
+                ELSE
+                    rownum
+                END
+            }}
+        );
+    `
+};
+
+const genButton = document.getElementById('generate');
+const seedInput = document.getElementById('seed');
+const nowInput = document.getElementById('now');
+const templateInput = document.getElementById('template');
+
+function reseed() {
+    let seed = new Uint8Array(32);
+    crypto.getRandomValues(seed);
+    seedInput.value = Array.from(seed).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function setNow() {
+    nowInput.value = new Date().toISOString().replace(/Z$/, '');
+}
+
+const sanitizeResult = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    '\n': '<br />',
+};
+function sanitize(x) {
+    return x.replace(/[&<>"\n]/g, m => sanitizeResult[m]);
+}
+
+genButton.onclick = function() {
+    const template = templateInput.value;
+    const rows = document.getElementById('rows').value | 0;
+    const now = document.getElementById('now').value.replace(/T/, ' ');
+    const seed = new Uint8Array(seedInput.value.match(/../g).map(x => parseInt(x, 16)))
+    const innerHTML = [];
+    try {
+        const result = generate_rows(template, rows, now, seed);
+        for (const table of result) {
+            innerHTML.push('<table><caption>', sanitize(table.name), '</caption><thead><tr><td></td>');
+            for (const col of table.column_names) {
+                innerHTML.push('<th>', sanitize(col), '</th>');
+            }
+            innerHTML.push('</tr></thead><tbody>');
+            let rowNum = 1;
+            for (const row of table.rows) {
+                innerHTML.push('<tr><th>', rowNum, '</th>');
+                for (const cell of row) {
+                    innerHTML.push('<td>', sanitize(cell), '</td>');
+                }
+                innerHTML.push('</tr>');
+                ++ rowNum;
+            }
+            innerHTML.push('</tbody></table>');
+        }
+    } catch (e) {
+        innerHTML.push('<div class="error">', sanitize(e), '</div>');
+    }
+    document.getElementById('output').innerHTML = innerHTML.join('');
+};
+
+document.getElementById('samples').onchange = function(e) {
+    if (e.target.value) {
+        templateInput.value = sampleTemplates[e.target.value].replace(/^ {1,8}/gm, '');
+    }
+};
+
+wasm_bindgen('playground_bg.wasm').then(() => {
+    genButton.disabled = false;
+    document.getElementById('version').innerText = version().trim();
+});
+
+document.getElementById('reseed').onclick = reseed;
+document.getElementById('set-now').onclick = setNow;
+
+reseed();
+setNow();
+
+</script>
+</body>
+</html>
