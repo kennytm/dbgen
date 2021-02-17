@@ -10,6 +10,6 @@ expressions.
 
 * [CLI usage](CLI.md)
 * [Schema generator CLI usage](SchemaGen.md)
+* [WASM playground](https://kennytm.github.io/dbgen/)
 * [Template reference](Template.md)
 * [Advanced template features](TemplateAdvanced.md)
-

@@ -4,3 +4,4 @@ Cargo.lock
 rls*.log
 playground_bg.wasm
 playground.js
+*.tar.xz
