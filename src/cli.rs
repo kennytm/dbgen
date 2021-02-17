@@ -25,6 +25,7 @@ use rayon::{
 };
 use serde_derive::Deserialize;
 use std::{
+    convert::TryInto,
     fs::{create_dir_all, read_to_string, File},
     io::{self, sink, stdin, BufWriter, Read, Write},
     mem,
@@ -218,6 +219,15 @@ impl Default for Args {
     }
 }
 
+fn div_rem_plus_one(n: u64, d: u64) -> (u64, u64) {
+    let (div, rem) = (n / d, n % d);
+    if rem == 0 {
+        (div, d)
+    } else {
+        (div + 1, rem)
+    }
+}
+
 impl Args {
     /// Computes the row-related arguments.
     fn row_args(&self) -> RowArgs {
@@ -229,14 +239,9 @@ impl Args {
         // compute the rows per file.
         let rows_count = u64::from(self.rows_count);
         if let Some(rows_per_file) = self.rows_per_file {
-            let (div, rem) = (rows_per_file / rows_count, rows_per_file % rows_count);
-            if rem == 0 {
-                res.inserts_count = div as u32;
-                res.final_insert_rows_count = res.rows_count;
-            } else {
-                res.inserts_count = (div as u32) + 1;
-                res.final_insert_rows_count = rem as u32;
-            }
+            let (inserts_count, final_insert_rows_count) = div_rem_plus_one(rows_per_file, rows_count);
+            res.inserts_count = inserts_count.try_into().expect("--rows-per-file is too large");
+            res.final_insert_rows_count = final_insert_rows_count.try_into().unwrap();
             res.rows_per_file = rows_per_file;
         } else {
             res.inserts_count = self.inserts_count;
@@ -246,24 +251,15 @@ impl Args {
 
         // compute the total number of rows.
         if let Some(total_rows_count) = self.total_count {
-            let (div, rem) = (
-                total_rows_count / res.rows_per_file,
-                total_rows_count % res.rows_per_file,
-            );
-            if rem == 0 {
-                res.files_count = div as u32;
+            let (files_count, excess_rows_count) = div_rem_plus_one(total_rows_count, res.rows_per_file);
+            res.files_count = files_count.try_into().expect("--total-count is too large");
+            if excess_rows_count == res.rows_per_file {
                 res.last_file_inserts_count = res.inserts_count;
                 res.last_file_final_insert_rows_count = res.final_insert_rows_count;
             } else {
-                res.files_count = (div as u32) + 1;
-                let (div, rem) = (rem / rows_count, rem % rows_count);
-                if rem == 0 {
-                    res.last_file_inserts_count = div as u32;
-                    res.last_file_final_insert_rows_count = res.final_insert_rows_count;
-                } else {
-                    res.last_file_inserts_count = (div as u32) + 1;
-                    res.last_file_final_insert_rows_count = rem as u32;
-                }
+                let (inserts_count, final_insert_rows_count) = div_rem_plus_one(excess_rows_count, rows_count);
+                res.last_file_inserts_count = inserts_count.try_into().expect("--rows-per-file is too large");
+                res.last_file_final_insert_rows_count = final_insert_rows_count.try_into().unwrap();
             }
             res.total_count = total_rows_count;
         } else {
@@ -673,6 +669,7 @@ impl writer::Writer for FormatWriter<'_> {
 }
 
 /// The environmental data shared by all data writers.
+#[allow(clippy::struct_excessive_bools)] // the booleans aren't used as state-machines.
 struct Env {
     out_dir: PathBuf,
     file_num_digits: usize,
