@@ -25,6 +25,7 @@ use rayon::{
 };
 use serde_derive::Deserialize;
 use std::{
+    collections::HashMap,
     convert::TryInto,
     fs::{create_dir_all, read_to_string, File},
     io::{self, sink, stdin, BufWriter, Read, Write},
@@ -171,12 +172,18 @@ pub struct Args {
     #[structopt(long, default_value = "6")]
     pub compress_level: u8,
 
+    /// Components to write
+    #[structopt(long, use_delimiter(true), possible_values(&["schema", "table", "data"]), default_value = "table,data", conflicts_with_all(&["no-schemas", "no-data"]))]
+    pub components: Vec<ComponentName>,
+
     /// Do not generate schema files (the CREATE TABLE *.sql files)
-    #[structopt(long)]
+    #[structopt(long, hidden(true))]
+    #[serde(skip)]
     pub no_schemas: bool,
 
     /// Do not generate data files (only useful for benchmarking and fuzzing)
     #[structopt(long, hidden(true))]
+    #[serde(skip)]
     pub no_data: bool,
 
     /// Initializes the template with these global expressions.
@@ -212,6 +219,7 @@ impl Default for Args {
             headers: false,
             compression: None,
             compress_level: 6,
+            components: vec![ComponentName::Table, ComponentName::Data],
             no_schemas: false,
             no_data: false,
             initialize: Vec::new(),
@@ -361,6 +369,14 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     create_dir_all(&args.out_dir).with_path("create output directory", &args.out_dir)?;
 
     let compress_level = args.compress_level;
+    let mut components_mask = args.components.into_iter().fold(0, ComponentName::union);
+    if args.no_data {
+        ComponentName::Data.remove_from(&mut components_mask);
+    }
+    if args.no_schemas {
+        ComponentName::Schema.remove_from(&mut components_mask);
+        ComponentName::Table.remove_from(&mut components_mask);
+    }
     let env = Env {
         out_dir: args.out_dir,
         file_num_digits: args.files_count.to_string().len(),
@@ -371,11 +387,14 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
         headers: args.headers,
         format: args.format,
         compression: args.compression.map(|c| (c, compress_level)),
-        no_data: args.no_data,
+        components_mask,
     };
 
-    if !args.no_schemas {
-        env.write_schema()?;
+    if ComponentName::Schema.is_in(env.components_mask) {
+        env.write_schema_schema()?;
+    }
+    if ComponentName::Table.is_in(env.components_mask) {
+        env.write_table_schema()?;
     }
 
     let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
@@ -597,6 +616,49 @@ impl CompressionName {
     }
 }
 
+/// Names of the components to be produced `dbgen`.
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[repr(u8)]
+pub enum ComponentName {
+    /// The `CREATE SCHEMA` SQL file.
+    Schema = 1,
+    /// The `CREATE TABLE` SQL file.
+    Table = 2,
+    /// The data files.
+    Data = 4,
+}
+
+impl FromStr for ComponentName {
+    type Err = Error;
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Ok(match name {
+            "schema" => Self::Schema,
+            "table" => Self::Table,
+            "data" => Self::Data,
+            _ => {
+                return Err(Error::UnsupportedCliParameter {
+                    kind: "component",
+                    value: name.to_owned(),
+                })
+            }
+        })
+    }
+}
+
+impl ComponentName {
+    fn union(mask: u8, cn: Self) -> u8 {
+        mask | (cn as u8)
+    }
+
+    fn remove_from(self, mask: &mut u8) {
+        *mask &= !(self as u8)
+    }
+
+    fn is_in(self, mask: u8) -> bool {
+        mask & (self as u8) != 0
+    }
+}
+
 /// A [`Writer`] which counts how many bytes are written.
 struct FormatWriter<'a> {
     writer: BufWriter<Box<dyn Write>>,
@@ -680,7 +742,7 @@ struct Env {
     headers: bool,
     format: FormatName,
     compression: Option<(CompressionName, u8)>,
-    no_data: bool,
+    components_mask: u8,
 }
 
 /// Information specific to a file and its derived tables.
@@ -691,24 +753,40 @@ struct FileInfo {
 }
 
 impl Env {
+    /// Writes the `CREATE SCHEMA` schema files.
+    fn write_schema_schema(&self) -> Result<(), S<Error>> {
+        let mut schema_names = HashMap::with_capacity(1);
+        for table in &self.tables {
+            if let (Some(unique_name), Some(name)) = (table.name.unique_schema_name(), table.name.schema_name()) {
+                schema_names.insert(unique_name, name);
+            }
+        }
+        for (unique_name, name) in schema_names {
+            let path = self.out_dir.join(format!("{}-schema-create.sql", unique_name));
+            let mut file = BufWriter::new(File::create(&path).with_path("create schema schema file", &path)?);
+            writeln!(file, "CREATE SCHEMA {};", name).with_path("write schema schema file", &path)?;
+        }
+        Ok(())
+    }
+
     /// Writes the `CREATE TABLE` schema files.
-    fn write_schema(&self) -> Result<(), S<Error>> {
+    fn write_table_schema(&self) -> Result<(), S<Error>> {
         for table in &self.tables {
             let path = self.out_dir.join(format!("{}-schema.sql", table.name.unique_name()));
-            let mut file = BufWriter::new(File::create(&path).with_path("create schema file", &path)?);
+            let mut file = BufWriter::new(File::create(&path).with_path("create table schema file", &path)?);
             write!(
                 file,
                 "CREATE TABLE {} {}",
                 table.name.table_name(self.qualified),
                 table.content
             )
-            .with_path("write schema file", &path)?;
+            .with_path("write table schema file", &path)?;
         }
         Ok(())
     }
 
     fn open_data_file(&self, path: &mut PathBuf) -> Result<Box<dyn Write>, S<Error>> {
-        Ok(if self.no_data {
+        Ok(if !ComponentName::Data.is_in(self.components_mask) {
             Box::new(sink())
         } else if let Some((compression, level)) = self.compression {
             let mut path_string = mem::take(path).into_os_string();

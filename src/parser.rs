@@ -24,6 +24,7 @@ mod derived {
 #[derive(Debug, Clone, Default)]
 pub struct QName {
     table_name_index: usize,
+    unique_table_name_index: usize,
     qualified_name: String,
     unique_name: String,
 }
@@ -49,11 +50,13 @@ impl QName {
             unique_name.push('.');
         }
         let table_name_index = qualified_name.len();
+        let unique_table_name_index = unique_name.len();
         qualified_name.push_str(table);
         unescape_into(&mut unique_name, table, true);
 
         Self {
             table_name_index,
+            unique_table_name_index,
             qualified_name,
             unique_name,
         }
@@ -103,6 +106,16 @@ impl QName {
     ///     so the resulting string can be safely used as a filename.
     pub fn unique_name(&self) -> &str {
         &self.unique_name
+    }
+
+    /// Obtains the qualified schema name (`"db"."schema"`) if it exists.
+    pub fn schema_name(&self) -> Option<&str> {
+        Some(&self.qualified_name[..self.table_name_index.checked_sub(1)?])
+    }
+
+    /// Obtains the unique schema name if it exists.
+    pub fn unique_schema_name(&self) -> Option<&str> {
+        Some(&self.unique_name[..self.unique_table_name_index.checked_sub(1)?])
     }
 }
 

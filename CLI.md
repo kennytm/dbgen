@@ -204,9 +204,13 @@ More options
     70% of uncompressed input). We do not recommend using the algorithm "xz" here, nor using very
     high compression levels.
 
-* `--no-schemas`
+* `--components schema,table,data`
 
-    Do not generate any `CREATE TABLE` SQL files.
+    What components to be generated:
+
+    * `schema` (the `CREATE SCHEMA` SQL files)
+    * `table` (the `CREATE TABLE` SQL files)
+    * `data` (the output files)
 
 [ChaCha20]: https://cr.yp.to/chacha.html
 [HC-128]: https://www.ntu.edu.sg/home/wuhj/research/hc/index.html
