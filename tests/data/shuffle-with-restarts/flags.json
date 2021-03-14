@@ -2,6 +2,6 @@
     "files_count": 2,
     "inserts_count": 2,
     "rows_count": 10,
-    "rng": "Hc128",
-    "seed": [170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170]
+    "rng": "hc128",
+    "seed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }

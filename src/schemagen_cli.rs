@@ -1,8 +1,7 @@
 //! CLI driver of `dbschemagen`.
 
 use crate::{error::Error, parser::QName};
-use data_encoding::HEXLOWER_PERMISSIVE;
-use rand::{rngs::OsRng, seq::SliceRandom, Rng, RngCore, SeedableRng};
+use rand::{rngs::OsRng, seq::SliceRandom, Rng, RngCore};
 use rand_distr::{Distribution, LogNormal, Pareto, WeightedIndex};
 use std::{
     collections::{BTreeSet, HashSet},
@@ -45,7 +44,7 @@ pub struct Args {
     pub rows_count: u64,
 
     /// Random number generator seed (should have 64 hex digits).
-    #[structopt(long, parse(try_from_str = crate::cli::seed_from_str))]
+    #[structopt(long)]
     pub seed: Option<crate::cli::Seed>,
 
     /// Additional arguments passed to every `dbgen` invocation
@@ -447,14 +446,14 @@ pub fn print_script(args: &Args) {
          echo 'CREATE SCHEMA '{}';' > {}-schema-create.sql\n",
         env!("CARGO_PKG_VERSION"),
         env!("VERGEN_SHA").get(..9).unwrap_or("unofficial release"),
-        HEXLOWER_PERMISSIVE.encode(&meta_seed),
+        meta_seed,
         quoted_schema_name,
         schema_name.unique_name(),
     );
 
     let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
 
-    let rng = rand_hc::Hc128Rng::from_seed(meta_seed);
+    let rng = meta_seed.make_rng();
     let extra_args = args.args.iter().map(|s| shlex::quote(s)).collect::<Vec<_>>().join(" ");
     let rows_count_per_file = args.rows_count * args.inserts_count;
     for (i, table) in gen_tables(args.dialect, rng, args.size, args.tables_count).enumerate() {
@@ -466,7 +465,7 @@ pub fn print_script(args: &Args) {
             table.rows_count,
             to_human_size(table.target_size),
             exe_suffix,
-            HEXLOWER_PERMISSIVE.encode(&table.seed),
+            table.seed,
             quoted_schema_name,
             i,
             rows_count_per_file,

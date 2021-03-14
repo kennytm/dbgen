@@ -16,6 +16,7 @@ use flate2::write::GzEncoder;
 use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
 use rand::{
+    distributions::{Distribution, Standard},
     rngs::{mock::StepRng, OsRng},
     Rng, RngCore, SeedableRng,
 };
@@ -23,10 +24,11 @@ use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     ThreadPoolBuilder,
 };
-use serde_derive::Deserialize;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::HashMap,
     convert::TryInto,
+    fmt,
     fs::{create_dir_all, read_to_string, File},
     io::{self, sink, stdin, BufWriter, Read, Write},
     mem,
@@ -41,8 +43,6 @@ use structopt::{
     StructOpt,
 };
 use xz2::write::XzEncoder;
-
-pub(crate) type Seed = <rand_hc::Hc128Rng as SeedableRng>::Seed;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 struct RowArgs {
@@ -71,21 +71,24 @@ struct RowArgs {
 }
 
 /// Arguments to the `dbgen` CLI program.
-#[derive(StructOpt, Debug, Deserialize)]
+#[derive(StructOpt, Debug, Serialize, Deserialize)]
 #[serde(default)]
 #[structopt(long_version(crate::FULL_VERSION), settings(&[NextLineHelp, UnifiedHelpMessage]))]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
     #[structopt(long)]
+    #[serde(skip_serializing_if = "is_false")]
     pub qualified: bool,
 
     /// Override the table name.
     #[structopt(short, long, conflicts_with("schema-name"))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub table_name: Option<String>,
 
     /// Override the schema name.
     #[structopt(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_name: Option<String>,
 
     /// Output directory.
@@ -94,10 +97,12 @@ pub struct Args {
 
     /// Number of files to generate.
     #[structopt(short = "k", long, default_value = "1")]
+    #[serde(skip_serializing_if = "is_one")]
     pub files_count: u32,
 
     /// Number of INSERT statements per file.
     #[structopt(short = "n", long, default_value = "1")]
+    #[serde(skip_serializing_if = "is_one")]
     pub inserts_count: u32,
 
     /// Number of rows per INSERT statement.
@@ -106,10 +111,12 @@ pub struct Args {
 
     /// Number of INSERT statements in the last file.
     #[structopt(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_file_inserts_count: Option<u32>,
 
     /// Number of rows of the last INSERT statement of the last file.
     #[structopt(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_insert_rows_count: Option<u32>,
 
     /// Total number of rows of all generated files.
@@ -122,76 +129,89 @@ pub struct Args {
 
     /// Escape backslashes when writing a string.
     #[structopt(long)]
+    #[serde(skip_serializing_if = "is_false")]
     pub escape_backslash: bool,
 
     /// Generation template file.
     #[structopt(short = "i", long, parse(from_os_str))]
+    #[serde(skip_serializing_if = "is_path_empty")]
     pub template: PathBuf,
 
     /// Random number generator seed (should have 64 hex digits).
-    #[structopt(short, long, parse(try_from_str = seed_from_str))]
+    #[structopt(short, long)]
     pub seed: Option<Seed>,
 
     /// Number of jobs to run in parallel, default to number of CPUs.
     #[structopt(short, long, default_value = "0")]
+    #[serde(skip_serializing_if = "is_zero")]
     pub jobs: usize,
 
-    /// Random number generator engine
-    #[structopt(long, possible_values(&["chacha", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "step"]), default_value = "hc128")]
+    /// Random number generator engine.
+    #[structopt(long, possible_values(&["chacha12", "chacha20", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "step"]), default_value = "hc128")]
+    #[serde(skip_serializing_if = "is_hc128")]
     pub rng: RngName,
 
     /// Disable progress bar.
     #[structopt(short, long)]
+    #[serde(skip_serializing_if = "is_false")]
     pub quiet: bool,
 
-    /// Time zone used for timestamps
+    /// Time zone used for timestamps.
     #[structopt(long, default_value = "UTC")]
+    #[serde(skip_serializing_if = "is_utc")]
     pub time_zone: String,
 
     /// Directory containing the tz database.
     #[structopt(long, parse(from_os_str), default_value = "/usr/share/zoneinfo")]
+    #[serde(skip_serializing_if = "is_default_zoneinfo")]
     pub zoneinfo: PathBuf,
 
     /// Override the current timestamp (always in UTC), in the format "YYYY-mm-dd HH:MM:SS.fff".
     #[structopt(long, parse(try_from_str = now_from_str))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub now: Option<NaiveDateTime>,
 
-    /// Output format
+    /// Output format.
     #[structopt(short, long, possible_values(&["sql", "csv"]), default_value = "sql")]
+    #[serde(skip_serializing_if = "is_sql")]
     pub format: FormatName,
 
-    /// Include column names or headers in the output
+    /// Include column names or headers in the output.
     #[structopt(long)]
+    #[serde(skip_serializing_if = "is_false")]
     pub headers: bool,
 
-    /// Compress data output
+    /// Compress data output.
     #[structopt(short, long, possible_values(&["gzip", "gz", "xz", "zstd", "zst"]))]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub compression: Option<CompressionName>,
 
-    /// Compression level (0-9 for gzip and xz, 1-21 for zstd)
+    /// Compression level (0-9 for gzip and xz, 1-21 for zstd).
     #[structopt(long, default_value = "6")]
+    #[serde(skip_serializing_if = "is_six")]
     pub compress_level: u8,
 
-    /// Components to write
+    /// Components to write.
     #[structopt(long, use_delimiter(true), possible_values(&["schema", "table", "data"]), default_value = "table,data", conflicts_with_all(&["no-schemas", "no-data"]))]
+    #[serde(skip_serializing_if = "is_default_components")]
     pub components: Vec<ComponentName>,
 
-    /// Do not generate schema files (the CREATE TABLE *.sql files)
+    /// Do not generate schema files (the CREATE TABLE *.sql files).
     #[structopt(long, hidden(true))]
     #[serde(skip)]
     pub no_schemas: bool,
 
-    /// Do not generate data files (only useful for benchmarking and fuzzing)
+    /// Do not generate data files (only useful for benchmarking and fuzzing).
     #[structopt(long, hidden(true))]
     #[serde(skip)]
     pub no_data: bool,
 
     /// Initializes the template with these global expressions.
     #[structopt(long, short = "D")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub initialize: Vec<String>,
 }
 
-/// The default implementation of the argument suitable for *testing*.
 impl Default for Args {
     fn default() -> Self {
         Self {
@@ -211,7 +231,7 @@ impl Default for Args {
             seed: None,
             jobs: 0,
             rng: RngName::Hc128,
-            quiet: true,
+            quiet: false,
             time_zone: "UTC".to_owned(),
             zoneinfo: PathBuf::from("/usr/share/zoneinfo"),
             now: None,
@@ -234,6 +254,46 @@ fn div_rem_plus_one(n: u64, d: u64) -> (u64, u64) {
     } else {
         (div + 1, rem)
     }
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn is_one(u: &u32) -> bool {
+    *u == 1
+}
+
+fn is_zero(u: &usize) -> bool {
+    *u == 0
+}
+
+fn is_six(u: &u8) -> bool {
+    *u == 6
+}
+
+fn is_utc(tz: &str) -> bool {
+    tz == "UTC"
+}
+
+fn is_default_zoneinfo(path: &Path) -> bool {
+    path == Path::new("/usr/share/zoneinfo")
+}
+
+fn is_path_empty(path: &Path) -> bool {
+    path.as_os_str().is_empty()
+}
+
+fn is_hc128(rng: &RngName) -> bool {
+    *rng == RngName::Hc128
+}
+
+fn is_sql(format: &FormatName) -> bool {
+    *format == FormatName::Sql
+}
+
+fn is_default_components(components: &[ComponentName]) -> bool {
+    ComponentName::union_all(components.iter().copied()) == ComponentName::Table as u8 | ComponentName::Data as u8
 }
 
 impl Args {
@@ -280,22 +340,6 @@ impl Args {
         }
 
         res
-    }
-}
-
-/// Parses a 64-digit hex string into an RNG seed.
-pub(crate) fn seed_from_str(s: &str) -> Result<Seed, DecodeError> {
-    let mut seed = Seed::default();
-
-    if HEXLOWER_PERMISSIVE.decode_len(s.len())? != seed.len() {
-        return Err(DecodeError {
-            position: s.len(),
-            kind: DecodeKind::Length,
-        });
-    }
-    match HEXLOWER_PERMISSIVE.decode_mut(s.as_bytes(), &mut seed) {
-        Ok(_) => Ok(seed),
-        Err(e) => Err(e.error),
     }
 }
 
@@ -369,7 +413,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     create_dir_all(&args.out_dir).with_path("create output directory", &args.out_dir)?;
 
     let compress_level = args.compress_level;
-    let mut components_mask = args.components.into_iter().fold(0, ComponentName::union);
+    let mut components_mask = ComponentName::union_all(args.components);
     if args.no_data {
         ComponentName::Data.remove_from(&mut components_mask);
     }
@@ -400,9 +444,9 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
     let show_progress = !args.quiet;
     if show_progress {
-        println!("Using seed: {}", HEXLOWER_PERMISSIVE.encode(&meta_seed));
+        println!("Using seed: {}", meta_seed);
     }
-    let mut seeding_rng = rand_hc::Hc128Rng::from_seed(meta_seed);
+    let mut seeding_rng = meta_seed.make_rng();
 
     let rng_name = args.rng;
 
@@ -456,12 +500,73 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     Ok(())
 }
 
+/// Random number generator (RNG) seed.
+///
+/// This is represented as a 64-digit hex string and is supposed to seed the
+/// HC-128 RNG only.
+#[derive(Copy, Clone, Debug, Default)]
+pub struct Seed(<rand_hc::Hc128Rng as SeedableRng>::Seed);
+
+impl FromStr for Seed {
+    type Err = DecodeError;
+
+    /// Parses a 64-digit hex string into an RNG seed.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut seed = Self::default();
+        if HEXLOWER_PERMISSIVE.decode_len(s.len())? != seed.0.len() {
+            return Err(DecodeError {
+                position: s.len(),
+                kind: DecodeKind::Length,
+            });
+        }
+        match HEXLOWER_PERMISSIVE.decode_mut(s.as_bytes(), &mut seed.0) {
+            Ok(_) => Ok(seed),
+            Err(e) => Err(e.error),
+        }
+    }
+}
+
+impl fmt::Display for Seed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&HEXLOWER_PERMISSIVE.encode(&self.0))
+    }
+}
+
+impl Distribution<Seed> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Seed {
+        Seed(self.sample(rng))
+    }
+}
+
+impl Serialize for Seed {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        HEXLOWER_PERMISSIVE.encode(&self.0).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Seed {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // FIXME: support deserialize to both `&'de str` and `String`.
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Seed {
+    /// Constructs a RNG from this seed.
+    pub fn make_rng(&self) -> rand_hc::Hc128Rng {
+        rand_hc::Hc128Rng::from_seed(self.0)
+    }
+}
+
 /// Names of random number generators supported by `dbgen`.
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum RngName {
     /// ChaCha12
     ChaCha12,
     /// ChaCha20
+    #[serde(alias = "chacha")]
     ChaCha20,
     /// HC-128
     Hc128,
@@ -516,7 +621,8 @@ impl RngName {
 }
 
 /// Names of output formats supported by `dbgen`.
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum FormatName {
     /// SQL
     Sql,
@@ -565,13 +671,16 @@ impl FormatName {
 }
 
 /// Names of the compression output formats supported by `dbgen`.
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CompressionName {
     /// Compress as gzip format (`*.gz`).
+    #[serde(alias = "gz")]
     Gzip,
     /// Compress as xz format (`*.xz`).
     Xz,
     /// Compress as Zstandard format (`*.zst`).
+    #[serde(alias = "zst")]
     Zstd,
 }
 
@@ -617,8 +726,9 @@ impl CompressionName {
 }
 
 /// Names of the components to be produced `dbgen`.
-#[derive(Copy, Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[repr(u8)]
+#[serde(rename_all = "lowercase")]
 pub enum ComponentName {
     /// The `CREATE SCHEMA` SQL file.
     Schema = 1,
@@ -646,8 +756,8 @@ impl FromStr for ComponentName {
 }
 
 impl ComponentName {
-    fn union(mask: u8, cn: Self) -> u8 {
-        mask | (cn as u8)
+    fn union_all(it: impl IntoIterator<Item = Self>) -> u8 {
+        it.into_iter().fold(0, |mask, cn| mask | (cn as u8))
     }
 
     fn remove_from(self, mask: &mut u8) {

@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.template = child_path.join("template.sql");
         args.out_dir = out_dir.path().to_owned();
         args.zoneinfo = zoneinfo_dir.clone();
+        args.quiet = true;
 
         let mut registry = Registry::default();
         run(args, &mut registry)?;
