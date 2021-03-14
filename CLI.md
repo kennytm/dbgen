@@ -143,6 +143,10 @@ More options
     started. The timestamp must be written in the format `YYYY-mm-dd HH:MM:SS.fff`, and it is always
     in UTC, regardless of the `--time-zone` setting.
 
+* `-e «TEMPLATE»`, `--template-string «TEMPLATE»`
+
+    Pass the content of a template as an inline string via this command line argument.
+
 * `-D «EXPR»`, `--initialize «EXPR»`
 
     Executes the global expression before generating files. This parameter can be specified multiple

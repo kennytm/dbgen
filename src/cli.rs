@@ -133,9 +133,14 @@ pub struct Args {
     pub escape_backslash: bool,
 
     /// Generation template file.
-    #[structopt(short = "i", long, parse(from_os_str))]
+    #[structopt(short = "i", long, parse(from_os_str), conflicts_with("template_string"))]
     #[serde(skip_serializing_if = "is_path_empty")]
     pub template: PathBuf,
+
+    /// Inline generation template string.
+    #[structopt(short = "e", long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_string: Option<String>,
 
     /// Random number generator seed (should have 64 hex digits).
     #[structopt(short, long)]
@@ -228,6 +233,7 @@ impl Default for Args {
             rows_per_file: None,
             escape_backslash: false,
             template: PathBuf::default(),
+            template_string: None,
             seed: None,
             jobs: 0,
             rng: RngName::Hc128,
@@ -388,7 +394,10 @@ fn read_template_file(path: &Path) -> Result<String, S<Error>> {
 /// Runs the CLI program.
 pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     let row_args = args.row_args();
-    let input = read_template_file(&args.template)?;
+    let input = match args.template_string {
+        Some(input) => input,
+        None => read_template_file(&args.template)?,
+    };
     let mut template = Template::parse(&input, &args.initialize, args.schema_name.as_deref(), span_registry)?;
 
     let pool = ThreadPoolBuilder::new().num_threads(args.jobs).build().no_span_err()?;
