@@ -1,0 +1,151 @@
+use data_encoding::HEXLOWER_PERMISSIVE;
+use rand_core::{OsRng, RngCore};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, ffi::OsString};
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum ArgType {
+    Bool,
+    Str,
+    Int,
+    Choices { choices: Vec<String>, multiple: bool },
+}
+
+impl Default for ArgType {
+    fn default() -> Self {
+        Self::Str
+    }
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(default)]
+pub struct Arg {
+    pub short: String,
+    pub long: String,
+    pub help: String,
+    pub required: bool,
+    pub default: Option<String>,
+    pub r#type: ArgType,
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(default)]
+pub struct App {
+    pub name: String,
+    pub version: String,
+    pub about: String,
+    pub args: HashMap<String, Arg>,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
+pub enum Match {
+    Bool(bool),
+    Str(String),
+    Int(u64),
+    Array(Vec<String>),
+}
+
+pub type Matches<'a> = HashMap<&'a str, Match>;
+
+impl App {
+    /// Constructs the clap App from this simplified specification.
+    fn to_clap_app(&self) -> clap::App<'_, '_> {
+        let mut app = clap::App::new(&self.name)
+            .bin_name(format!("dbdbgen {}", self.name))
+            .version(&*self.version)
+            .about(&*self.about)
+            .settings(&[
+                clap::AppSettings::NoBinaryName,
+                clap::AppSettings::UnifiedHelpMessage,
+                clap::AppSettings::NextLineHelp,
+            ]);
+
+        for (name, arg) in &self.args {
+            let mut clap_arg = clap::Arg::with_name(name)
+                .long(if arg.long.is_empty() { name } else { &arg.long })
+                .help(&arg.help);
+            if !arg.short.is_empty() {
+                clap_arg = clap_arg.short(&arg.short);
+            }
+            match &arg.r#type {
+                ArgType::Bool => {}
+                ArgType::Str => {
+                    clap_arg = clap_arg.takes_value(true);
+                }
+                ArgType::Int => {
+                    clap_arg = clap_arg.takes_value(true).validator(|s| match s.parse::<u64>() {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(e.to_string()),
+                    });
+                }
+                ArgType::Choices { choices, multiple } => {
+                    for choice in choices {
+                        clap_arg = clap_arg.possible_value(choice);
+                    }
+                    if *multiple {
+                        clap_arg = clap_arg.required(true).use_delimiter(true).multiple(true);
+                    }
+                }
+            }
+            if arg.required {
+                clap_arg = clap_arg.required(true);
+            }
+            if let Some(default) = &arg.default {
+                clap_arg = clap_arg.default_value(default);
+            }
+
+            app = app.arg(clap_arg);
+        }
+
+        app
+    }
+
+    /// Obtains the matches from the command line.
+    pub fn get_matches<I>(&self, args: I) -> Matches<'_>
+    where
+        I: IntoIterator,
+        I::Item: Into<OsString> + Clone,
+    {
+        let clap_app = self.to_clap_app();
+        let matches = clap_app.get_matches_from(args);
+        let mut result = HashMap::with_capacity(self.args.len());
+        for (name, arg) in &self.args {
+            let value = match &arg.r#type {
+                ArgType::Bool => Match::Bool(matches.is_present(name)),
+                ArgType::Int => {
+                    if let Some(value) = matches.value_of(name) {
+                        Match::Int(value.parse().unwrap())
+                    } else {
+                        continue;
+                    }
+                }
+                ArgType::Choices { multiple: true, .. } => {
+                    if let Some(values) = matches.values_of(name) {
+                        Match::Array(values.map(String::from).collect())
+                    } else {
+                        continue;
+                    }
+                }
+                _ => {
+                    if let Some(value) = matches.value_of(name) {
+                        Match::Str(value.to_owned())
+                    } else {
+                        continue;
+                    }
+                }
+            };
+            result.insert(&**name, value);
+        }
+        result
+    }
+}
+
+pub fn ensure_seed(matches: &mut Matches<'_>) {
+    matches.entry("seed").or_insert_with(|| {
+        let mut buf = [0u8; 32];
+        OsRng.fill_bytes(&mut buf);
+        Match::Str(HEXLOWER_PERMISSIVE.encode(&buf))
+    });
+}
