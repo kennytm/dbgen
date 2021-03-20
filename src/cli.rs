@@ -467,6 +467,10 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
         ctx = state.into_compile_context();
     }
 
+    WRITE_FINISHED.store(false, Ordering::Relaxed);
+    WRITE_PROGRESS.store(0, Ordering::Relaxed);
+    WRITTEN_SIZE.store(0, Ordering::Relaxed);
+
     let progress_bar_thread = spawn(move || {
         if show_progress {
             run_progress_thread(row_args.total_count);
