@@ -8,8 +8,16 @@
 `dbgen` is a program to quickly generate random SQL dump of a table following a given set of
 expressions.
 
-* [CLI usage](CLI.md)
-* [Schema generator CLI usage](SchemaGen.md)
+* Usage
+    * [Table generator `dbgen`](CLI.md)
+    * [Schema generator `dbschemagen`](SchemaGen.md)
+
+* Reference
+    * [Template reference](Template.md)
+    * [Advanced template features](TemplateAdvanced.md)
+
+* Database generator `dbdbgen`
+    * [`dbdbgen` tutorial](DbdbgenTutorial.md)
+    * [`dbdbgen` reference](Dbdbgen.md)
+
 * [WASM playground](https://kennytm.github.io/dbgen/)
-* [Template reference](Template.md)
-* [Advanced template features](TemplateAdvanced.md)

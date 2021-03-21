@@ -1,5 +1,5 @@
-CLI usage
-=========
+Table generator CLI usage
+=========================
 
 ```sh
 dbgen -i template.sql -o out_dir -N 7500000 -R 300000 -r 100
