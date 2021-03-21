@@ -43,6 +43,18 @@
             type: 'int',
             default: '1',
         },
+        total_count: {
+            short: 'N',
+            long: 'total-count',
+            help: 'Total number of rows of the main table.',
+            type: 'int',
+        },
+        rows_per_file: {
+            short: 'R',
+            long: 'rows-per-file',
+            help: 'Number of rows per file.',
+            type: 'int',
+        },
         escape_backslash: {
             long: 'escape-backslash',
             help: 'Escape backslashes when writing a string.',

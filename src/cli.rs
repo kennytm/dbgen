@@ -119,7 +119,7 @@ pub struct Args {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_insert_rows_count: Option<u32>,
 
-    /// Total number of rows of all generated files.
+    /// Total number of rows of the main table.
     #[structopt(short = "N", long, conflicts_with_all(&["files-count", "last-file-inserts-count", "last-insert-rows-count"]))]
     pub total_count: Option<u64>,
 
