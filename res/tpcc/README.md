@@ -13,24 +13,19 @@ the [TPC-C] v5.11.0 benchmark. The table names are compatible with [BenchmarkSQL
 
 ## Usage
 
-1. Download or clone this repository
-
-2. Install Python 3.7 (or above).
-
-3. Download or build `dbgen`.
+1. Download or build `dbdbgen`.
 
     Pre-compiled binaries can be downloaded from <https://github.com/kennytm/dbgen/releases>.
-    Decompress the `*.tar.xz` from the assets of the latest release to get the `dbgen` executable.
-    We recommend placing it into the folder `./target/release/`.
+    Decompress the `*.tar.xz` from the assets of the latest release to get the `dbdbgen` executable.
 
-    You can also build `dbgen` from source with Rust 1.40 (or above). After installing Rust, run
-    `cargo build --release`.
+    You can also build `dbdbgen` from source with Rust 1.40 (or above). After installing Rust, run
+    `cargo build --release -p dbdbgen`.
 
-4. Execute the generator script. Suppose we want to create a 30-warehouse dump in the `tpcc-out/`
+2. Execute the `dbdbgen` program. Suppose we want to create a 30-warehouse dump in the `tpcc-out/`
     folder:
 
     ```sh
-    python3 res/tpcc/gen.py -o tpcc-out -w 30
+    dbdbgen res/tpcc/tpcc.jsonnet -o tpcc-out -w 30
     ```
 
     <details><summary>The SQL dump is split into multiple files in subdirectories of
