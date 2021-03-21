@@ -51,7 +51,7 @@ impl<'p> Vm<'p> {
     pub fn eval_arguments(&mut self) -> Result<App, Error> {
         let app_js = self
             .vm
-            .evaluate_snippet(self.path, "function(src) src")
+            .evaluate_snippet(self.path, "function(src) {[k]: src[k] for k in ['name', 'version', 'about', 'args']}")
             .map_err(|error| Error::Jsonnet {
                 purpose: Purpose::Arguments,
                 message: error.to_string(),
