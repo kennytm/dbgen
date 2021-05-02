@@ -122,6 +122,7 @@ type Arg = {
     | `'bool'` | The argument is a flag, taking no input (present = true, absent = false). |
     | `'str'`  | The argument is an arbitrary string. |
     | `'int'`  | The argument is an unsigned decimal integer. Errors on non-integer. |
+    | `'float'` | The argument is a floating point number. Errors on non-number. |
     | `{choices:…}` | The argument must be selected from the strings listed in the choices. |
 
     The function `dbdbgen.choices(['x', 'y'], multiple=b)` is equivalent

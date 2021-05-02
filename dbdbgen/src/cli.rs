@@ -9,6 +9,7 @@ pub enum ArgType {
     Bool,
     Str,
     Int,
+    Float,
     Choices { choices: Vec<String>, multiple: bool },
 }
 
@@ -44,6 +45,7 @@ pub enum Match {
     Bool(bool),
     Str(String),
     Int(u64),
+    Float(f64),
     Array(Vec<String>),
 }
 
@@ -76,6 +78,12 @@ impl App {
                 }
                 ArgType::Int => {
                     clap_arg = clap_arg.takes_value(true).validator(|s| match s.parse::<u64>() {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(e.to_string()),
+                    });
+                }
+                ArgType::Float => {
+                    clap_arg = clap_arg.takes_value(true).validator(|s| match s.parse::<f64>() {
                         Ok(_) => Ok(()),
                         Err(e) => Err(e.to_string()),
                     });
@@ -117,6 +125,13 @@ impl App {
                 ArgType::Int => {
                     if let Some(value) = matches.value_of(name) {
                         Match::Int(value.parse().unwrap())
+                    } else {
+                        continue;
+                    }
+                }
+                ArgType::Float => {
+                    if let Some(value) = matches.value_of(name) {
+                        Match::Float(value.parse().unwrap())
                     } else {
                         continue;
                     }
