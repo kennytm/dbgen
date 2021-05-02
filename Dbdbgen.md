@@ -244,3 +244,12 @@ The library currently consists of the following fields:
     std.assertEqual(dbdbgen.xorSeed('1234abcd', '1357fedc'), '01635511')
     ```
 
+* `dbdbgen.sha256(s)`
+
+    Computes the SHA-256 hash of a string. Example:
+
+    ```jsonnet
+    std.assertEqual(
+        dbdbgen.sha256('dbgen'),
+        'c069fb143dccd2e66d526e631d13d8511934a34f1cf4df95f0137ffe2d8287a8')
+    ```

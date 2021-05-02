@@ -14,3 +14,4 @@ clap = "2.33"
 thiserror = "1.0"
 rand_core = { version = "0.6", features = ["getrandom"] }
 data-encoding = "2.3"
+sha2 = "0.9"

@@ -2,9 +2,11 @@ use crate::{
     cli::{App, Matches},
     error::{Error, Purpose},
 };
+use data_encoding::HEXLOWER_PERMISSIVE;
 use dbgen::cli::Args;
-use jsonnet::JsonnetVm;
+use jsonnet::{JsonVal, JsonValue, JsonnetVm};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::{ffi::OsStr, fs::read_to_string, path::Path};
 
 pub struct Vm<'p> {
@@ -44,6 +46,7 @@ impl<'p> Vm<'p> {
                 Err("external import is disabled".to_owned())
             }
         });
+        vm.native_callback("sha256", vm_sha256, &["s"]);
         vm.tla_code("src", &content);
         Ok(Self { vm, path })
     }
@@ -51,7 +54,10 @@ impl<'p> Vm<'p> {
     pub fn eval_arguments(&mut self) -> Result<App, Error> {
         let app_js = self
             .vm
-            .evaluate_snippet(self.path, "function(src) {[k]: src[k] for k in ['name', 'version', 'about', 'args']}")
+            .evaluate_snippet(
+                self.path,
+                "function(src) {[k]: src[k] for k in ['name', 'version', 'about', 'args']}",
+            )
             .map_err(|error| Error::Jsonnet {
                 purpose: Purpose::Arguments,
                 message: error.to_string(),
@@ -83,4 +89,12 @@ impl<'p> Vm<'p> {
 
         Ok(steps)
     }
+}
+
+fn vm_sha256<'a>(vm: &'a JsonnetVm, args: &[JsonVal<'a>]) -> Result<JsonValue<'a>, String> {
+    let input = args[0].as_str().ok_or("expected a string")?;
+    let mut hasher = Sha256::new();
+    hasher.update(input);
+    let result = hasher.finalize();
+    Ok(JsonValue::from_str(vm, &HEXLOWER_PERMISSIVE.encode(&result)))
 }

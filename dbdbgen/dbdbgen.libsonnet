@@ -14,6 +14,8 @@
         local xor = std.mapWithIndex(function(i, a) a ^ saltBytes[i], seedBytes);
         hexEncodeU32(xor),
 
+    /// Computes the SHA-256 hash of a string. Returns a hex string.
+    sha256(s):: std.native('sha256')(s),
 
     /// Used in argument values, indicating the argument should be chosen from a
     /// list of possible choices.
