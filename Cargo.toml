@@ -41,7 +41,7 @@ rand_xorshift = { version = "0.3", optional = true }
 shlex = { version = "1.0", optional = true }
 flate2 = { version = "1.0", optional = true }
 xz2 = { version = "0.1", optional = true }
-zstd = { version = "0.6", default-features = false, optional = true }
+zstd = { version = "0.7", default-features = false, optional = true }
 smallvec = { version = "1.1", default-features = false }
 memchr = "2.3"
 numcmp = "0.1"
@@ -58,7 +58,7 @@ name = "benchmark"
 harness = false
 
 [build-dependencies]
-vergen = "3.0"
+vergen = { version = "5.1", default-features = false, features = ["git", "cargo"] }
 
 [features]
 default = ["cli"]

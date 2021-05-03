@@ -22,9 +22,9 @@ pub const FULL_VERSION: &str = concat!(
     "\nVersion: v",
     env!("CARGO_PKG_VERSION"),
     "\nCommit:  ",
-    env!("VERGEN_SHA"),
+    env!("VERGEN_GIT_SHA"),
     "\nTarget:  ",
-    env!("VERGEN_TARGET_TRIPLE"),
+    env!("VERGEN_CARGO_TARGET_TRIPLE"),
 );
 
 pub mod bytes;
