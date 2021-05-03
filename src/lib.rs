@@ -34,6 +34,7 @@ pub mod error;
 pub mod eval;
 pub mod format;
 pub mod functions;
+pub mod lexctr;
 pub mod number;
 pub mod parser;
 #[cfg(feature = "cli")]
