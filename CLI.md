@@ -29,6 +29,9 @@ Common options
 
     Maximum number of rows per INSERT statement. Default is 1.
 
+The `--total-count` and `--rows-per-file` parameters also accept SI prefixes (e.g. `1.5K` = 1500)
+and exponential form (e.g. `2.5e4` = 25000) to simplify some input.
+
 More options
 ------------
 

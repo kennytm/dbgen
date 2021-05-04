@@ -120,11 +120,11 @@ pub struct Args {
     pub last_insert_rows_count: Option<u32>,
 
     /// Total number of rows of the main table.
-    #[structopt(short = "N", long, conflicts_with_all(&["files-count", "last-file-inserts-count", "last-insert-rows-count"]))]
+    #[structopt(short = "N", long, parse(try_from_str = parse_row_count), conflicts_with_all(&["files-count", "last-file-inserts-count", "last-insert-rows-count"]))]
     pub total_count: Option<u64>,
 
     /// Number of rows per file.
-    #[structopt(short = "R", long, conflicts_with_all(&["inserts-count"]))]
+    #[structopt(short = "R", long, parse(try_from_str = parse_row_count), conflicts_with_all(&["inserts-count"]))]
     pub rows_per_file: Option<u64>,
 
     /// Escape backslashes when writing a string.
@@ -302,6 +302,11 @@ fn is_sql(format: &FormatName) -> bool {
 
 fn is_default_components(components: &[ComponentName]) -> bool {
     ComponentName::union_all(components.iter().copied()) == ComponentName::Table as u8 | ComponentName::Data as u8
+}
+
+fn parse_row_count(input: &str) -> Result<u64, parse_size::Error> {
+    use parse_size::{ByteSuffix, Config};
+    Config::new().with_byte_suffix(ByteSuffix::Deny).parse_size(input)
 }
 
 impl Args {
