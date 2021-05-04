@@ -49,13 +49,18 @@
             short: 'N',
             long: 'total-count',
             help: 'Total number of rows of the main table.',
-            type: 'int',
+            type: 'size',
         },
         rows_per_file: {
             short: 'R',
             long: 'rows-per-file',
             help: 'Number of rows per file.',
-            type: 'int',
+            type: 'size',
+        },
+        size: {
+            short: 'z',
+            help: 'Target pre-compressed size of each file.',
+            type: 'size',
         },
         escape_backslash: {
             long: 'escape-backslash',

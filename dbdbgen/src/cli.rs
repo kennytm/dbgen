@@ -1,16 +1,38 @@
 use data_encoding::HEXLOWER_PERMISSIVE;
+use parse_size::parse_size;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ffi::OsString};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ArgType {
     Bool,
     Str,
     Int,
+    Size,
     Float,
     Choices { choices: Vec<String>, multiple: bool },
+}
+
+impl ArgType {
+    fn parse_input(&self, input: &str) -> Result<Match, String> {
+        match self {
+            Self::Int => match input.parse() {
+                Ok(u) => Ok(Match::Int(u)),
+                Err(e) => Err(e.to_string()),
+            },
+            Self::Float => match input.parse() {
+                Ok(f) => Ok(Match::Float(f)),
+                Err(e) => Err(e.to_string()),
+            },
+            Self::Size => match parse_size(input) {
+                Ok(u) => Ok(Match::Int(u)),
+                Err(e) => Err(e.to_string()),
+            },
+            _ => Ok(Match::Str(input.to_owned())),
+        }
+    }
 }
 
 impl Default for ArgType {
@@ -76,17 +98,11 @@ impl App {
                 ArgType::Str => {
                     clap_arg = clap_arg.takes_value(true);
                 }
-                ArgType::Int => {
-                    clap_arg = clap_arg.takes_value(true).validator(|s| match s.parse::<u64>() {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(e.to_string()),
-                    });
-                }
-                ArgType::Float => {
-                    clap_arg = clap_arg.takes_value(true).validator(|s| match s.parse::<f64>() {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(e.to_string()),
-                    });
+                ArgType::Int | ArgType::Float | ArgType::Size => {
+                    let t = arg.r#type.clone();
+                    clap_arg = clap_arg
+                        .takes_value(true)
+                        .validator(move |s| t.parse_input(&s).map(drop));
                 }
                 ArgType::Choices { choices, multiple } => {
                     for choice in choices {
@@ -122,20 +138,6 @@ impl App {
         for (name, arg) in &self.args {
             let value = match &arg.r#type {
                 ArgType::Bool => Match::Bool(matches.is_present(name)),
-                ArgType::Int => {
-                    if let Some(value) = matches.value_of(name) {
-                        Match::Int(value.parse().unwrap())
-                    } else {
-                        continue;
-                    }
-                }
-                ArgType::Float => {
-                    if let Some(value) = matches.value_of(name) {
-                        Match::Float(value.parse().unwrap())
-                    } else {
-                        continue;
-                    }
-                }
                 ArgType::Choices { multiple: true, .. } => {
                     if let Some(values) = matches.values_of(name) {
                         Match::Array(values.map(String::from).collect())
@@ -145,7 +147,7 @@ impl App {
                 }
                 _ => {
                     if let Some(value) = matches.value_of(name) {
-                        Match::Str(value.to_owned())
+                        arg.r#type.parse_input(value).unwrap()
                     } else {
                         continue;
                     }

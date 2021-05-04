@@ -66,7 +66,7 @@ type Arg = {
     help: string,
     required: boolean,
     default: string | null,
-    type: 'bool' | 'str' | 'int' | {choices: {choices: string[], multiple: boolean}}
+    type: 'bool' | 'str' | 'int' | 'size' | {choices: {choices: string[], multiple: boolean}}
 };
 ```
 
@@ -122,6 +122,7 @@ type Arg = {
     | `'bool'` | The argument is a flag, taking no input (present = true, absent = false). |
     | `'str'`  | The argument is an arbitrary string. |
     | `'int'`  | The argument is an unsigned decimal integer. Errors on non-integer. |
+    | `'size'` | The argument is an unsigned integer for file byte size (e.g. `1 MiB`). Errors on non-integer. |
     | `'float'` | The argument is a floating point number. Errors on non-number. |
     | `{choices:…}` | The argument must be selected from the strings listed in the choices. |
 
@@ -163,6 +164,7 @@ interface Step {
     out_dir: string,
     total_count: number,
     rows_per_file: number,
+    size: number | null,
     escape_backslash: boolean,
     template_string: string,
     seed: string | null,
@@ -192,6 +194,7 @@ Each step describes the arguments sent to `dbgen`. They correspond to the
 | out_dir | `-o`/`--out-dir` | **required** |
 | total_count | `-N`/`--total-count` | 1 |
 | rows_per_file | `-R`/`--rows-per-file` | 1 |
+| size | `-z`/`--size` | null |
 | escape_backslash | `--escape-backslash` | false |
 | template_string | `-e`/`--template-string` | **required** |
 | seed | `-s`/`--seed` | null |
