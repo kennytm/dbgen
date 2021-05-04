@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let child_path = child_dir.path();
         eprintln!("Running {}...", child_path.display());
         let mut args: Args = from_reader(File::open(child_path.join("flags.json"))?)?;
-        args.template = child_path.join("template.sql");
+        args.template = Some(child_path.join("template.sql"));
         args.out_dir = out_dir.path().to_owned();
         args.zoneinfo = zoneinfo_dir.clone();
         args.quiet = true;

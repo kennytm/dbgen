@@ -133,9 +133,15 @@ pub struct Args {
     pub escape_backslash: bool,
 
     /// Generation template file.
-    #[structopt(short = "i", long, parse(from_os_str), conflicts_with("template_string"))]
-    #[serde(skip_serializing_if = "is_path_empty")]
-    pub template: PathBuf,
+    #[structopt(
+        short = "i",
+        long,
+        parse(from_os_str),
+        conflicts_with("template-string"),
+        required_unless("template-string")
+    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<PathBuf>,
 
     /// Inline generation template string.
     #[structopt(short = "e", long)]
@@ -232,7 +238,7 @@ impl Default for Args {
             total_count: None,
             rows_per_file: None,
             escape_backslash: false,
-            template: PathBuf::default(),
+            template: None,
             template_string: None,
             seed: None,
             jobs: 0,
@@ -284,10 +290,6 @@ fn is_utc(tz: &str) -> bool {
 
 fn is_default_zoneinfo(path: &Path) -> bool {
     path == Path::new("/usr/share/zoneinfo")
-}
-
-fn is_path_empty(path: &Path) -> bool {
-    path.as_os_str().is_empty()
 }
 
 fn is_hc128(rng: &RngName) -> bool {
@@ -394,9 +396,16 @@ fn read_template_file(path: &Path) -> Result<String, S<Error>> {
 /// Runs the CLI program.
 pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     let row_args = args.row_args();
-    let input = match args.template_string {
-        Some(input) => input,
-        None => read_template_file(&args.template)?,
+    let input = match (args.template_string, &args.template) {
+        (Some(input), _) => input,
+        (None, Some(template)) => read_template_file(template)?,
+        _ => {
+            return Err(Error::UnsupportedCliParameter {
+                kind: "template",
+                value: "".to_owned(),
+            }
+            .no_span())
+        }
     };
     let mut template = Template::parse(&input, &args.initialize, args.schema_name.as_deref(), span_registry)?;
 
