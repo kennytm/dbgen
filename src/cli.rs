@@ -4,10 +4,11 @@ use crate::{
     error::Error,
     eval::{CompileContext, Schema, State, Table},
     format::{CsvFormat, Format, SqlFormat},
+    lexctr::LexCtr,
     parser::{QName, Template},
     span::{Registry, ResultExt, SpanExt, S},
     value::{Value, TIMESTAMP_FORMAT},
-    writer,
+    writer::{self, Writer},
 };
 
 use chrono::{NaiveDateTime, ParseResult, Utc};
@@ -95,12 +96,12 @@ pub struct Args {
     #[structopt(short, long, parse(from_os_str))]
     pub out_dir: PathBuf,
 
-    /// Number of files to generate.
+    /// Total number of file generator threads.
     #[structopt(short = "k", long, default_value = "1")]
     #[serde(skip_serializing_if = "is_one")]
     pub files_count: u32,
 
-    /// Number of INSERT statements per file.
+    /// Number of INSERT statements per file generator threads.
     #[structopt(short = "n", long, default_value = "1")]
     #[serde(skip_serializing_if = "is_one")]
     pub inserts_count: u32,
@@ -109,12 +110,12 @@ pub struct Args {
     #[structopt(short, long, default_value = "1")]
     pub rows_count: u32,
 
-    /// Number of INSERT statements in the last file.
+    /// Number of INSERT statements in the last file generator thread.
     #[structopt(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_file_inserts_count: Option<u32>,
 
-    /// Number of rows of the last INSERT statement of the last file.
+    /// Number of rows of the last INSERT statement of the last file generator thread.
     #[structopt(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_insert_rows_count: Option<u32>,
@@ -123,9 +124,13 @@ pub struct Args {
     #[structopt(short = "N", long, parse(try_from_str = parse_row_count), conflicts_with_all(&["files-count", "last-file-inserts-count", "last-insert-rows-count"]))]
     pub total_count: Option<u64>,
 
-    /// Number of rows per file.
+    /// Number of rows per file generator thread.
     #[structopt(short = "R", long, parse(try_from_str = parse_row_count), conflicts_with_all(&["inserts-count"]))]
     pub rows_per_file: Option<u64>,
+
+    /// Target pre-compressed size of each file.
+    #[structopt(short = "z", long, parse(try_from_str = parse_size::parse_size))]
+    pub size: Option<u64>,
 
     /// Escape backslashes when writing a string.
     #[structopt(long)]
@@ -237,6 +242,7 @@ impl Default for Args {
             last_insert_rows_count: None,
             total_count: None,
             rows_per_file: None,
+            size: None,
             escape_backslash: false,
             template: None,
             template_string: None,
@@ -364,15 +370,21 @@ fn now_from_str(s: &str) -> ParseResult<NaiveDateTime> {
 trait PathResultExt {
     type Ok;
     fn with_path(self, action: &'static str, path: &Path) -> Result<Self::Ok, S<Error>>;
+    fn with_path_fn(self, action: &'static str, path_fn: impl FnOnce() -> PathBuf) -> Result<Self::Ok, S<Error>>;
 }
 
 impl<T> PathResultExt for io::Result<T> {
     type Ok = T;
+
     fn with_path(self, action: &'static str, path: &Path) -> Result<T, S<Error>> {
+        self.with_path_fn(action, || path.to_owned())
+    }
+
+    fn with_path_fn(self, action: &'static str, path_fn: impl FnOnce() -> PathBuf) -> Result<T, S<Error>> {
         self.map_err(|source| {
             Error::Io {
                 action,
-                path: path.to_owned(),
+                path: path_fn(),
                 source,
             }
             .no_span()
@@ -455,6 +467,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
         format: args.format,
         compression: args.compression.map(|c| (c, compress_level)),
         components_mask,
+        file_size: args.size,
     };
 
     if ComponentName::Schema.is_in(env.components_mask) {
@@ -798,37 +811,71 @@ impl ComponentName {
 
 /// A [`Writer`] which counts how many bytes are written.
 struct FormatWriter<'a> {
+    /// The target writer.
     writer: BufWriter<Box<dyn Write>>,
-    count: u64,
-    path: PathBuf,
+    /// Total number of bytes currently written into `writer`.
+    written_size: u64,
+    /// Total number of bytes written which is not yet committed into
+    /// the `WRITTEN_SIZE` global variable.
+    uncommitted_size: u64,
+    /// The prefix part of the path.
+    path_prefix: PathBuf,
+    /// The extension of the path.
+    path_extension: &'static str,
+    /// The file size limit and the associated lexicographical counter for when
+    /// size-splitting is needed.
+    target_size_and_counter: Option<(u64, LexCtr)>,
+    /// The output file format.
     format: &'a dyn Format,
 }
 impl<'a> FormatWriter<'a> {
-    /// Creates a new [`WriteWrapper`] by wrapping another [`Write`].
-    fn new(writer: Box<dyn Write>, path: PathBuf, format: &'a dyn Format) -> Self {
+    /// Creates a new [`WriteWrapper`].
+    fn new(
+        path_prefix: PathBuf,
+        path_extension: &'static str,
+        target_size: Option<u64>,
+        format: &'a dyn Format,
+    ) -> Self {
         Self {
-            writer: BufWriter::new(writer),
-            count: 0,
-            path,
+            writer: BufWriter::with_capacity(0, Box::new(sink())),
+            written_size: 0,
+            uncommitted_size: 0,
+            path_prefix,
+            path_extension,
+            target_size_and_counter: target_size.map(|s| (s, LexCtr::default())),
             format,
         }
     }
 
-    /// Commits the number of bytes written into the [`WRITTEN_SIZE`] global variable, and resets
-    /// the byte count of all iterated `WriteCountWrapper` instances to zero.
-    fn commit_bytes_written<'b>(instances: impl Iterator<Item = &'b mut Self>)
-    where
-        'a: 'b,
-    {
-        let total = instances.map(|w| mem::take(&mut w.count)).sum();
-        WRITTEN_SIZE.fetch_add(total, Ordering::Relaxed);
+    /// Returns the current file path.
+    fn path(&self) -> PathBuf {
+        let mut path_prefix = self.path_prefix.as_os_str().to_owned();
+        if let Some((_, counter)) = &self.target_size_and_counter {
+            path_prefix.push(&counter.to_string());
+        }
+        path_prefix.push(".");
+        path_prefix.push(self.path_extension);
+        path_prefix.into()
+    }
+
+    /// Checks if the current written size exceeds the size limit.
+    fn try_rotate(&mut self) -> bool {
+        if let Some((size, counter)) = &mut self.target_size_and_counter {
+            if self.written_size >= *size {
+                counter.inc();
+                self.written_size = 0;
+                return true;
+            }
+        }
+        false
     }
 }
 
 impl Write for FormatWriter<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let bytes_written = self.writer.write(buf)?;
-        self.count += bytes_written as u64;
+        self.written_size += bytes_written as u64;
+        self.uncommitted_size += bytes_written as u64;
         Ok(bytes_written)
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -840,30 +887,32 @@ impl writer::Writer for FormatWriter<'_> {
     fn write_value(&mut self, value: &Value) -> Result<(), S<Error>> {
         self.format
             .write_value(self, value)
-            .with_path("write value", &self.path)
+            .with_path_fn("write value", || self.path())
     }
     fn write_file_header(&mut self, schema: &Schema<'_>) -> Result<(), S<Error>> {
         self.format
             .write_file_header(self, schema)
-            .with_path("write value", &self.path)
+            .with_path_fn("write file header", || self.path())
     }
     fn write_header(&mut self, schema: &Schema<'_>) -> Result<(), S<Error>> {
         self.format
             .write_header(self, schema)
-            .with_path("write value", &self.path)
+            .with_path_fn("write header", || self.path())
     }
     fn write_value_separator(&mut self) -> Result<(), S<Error>> {
         self.format
             .write_value_separator(self)
-            .with_path("write value", &self.path)
+            .with_path_fn("write value separator", || self.path())
     }
     fn write_row_separator(&mut self) -> Result<(), S<Error>> {
         self.format
             .write_row_separator(self)
-            .with_path("write value", &self.path)
+            .with_path_fn("write row separator", || self.path())
     }
     fn write_trailer(&mut self) -> Result<(), S<Error>> {
-        self.format.write_trailer(self).with_path("write value", &self.path)
+        self.format
+            .write_trailer(self)
+            .with_path_fn("write trailer", || self.path())
     }
 }
 
@@ -880,6 +929,7 @@ struct Env {
     format: FormatName,
     compression: Option<(CompressionName, u8)>,
     components_mask: u8,
+    file_size: Option<u64>,
 }
 
 /// Information specific to a file and its derived tables.
@@ -922,14 +972,14 @@ impl Env {
         Ok(())
     }
 
-    fn open_data_file(&self, path: &mut PathBuf) -> Result<Box<dyn Write>, S<Error>> {
+    fn open_data_file(&self, path: PathBuf) -> Result<Box<dyn Write>, S<Error>> {
         Ok(if !ComponentName::Data.is_in(self.components_mask) {
             Box::new(sink())
         } else if let Some((compression, level)) = self.compression {
-            let mut path_string = mem::take(path).into_os_string();
-            path_string.push(".");
-            path_string.push(compression.extension());
-            *path = PathBuf::from(path_string);
+            let mut path = path.into_os_string();
+            path.push(".");
+            path.push(compression.extension());
+            let path = PathBuf::from(path);
             compression.wrap(File::create(&path).with_path("create data file", &path)?, level)
         } else {
             Box::new(File::create(&path).with_path("create data file", &path)?)
@@ -938,18 +988,14 @@ impl Env {
 
     /// Writes the data file.
     fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), S<Error>> {
-        let path_suffix = format!(
-            ".{0:01$}.{2}",
-            info.file_index,
-            self.file_num_digits,
-            self.format.extension()
-        );
+        let path_suffix = format!(".{0:01$}", info.file_index, self.file_num_digits);
         let format = self.format.create(self.escape_backslash, self.headers);
 
         let mut fwe = writer::Env::new(&self.tables, state, self.qualified, |table| {
-            let mut path = self.out_dir.join([table.name.unique_name(), &path_suffix].concat());
-            let inner_writer = self.open_data_file(&mut path)?;
-            Ok(FormatWriter::new(inner_writer, path, &*format))
+            let path = self.out_dir.join([table.name.unique_name(), &path_suffix].concat());
+            let mut w = FormatWriter::new(path, self.format.extension(), self.file_size, &*format);
+            w.writer = BufWriter::new(self.open_data_file(w.path())?);
+            Ok(w)
         })?;
 
         for i in 0..info.inserts_count {
@@ -963,7 +1009,17 @@ impl Env {
             }
             fwe.write_trailer()?;
 
-            FormatWriter::commit_bytes_written(fwe.tables().map(|p| p.1));
+            let mut total_uncommitted_size = 0;
+            for (table, w) in fwe.tables() {
+                total_uncommitted_size += mem::take(&mut w.uncommitted_size);
+                if w.try_rotate() {
+                    let new_path = w.path();
+                    w.writer.flush().with_path("flush old file for rotation", &new_path)?;
+                    w.writer = BufWriter::new(self.open_data_file(new_path)?);
+                    w.write_file_header(&table.schema(self.qualified))?;
+                }
+            }
+            WRITTEN_SIZE.fetch_add(total_uncommitted_size, Ordering::Relaxed);
             WRITE_PROGRESS.fetch_add(rows_count.into(), Ordering::Relaxed);
         }
         Ok(())

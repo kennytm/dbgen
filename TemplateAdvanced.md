@@ -17,7 +17,7 @@ CREATE TABLE cardinals (
 ```
 
 Variables assigned in global expressions can be re-assigned, but the change is localized in the
-current generated file. Every new file would be initialized by the same evaluated values.
+current file generator thread. Every new thread would be initialized by the same evaluated values.
 For instance if we generate 2 files given this template:
 
 ```sql
@@ -177,7 +177,7 @@ CREATE TABLE "bottom" (
 
 ### File size concern
 
-Derived tables do not have individual `--files-count`, `--inserts-count` and `--rows-count`
+Derived tables do not have individual `--total-count`, `--rows-per-file` and `--rows-count`
 settings. In particular, if we set `for each row of "main" generate N rows of "derived"`, the actual
 number of rows per INSERT statements of the derived table will be N times `--row-count` of the main
 table (deeper derivatives will cascade). This may produce excessively large tables when the number

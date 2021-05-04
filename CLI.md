@@ -23,7 +23,7 @@ Common options
 
 * `-R «N»`, `--rows-per-file «N»`
 
-    Maximum number of rows per file. Default is 1.
+    Maximum number of rows per file generator thread. Default is 1.
 
 * `-r «N»`, `--rows-count «N»`
 
@@ -99,25 +99,25 @@ More options
     | SQLite3     | No                                                              |
     | TransactSQL | No                                                              |
 
-    Backslashes in template strings are always ignored, regardless of this setting.
+    Backslashes in template strings are always not special, regardless of this setting.
 
 * `-k «N»`, `--files-count «N»`
 
-    (Deprecated) Number of data files to generate.
+    (Deprecated) Total number of file generator threads.
 
 * `-n «N»`, `--inserts-count «N»`
 
-    (Deprecated) Number of INSERT statements per file to generate.
+    (Deprecated) Number of INSERT statements per file generator threads.
 
 * `--last-file-inserts-count «N»`
 
-    (Deprecated) In the last data file, generate *N* INSERT statements instead of the value
-    given by `--inserts-count`.
+    (Deprecated) In the last file generator thread, produce *N* INSERT statements instead of the
+    value given by `--inserts-count`.
 
 * `--last-insert-rows-count «N»`
 
-    (Deprecated) In the last INSERT statement of the last data file, generate *N* rows instead of
-    the value given by `--rows-count`.
+    (Deprecated) In the last INSERT statement of the last file generator thread, produce *N* rows
+    instead of the value given by `--rows-count`.
 
     These four options provide an alternative way to specify the total number of rows. But they are
     more difficult to manage, and are no longer recommended since v0.8.0.
@@ -210,6 +210,51 @@ More options
     Since the data are randomly generated, the compression ratio is typically not very high (around
     70% of uncompressed input). We do not recommend using the algorithm "xz" here, nor using very
     high compression levels.
+
+* `-z «SIZE»`, `--size «SIZE»`
+
+    Target size (in bytes) of each data file. Default is unlimited.
+
+    Explicit units are accepted (e.g. `8kB` = 8000, `0.5MiB` = 524288).
+
+    When the target size is provided, each file generator thread may produce multiple files. After a
+    complete INSERT statement (i.e. `--row-count` rows) is written, if the pre-compressed size of
+    the file exceeds this `--size` parameter, dbgen will close it and start to write to a new file.
+
+    The multiple files generated this way are written sequentially. You should still consider
+    adjusting `--total-count`/`--rows-per-file` or `--files-count` to take advantage of parallelism.
+
+    The size limits on a main table and its derived tables are considered independently. Thus, the
+    number of files for them may not match.
+
+    The file names are still ordered *lexicographically* but not necessarily numerically. Example
+    directory is like:
+
+    ```
+    # suppose 10102 files are generated from file generator thread 0:
+    tbl.0000.csv
+    tbl.0001.csv
+    ...
+    tbl.0099.csv
+    tbl.010000.csv
+    tbl.010001.csv
+    ...
+    tbl.019999.csv
+    tbl.02000000.csv
+    tbl.02000001.csv
+
+    # similar for file generator thread 1:
+    tbl.1000.csv
+    tbl.1001.csv
+    ...
+    tbl.1099.csv
+    tbl.110000.csv
+    tbl.110001.csv
+    ...
+    ```
+
+    In lexicographic ordering, `tbl.1000.csv` should appear after `tbl.010000.csv`. But numerical or
+    "natural" ordering will switch the order, and potentially affect subsequent import efficiency.
 
 * `--components schema,table,data`
 

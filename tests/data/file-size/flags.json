@@ -1,0 +1,9 @@
+{
+    "total_count": 20,
+    "rows_per_file": 10,
+    "rows_count": 2,
+    "format": "csv",
+    "headers": true,
+    "components": ["data"],
+    "size": 98
+}
