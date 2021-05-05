@@ -389,11 +389,6 @@ From highest to lowest precedence:
 
     When the denominator `d` is 0, both of these functions return NULL.
 
-* **mod(9, 4)**
-
-    Computes the remainder when 9 is divided by 4 (i.e. 1). The result has the same sign as the
-    numerator (+9).
-
 ### Arrays
 
 * **ARRAY['X', 'Y', 'Z']**
