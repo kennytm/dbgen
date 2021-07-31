@@ -124,7 +124,7 @@ fn unescape_into(res: &mut String, ident: &str, do_percent_escape: bool) {
 
     let mut chars = ident.chars();
     let escape_char = match chars.next() {
-        c @ Some('`') | c @ Some('\'') | c @ Some('"') => c,
+        c @ Some('`' | '\'' | '"') => c,
         Some('[') => Some(']'),
         _ => {
             chars = ident.chars();
@@ -141,14 +141,11 @@ fn unescape_into(res: &mut String, ident: &str, do_percent_escape: bool) {
         } else if escape_char.is_none() {
             c = c.to_lowercase().next().unwrap();
         }
-        match c {
-            '.' | '-' | '/' => {
-                if do_percent_escape {
-                    write!(res, "%{:02X}", u32::from(c)).unwrap();
-                    continue;
-                }
+        if let '.' | '-' | '/' = c {
+            if do_percent_escape {
+                write!(res, "%{:02X}", u32::from(c)).unwrap();
+                continue;
             }
-            _ => {}
         }
         res.push(c);
     }
@@ -228,7 +225,7 @@ impl Default for Expr {
 }
 
 fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_' || c == '`' || c == '"' || c == '[' || c == ']'
+    c.is_alphanumeric() || matches!(c, '_' | '`' | '"' | '[' | ']')
 }
 
 impl Template {
@@ -367,7 +364,7 @@ impl<'a> Allocator<'a> {
                     column_name_is_expired = true;
                     table.content.push_str(s);
                 }
-                r @ Rule::any_text | r @ Rule::ident => {
+                r @ (Rule::any_text | Rule::ident) => {
                     let start_line = span.start_pos().line_col().0;
                     if previous_end_line != start_line {
                         // insert an indented '\n' if the whitespace we skipped included it.
@@ -755,7 +752,7 @@ impl<'a> Allocator<'a> {
                 Rule::expr => {
                     expr = self
                         .expr_from_pairs(pair.into_inner())?
-                        .span(self.register(span.clone()))
+                        .span(self.register(span.clone()));
                 }
                 Rule::kw_week => unit = 604_800_000_000,
                 Rule::kw_day => unit = 86_400_000_000,
@@ -854,12 +851,9 @@ impl<'a> Allocator<'a> {
 
 /// Parses a number (integer or floating-point number) into a value.
 fn parse_number(input: &str) -> Result<Value, Error> {
-    match input.get(..2) {
-        Some("0x") | Some("0X") => {
-            let number = u64::from_str_radix(&input[2..], 16).map_err(|_| Error::IntegerOverflow(input.to_owned()))?;
-            return Ok(number.into());
-        }
-        _ => {}
+    if let Some("0x" | "0X") = input.get(..2) {
+        let number = u64::from_str_radix(&input[2..], 16).map_err(|_| Error::IntegerOverflow(input.to_owned()))?;
+        return Ok(number.into());
     }
 
     Ok(match input.parse::<u64>() {

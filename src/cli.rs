@@ -274,18 +274,23 @@ fn div_rem_plus_one(n: u64, d: u64) -> (u64, u64) {
     }
 }
 
+// the arguments of these serde helper must be references.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(b: &bool) -> bool {
     !*b
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_one(u: &u32) -> bool {
     *u == 1
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(u: &usize) -> bool {
     *u == 0
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_six(u: &u8) -> bool {
     *u == 6
 }
@@ -298,10 +303,12 @@ fn is_default_zoneinfo(path: &Path) -> bool {
     path == Path::new("/usr/share/zoneinfo")
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_hc128(rng: &RngName) -> bool {
     *rng == RngName::Hc128
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_sql(format: &FormatName) -> bool {
     *format == FormatName::Sql
 }
@@ -801,7 +808,7 @@ impl ComponentName {
     }
 
     fn remove_from(self, mask: &mut u8) {
-        *mask &= !(self as u8)
+        *mask &= !(self as u8);
     }
 
     fn is_in(self, mask: u8) -> bool {

@@ -36,19 +36,19 @@ pub trait Format {
 /// SQL formatter.
 #[derive(Debug, Default)]
 pub struct SqlFormat {
-    /// Whether to include column names in the INSERT statements.
-    pub headers: bool,
     /// Whether to escapes backslashes when writing a string.
     pub escape_backslash: bool,
+    /// Whether to include column names in the INSERT statements.
+    pub headers: bool,
 }
 
 /// CSV formatter.
 #[derive(Debug)]
 pub struct CsvFormat {
-    /// Whether to include headers at the beginning.
-    pub headers: bool,
     /// Whether to escapes backslashes when writing a string.
     pub escape_backslash: bool,
+    /// Whether to include headers at the beginning.
+    pub headers: bool,
 }
 
 /// Writes a timestamp in ISO 8601 format.
@@ -181,7 +181,7 @@ fn write_with_escape(writer: &mut dyn Write, bytes: &[u8], rules: &[(u8, EscapeR
             for (cur, cur_byte) in bytes.iter().enumerate() {
                 if let Some((_, rule)) = rules.iter().find(|(s, _)| s == cur_byte) {
                     writer.write_all(state.set_cur_and_read_prev(bytes, cur))?;
-                    writer.write_all(state.apply_rule(&rule))?;
+                    writer.write_all(state.apply_rule(rule))?;
                 }
             }
         }
@@ -250,7 +250,7 @@ impl Format for SqlFormat {
                 if i != 0 {
                     writer.write_all(b", ")?;
                 }
-                writer.write_all(col.as_bytes())?
+                writer.write_all(col.as_bytes())?;
             }
             writer.write_all(b") ")?;
         }

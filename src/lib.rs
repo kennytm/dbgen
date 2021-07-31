@@ -12,7 +12,8 @@
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
     clippy::missing_errors_doc,
-    clippy::option_if_let_else
+    clippy::option_if_let_else,
+    clippy::missing_panics_doc
 )]
 
 //! The reusable library powering `dbgen`.

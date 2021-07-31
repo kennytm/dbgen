@@ -262,7 +262,7 @@ impl Value {
                 Self::Number(n) => res.extend_number(n),
                 Self::Bytes(b) => res.extend_byte_string(b),
                 Self::Timestamp(timestamp, tz) => {
-                    write!(res, "{}", tz.from_utc_datetime(&timestamp).format(TIMESTAMP_FORMAT)).unwrap()
+                    write!(res, "{}", tz.from_utc_datetime(timestamp).format(TIMESTAMP_FORMAT)).unwrap();
                 }
                 Self::Interval(interval) => write!(res, "INTERVAL {} MICROSECOND", interval).unwrap(),
                 Self::Array(_) => {
