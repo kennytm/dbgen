@@ -9,6 +9,7 @@
 expressions.
 
 * Usage
+    * [Download and install](Download.md)
     * [Table generator `dbgen`](CLI.md)
     * [Schema generator `dbschemagen`](SchemaGen.md)
 
