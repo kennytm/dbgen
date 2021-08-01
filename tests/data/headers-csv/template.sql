@@ -13,5 +13,6 @@ create table a(
 
 {{ for each row of a generate 1 row of b }}
 create table b(
+    id serial primary key,
     foo numeric(40, 20) unique {{ rownum }}
 );

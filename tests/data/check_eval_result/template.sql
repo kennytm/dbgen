@@ -1,139 +1,165 @@
 CREATE TABLE result (
-    {{ 1 }}
-    {{ 2 + 5 }}
-    {{ 3 - 8 }}
-    {{ 7 * 6 }}
-    {{ 12 / 24 }}
-    {{ - - - - 3 }}
-    {{ - 3 }}
+    number  {{ 1 }}
+    add     {{ 2 + 5 }}
+    sub     {{ 3 - 8 }}
+    mul     {{ 7 * 6 }}
+    div     {{ 12 / 24 }}
+    neg_4   {{ - - - - 3 }}
+    neg_1   {{ - 3 }}
 
-    {{ TRUE AND TRUE }} {{ TRUE AND FALSE }} {{ TRUE AND NULL }}
-    {{ FALSE AND TRUE }} {{ FALSE AND FALSE }} {{ FALSE AND NULL }}
-    {{ NULL AND TRUE }} {{ NULL AND FALSE }} {{ NULL AND NULL }}
+    and_11  {{ TRUE AND TRUE }}
+    and_10  {{ TRUE AND FALSE }}
+    and_1n  {{ TRUE AND NULL }}
+    and_01  {{ FALSE AND TRUE }}
+    and_00  {{ FALSE AND FALSE }}
+    and_0n  {{ FALSE AND NULL }}
+    and_n1  {{ NULL AND TRUE }}
+    and_n0  {{ NULL AND FALSE }}
+    and_nn  {{ NULL AND NULL }}
 
-    {{ TRUE OR TRUE }} {{ TRUE OR FALSE }} {{ TRUE OR NULL }}
-    {{ FALSE OR TRUE }} {{ FALSE OR FALSE }} {{ FALSE OR NULL }}
-    {{ NULL OR TRUE }} {{ NULL OR FALSE }} {{ NULL OR NULL }}
+    or_11   {{ TRUE OR TRUE }}
+    or_10   {{ TRUE OR FALSE }}
+    or_1n   {{ TRUE OR NULL }}
+    or_01   {{ FALSE OR TRUE }}
+    or_00   {{ FALSE OR FALSE }}
+    or_0n   {{ FALSE OR NULL }}
+    or_n1   {{ NULL OR TRUE }}
+    or_n0   {{ NULL OR FALSE }}
+    or_nn   {{ NULL OR NULL }}
 
-    {{ TRUE IS TRUE }} {{ TRUE IS FALSE }} {{ TRUE IS NULL }}
-    {{ FALSE IS TRUE }} {{ FALSE IS FALSE }} {{ FALSE IS NULL }}
-    {{ NULL IS TRUE }} {{ NULL IS FALSE }} {{ NULL IS NULL }}
+    is_11   {{ TRUE IS TRUE }}
+    is_10   {{ TRUE IS FALSE }}
+    is_1n   {{ TRUE IS NULL }}
+    is_01   {{ FALSE IS TRUE }}
+    is_00   {{ FALSE IS FALSE }}
+    is_0n   {{ FALSE IS NULL }}
+    is_n1   {{ NULL IS TRUE }}
+    is_n0   {{ NULL IS FALSE }}
+    is_nn   {{ NULL IS NULL }}
 
-    {{ TRUE IS NOT TRUE }} {{ TRUE IS NOT FALSE }} {{ TRUE IS NOT NULL }}
-    {{ FALSE IS NOT TRUE }} {{ FALSE IS NOT FALSE }} {{ FALSE IS NOT NULL }}
-    {{ NULL IS NOT TRUE }} {{ NULL IS NOT FALSE }} {{ NULL IS NOT NULL }}
+    is_not_11   {{ TRUE IS NOT TRUE }}
+    is_not_10   {{ TRUE IS NOT FALSE }}
+    is_not_1n   {{ TRUE IS NOT NULL }}
+    is_not_01   {{ FALSE IS NOT TRUE }}
+    is_not_00   {{ FALSE IS NOT FALSE }}
+    is_not_0n   {{ FALSE IS NOT NULL }}
+    is_not_n1   {{ NULL IS NOT TRUE }}
+    is_not_n0   {{ NULL IS NOT FALSE }}
+    is_not_nn   {{ NULL IS NOT NULL }}
 
-    {{ NOT TRUE }} {{ NOT FALSE }} {{ NOT NULL }}
+    not_true    {{ NOT TRUE }}
+    not_false   {{ NOT FALSE }}
+    not_null    {{ NOT NULL }}
 
-    {{  0xffffffffffffffff }}
-    {{ -0x8000000000000001 }}
+    u64_max     {{  0xffffffffffffffff }}
+    neg_i64_min {{ -0x8000000000000001 }}
 
-    {{ 1.5 }}
-    {{ 1.5e300 }}
-    {{ 1e300 }}
-    {{ .5e300 }}
-    {{ 5.e-250 }}
-    {{ 6e+10 }}
+    float_normal    {{ 1.5 }}
+    float_e300      {{ 1.5e300 }}
+    float_no_dot    {{ 1e300 }}
+    float_no_zero   {{ .5e300 }}
+    float_dot_e     {{ 5.e-250 }}
+    float_e_plus    {{ 6e+10 }}
 
-    {{ 'hello world' }}
-    {{ 'hello' || ', ' || 'world!!' || 111 }}
-    {{ '👋' || '🌍' }}
+    string          {{ 'hello world' }}
+    string_concat   {{ 'hello' || ', ' || 'world!!' || 111 }}
+    string_emoji    {{ '👋' || '🌍' }}
 
-    {{ greatest(1, 3, 2, 9, 6, 0, 5) }}
-    {{ least(1, 3, 2, 9, 6, 0, 5) }}
+    greatest    {{ greatest(1, 3, 2, 9, 6, 0, 5) }}
+    least       {{ least(1, 3, 2, 9, 6, 0, 5) }}
 
-    {{ case 6
+    case_6 {{ case 6
         when 1 then 'one'
         when 3 then 'three'
         when 6 then 'six'
         when 10 then 'ten'
     end }}
-    {{ case 5
+    case_5 {{ case 5
         when 1 then 'one'
         when 3 then 'three'
         when 6 then 'six'
         when 10 then 'ten'
     end }}
-    {{ case 4
+    case_4 {{ case 4
         when 1 then 'one'
         when 3 then 'three'
         when 6 then 'six'
         when 10 then 'ten'
         else 'otherwise'
     end }}
-    {{ case 3
+    case_3 {{ case 3
         when 1 then 'one'
         when 3 then 'three'
         when 6 then 'six'
         when 10 then 'ten'
         else 'otherwise'
     end }}
-    {{ case
+    case_cond {{ case
         when null then 'null'
         when false then 'false'
         when -3 then 'minus three'
         when true then 'true'
     end }}
 
-    {{ ((((((((((((((((((((((((7)))))))))))))))))))))))) }}
-    {{ 1 + 2 - 3 - 4 + 5 + 6 + 7 - 8 - 9 - 10 - 11 }}
-    {{ 1 / 0 }}
+    parethensis     {{ ((((((((((((((((((((((((7)))))))))))))))))))))))) }}
+    chain_add_sub   {{ 1 + 2 - 3 - 4 + 5 + 6 + 7 - 8 - 9 - 10 - 11 }}
+    div_by_0        {{ 1 / 0 }}
 
-    {{ 60 > 3 }}
-    {{ 60 < 3 }}
-    {{ 60 >= 3 }}
-    {{ 60 <= 3 }}
-    {{ 60 = 3 }}
-    {{ 60 <> 3 }}
+    gt  {{ 60 > 3 }}
+    lt  {{ 60 < 3 }}
+    ge  {{ 60 >= 3 }}
+    le  {{ 60 <= 3 }}
+    eq  {{ 60 = 3 }}
+    ne  {{ 60 <> 3 }}
 
-    {{ @a := 18 }}
-    {{ @a }}
+    var_def     {{ @a := 18 }}
+    var_use     {{ @a }}
 
-    {{ @b := @c := @d := 'e' }}
-    {{ @a || @b || @c || @d }}
+    chain_def   {{ @b := @c := @d := 'e' }}
+    chain_use   {{ @a || @b || @c || @d }}
 
-    {{ timestamp '2010-01-01 00:00:00' }}
-    {{ timestamp '2010-01-01 00:00:00.000001' }}
-    {{ timestamp '2010-01-01 00:00:00' + interval 1 microsecond }}
-    {{ timestamp '2010-01-01 00:00:00' + interval 1 microsecond = timestamp '2010-01-01 00:00:00.000001' }}
-    {{ timestamp '2010-01-01 00:00:00' - interval 4 week }}
-    {{ timestamp '2010-01-01 00:00:00' - interval 3.5 day * 12 }}
-    {{ timestamp '2010-01-01 00:00:00' + interval 15 hour + interval 71 minute - interval 13 second }}
+    ts_normal   {{ timestamp '2010-01-01 00:00:00' }}
+    ts_frac     {{ timestamp '2010-01-01 00:00:00.000001' }}
+    ts_add      {{ timestamp '2010-01-01 00:00:00' + interval 1 microsecond }}
+    ts_compare  {{ timestamp '2010-01-01 00:00:00' + interval 1 microsecond = timestamp '2010-01-01 00:00:00.000001' }}
+    ts_sub      {{ timestamp '2010-01-01 00:00:00' - interval 4 week }}
+    ts_mul_iv   {{ timestamp '2010-01-01 00:00:00' - interval 3.5 day * 12 }}
+    ts_add_iv   {{ timestamp '2010-01-01 00:00:00' + interval 15 hour + interval 71 minute - interval 13 second }}
 
-    {{ '\' }}
+    backslash   {{ '\' }}
 
-    {{ round(123.45) }}
-    {{ round(123.45, 1) }}
-    {{ round(-123.975, 2) }}
-    {{ round(123.456, 9) }}
-    {{ round(123.456, -1) }}
-    {{ round(123.456, -9) }}
+    round_0     {{ round(123.45) }}
+    round_1     {{ round(123.45, 1) }}
+    round_2     {{ round(-123.975, 2) }}
+    round_9     {{ round(123.456, 9) }}
+    round_neg_1 {{ round(123.456, -1) }}
+    round_neg_9 {{ round(123.456, -9) }}
 
-    {{ interval 0 microsecond }}
-    {{ interval 1234567890 microsecond }}
-    {{ interval -1234567890 microsecond }}
-    {{ interval 1234567890 second }}
+    interval_0      {{ interval 0 microsecond }}
+    interval_pos    {{ interval 1234567890 microsecond }}
+    interval_neg    {{ interval -1234567890 microsecond }}
+    interval_big    {{ interval 1234567890 second }}
 
-    {{ true and true and false }}
-    {{ false or false or true }}
-    {{ 5 + 6 + 7 }}
-    {{ 5 * 6 * 7 }}
-    {{ 5 - 6 - 7 }}
-    {{ 7 / 4 / 2 }}
+    chain_and   {{ true and true and false }}
+    chain_or    {{ false or false or true }}
+    chain_add   {{ 5 + 6 + 7 }}
+    chain_mul   {{ 5 * 6 * 7 }}
+    chain_sub   {{ 5 - 6 - 7 }}
+    chain_div   {{ 7 / 4 / 2 }}
 
-    {{ char_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
-    {{ character_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
-    {{ octet_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
+    char_length     {{ char_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
+    character_length{{ character_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
+    octet_length    {{ octet_length('Unicodeの文字集合の符号空間は0–10FFFF₁₆で111万4112符号位置がある。') }}
 
-    {{ coalesce(1, 2) }}
-    {{ coalesce(1, null) }}
-    {{ coalesce(null, 2) }}
-    {{ coalesce(null, null) }}
+    coalesce_12 {{ coalesce(1, 2) }}
+    coalesce_1n {{ coalesce(1, null) }}
+    coalesce_n2 {{ coalesce(null, 2) }}
+    coalesce_nn {{ coalesce(null, null) }}
 
-    {{ @e := 567; @f := @e - 7; @f + 40 }}
+    semicolon   {{ @e := 567; @f := @e - 7; @f + 40 }}
 
-    {{ 80 & 91 & 68 }}
-    {{ 80 | 91 | 68 }}
-    {{ 80 ^ 91 ^ 68 }}
-    {{ ~ ~ - ~ - 69 }}
+    bit_and {{ 80 & 91 & 68 }}
+    bit_or  {{ 80 | 91 | 68 }}
+    bit_xor {{ 80 ^ 91 ^ 68 }}
+    bit_not {{ ~ ~ - ~ - 69 }}
 );

@@ -1,3 +1,4 @@
 {
-    "inserts_count": 1
+    "inserts_count": 1,
+    "components": ["data"]
 }

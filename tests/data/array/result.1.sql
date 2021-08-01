@@ -1,2 +1,27 @@
-INSERT INTO result VALUES
-(ARRAY[], ARRAY[1], ARRAY[1, 2], ARRAY[ARRAY[], ARRAY[3], ARRAY[4, 5]], 1, 0, 0, 0, 1, 10, 30, NULL, NULL, 13, -1, ARRAY[11, 16, 21], ARRAY[], ARRAY[], ARRAY[21, 16, 11], ARRAY[1.1, 1.6, 2.1], ARRAY[2.25, 1.75, 1.25], ARRAY[1, 2, 3, 4], ARRAY[3], ARRAY[4], ARRAY['2019-01-01 13:00:00', '2019-01-01 13:20:00', '2019-01-01 13:40:00', '2019-01-01 14:00:00']);
+INSERT INTO result SET
+empty = ARRAY[],
+one = ARRAY[1],
+two = ARRAY[1, 2],
+nested = ARRAY[ARRAY[], ARRAY[3], ARRAY[4, 5]],
+compare_1st_elem = 1,
+compare_2nd_elem = 0,
+compare_longer = 0,
+compare_equal = 0,
+compare_shorter = 1,
+elem_1 = 10,
+elem_3 = 30,
+elem_0 = NULL,
+elem_999 = NULL,
+nested_elem = 13,
+array_var = -1,
+gs_pos_step = ARRAY[11, 16, 21],
+gs_pos_step_empty = ARRAY[],
+gs_neg_step_empty = ARRAY[],
+gs_neg_step = ARRAY[21, 16, 11],
+gs_pos_float = ARRAY[1.1, 1.6, 2.1],
+gs_neg_float = ARRAY[2.25, 1.75, 1.25],
+gs_implicit = ARRAY[1, 2, 3, 4],
+gs_implicit_single = ARRAY[3],
+gs_step_too_large = ARRAY[4],
+gs_timestamp = ARRAY['2019-01-01 13:00:00', '2019-01-01 13:20:00', '2019-01-01 13:40:00', '2019-01-01 14:00:00'];
+

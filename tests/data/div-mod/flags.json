@@ -1,3 +1,5 @@
 {
-    "rows_count": 3
+    "inserts_count": 3,
+    "format": "sql-insert-set",
+    "components": ["data"]
 }
