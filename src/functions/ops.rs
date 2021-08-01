@@ -29,12 +29,49 @@ impl Function for Neg {
 #[derive(Debug)]
 pub struct Compare {
     /// Whether a less-than result is considered TRUE.
-    pub lt: bool,
+    lt: bool,
     /// Whether an equals result is considered TRUE.
-    pub eq: bool,
+    eq: bool,
     /// Whether a greater-than result is considered TRUE.
-    pub gt: bool,
+    gt: bool,
 }
+
+/// The `<` SQL function.
+pub const LT: Compare = Compare {
+    lt: true,
+    eq: false,
+    gt: false,
+};
+/// The `=` SQL function.
+pub const EQ: Compare = Compare {
+    lt: false,
+    eq: true,
+    gt: false,
+};
+/// The `>` SQL function.
+pub const GT: Compare = Compare {
+    lt: false,
+    eq: false,
+    gt: true,
+};
+/// The `<=` SQL function.
+pub const LE: Compare = Compare {
+    lt: true,
+    eq: true,
+    gt: false,
+};
+/// The `<>` SQL function.
+pub const NE: Compare = Compare {
+    lt: true,
+    eq: false,
+    gt: true,
+};
+/// The `>=` SQL function.
+pub const GE: Compare = Compare {
+    lt: false,
+    eq: true,
+    gt: true,
+};
 
 impl Function for Compare {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
@@ -57,8 +94,13 @@ impl Function for Compare {
 #[derive(Debug)]
 pub struct Identical {
     /// Whether an identical result is considered TRUE.
-    pub eq: bool,
+    eq: bool,
 }
+
+/// The `IS` SQL function.
+pub const IS: Identical = Identical { eq: true };
+/// The `IS NOT` SQL function.
+pub const IS_NOT: Identical = Identical { eq: false };
 
 impl Function for Identical {
     fn compile(&self, _: &CompileContext, _: Span, args: Arguments) -> Result<C, S<Error>> {
@@ -103,8 +145,13 @@ impl Function for BitNot {
 #[derive(Debug)]
 pub struct Logic {
     /// The identity value. True means `AND` and false means `OR`.
-    pub identity: bool,
+    identity: bool,
 }
+
+/// The logical `AND` SQL function.
+pub const AND: Logic = Logic { identity: true };
+/// The logical `OR` SQL function.
+pub const OR: Logic = Logic { identity: false };
 
 impl Function for Logic {
     fn compile(&self, _: &CompileContext, _: Span, args: Arguments) -> Result<C, S<Error>> {
@@ -192,8 +239,15 @@ impl Function for Bitwise {
 #[derive(Debug)]
 pub struct Extremum {
     /// The order to drive the extremum.
-    pub order: Ordering,
+    order: Ordering,
 }
+
+/// The `greatest` SQL function.
+pub const GREATEST: Extremum = Extremum {
+    order: Ordering::Greater,
+};
+/// The `least` SQL function.
+pub const LEAST: Extremum = Extremum { order: Ordering::Less };
 
 impl Function for Extremum {
     fn compile(&self, _: &CompileContext, _: Span, args: Arguments) -> Result<C, S<Error>> {

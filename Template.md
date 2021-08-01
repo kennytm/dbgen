@@ -364,6 +364,47 @@ From highest to lowest precedence:
     The `FOR` and `USING` parts are optional. The `FOR` part defaults to the length of the
     replacement string.
 
+### Encodings
+
+* **to_hex('¿?')**
+
+    Encodes a byte string into a hexadecimal (Base16) string.
+
+    The result will be in uppercase (e.g. `'C2BF3F'`).
+
+* **to_base64('¿¡input!?')**
+
+    Encodes a byte string with Base64 encoding (RFC 4648).
+
+    The result uses the alphabet `[A-Za-z0-9+/]` and the padding character `=`. No new lines will be
+    inserted.
+
+* **to_base64url('¿¡input!?')**
+
+    Encodes a byte string with Base64URL encoding (RFC 4648).
+
+    The result uses the alphabet `[A-Za-z0-9\-_]` without paddings.
+
+* **from_hex('c2bf 3f')**, **X'C2BF 3F'**
+
+    Decodes a hexadecimal (Base16) string.
+
+    The string content must be an even number of hex digits (`[0-9A-Fa-f]`), but ASCII spaces will
+    be ignored when decoding. The program stops when there is an invalid digit or the number of
+    digits is odd.
+
+    The `X'…'` form is an alias of the `from_hex` function; these two forms are equivalent.
+
+* **from_base64('wr/CoWlucHV0IT8=')**, **from_base64url('wr_CoWlucHV0IT8')**
+
+    Decodes a Base64 or Base64URL encoded string (RFC 4648).
+
+    The string content can only include the Base64 (`[A-Za-z0-9+/]`) or Base64URL alphabet
+    (`[A-Za-z0-9\-_]`), but ASCII spaces and the padding `=` will be ignored when decoding.
+    The program stops when there is an invalid character.
+
+    The `from_base64` and `from_base64url` functions are synonyms.
+
 ### Numbers
 
 * **greatest(*x*, *y*, *z*)**

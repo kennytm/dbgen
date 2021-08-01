@@ -40,6 +40,10 @@ pub enum Error {
         char,
     ),
 
+    /// Hex/Base64 decode error.
+    #[error("decode error")]
+    DecodeError(#[from] data_encoding::DecodeError),
+
     /// Invalid arguments.
     #[error("{0}")]
     InvalidArguments(

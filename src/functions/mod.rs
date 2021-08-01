@@ -10,6 +10,7 @@ use crate::{
 use std::{convert::TryFrom, fmt::Debug};
 
 pub mod array;
+pub mod codec;
 pub mod debug;
 pub mod ops;
 pub mod rand;

@@ -169,4 +169,15 @@ CREATE TABLE result (
     bool_is     {{ 1 is true }}
     bool_eq     {{ false = 0 }}
     bool_arith  {{ true + true }}
+
+    decode_hex_lower    {{ x'abcdef' }}
+    decode_hex_upper    {{ X'AB CD EF' }}
+    decode_hex_empty    {{ x'' }}
+    decode_hex_unicode  {{ x'c2bf 3f' }}
+    decode_hex_function {{ from_hex('ab' || 'cd') }}
+    encode_hex          {{ to_hex('¿?') }}
+    encode_base64       {{ to_base64(x'50B5B2B4E13199C5A43B7EF2E7155623AF928BC0C2AE13BF160923DBC3CE641AE6C67167364A6EEA57D955A7B70EF6490F502FDB425D333C96FCF7A403BBE44C') }}
+    decode_base64       {{ from_base64('ULWytOExmcWkO37y5xVWI6+Si8DCrhO/' || x'0d0a' || 'Fgkj28POZBrmxnFnNkpu6lfZVae3DvZJD1Av20JdMzyW/PekA7vkTA=') }}
+    encode_base64url    {{ to_base64url(x'50B5B2B4E13199C5A43B7EF2E7155623AF928BC0C2AE13BF160923DBC3CE641AE6C67167364A6EEA57D955A7B70EF6490F502FDB425D333C96FCF7A403BBE44C') }}
+    decode_base64url    {{ from_base64url('ULWytOExmcWkO37y5xVWI6-Si8DCrhO_Fgkj28POZBrmxnFnNkpu6lfZVae3DvZJD1Av20JdMzyW_PekA7vkTA') }}
 );

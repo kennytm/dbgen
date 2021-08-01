@@ -10,7 +10,7 @@ use crate::{
 };
 
 use pest::{iterators::Pairs, Parser};
-use std::{cmp::Ordering, collections::HashMap, mem, ops::Range};
+use std::{collections::HashMap, mem, ops::Range};
 
 mod derived {
     use pest_derive::Parser;
@@ -556,6 +556,7 @@ impl<'a> Allocator<'a> {
             Rule::expr_group => self.expr_group_from_pairs(pair.into_inner())?,
             Rule::expr_timestamp => self.expr_timestamp_from_pairs(pair.into_inner())?,
             Rule::expr_interval => self.expr_interval_from_pairs(pair.into_inner())?,
+            Rule::expr_hex => self.expr_hex_from_pairs(pair.into_inner())?,
             Rule::expr_get_variable => self.expr_get_variable_from_pairs(pair.into_inner())?,
             Rule::expr_array => self.expr_array_from_pairs(pair.into_inner())?,
             Rule::expr_function => self.expr_function_from_pairs(pair.into_inner())?,
@@ -739,6 +740,27 @@ impl<'a> Allocator<'a> {
         unreachable!("Pairs exhausted without finding the inner expression");
     }
 
+    /// Creates an `X` (hex) expression.
+    fn expr_hex_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
+        for pair in pairs {
+            match pair.as_rule() {
+                Rule::kw_x => {}
+                Rule::expr_primary => {
+                    let span = pair.as_span();
+                    return Ok(Expr::Function {
+                        function: &functions::codec::DECODE_HEX,
+                        args: vec![self
+                            .expr_primary_from_pairs(pair.into_inner())?
+                            .span(self.register(span))],
+                    });
+                }
+                r => unreachable!("Unexpected rule {:?}", r),
+            }
+        }
+
+        unreachable!("Pairs exhausted without finding the inner expression");
+    }
+
     /// Creates an `INTERVAL` expression.
     fn expr_interval_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let mut unit = 1;
@@ -864,7 +886,7 @@ fn parse_number(input: &str) -> Result<Value, Error> {
 
 /// Obtains a function from its name.
 fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
-    use functions::{array, debug, ops, rand, string};
+    use functions::{array, codec, debug, ops, rand, string};
 
     Ok(match name {
         "rand.regex" => &rand::Regex,
@@ -880,10 +902,8 @@ fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
         "rand.u31_timestamp" => &rand::U31Timestamp,
         "rand.shuffle" => &rand::Shuffle,
         "rand.uuid" => &rand::Uuid,
-        "greatest" => &ops::Extremum {
-            order: Ordering::Greater,
-        },
-        "least" => &ops::Extremum { order: Ordering::Less },
+        "greatest" => &ops::GREATEST,
+        "least" => &ops::LEAST,
         "round" => &ops::Round,
         "div" => &ops::Div,
         "mod" => &ops::Mod,
@@ -892,6 +912,11 @@ fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
         "coalesce" => &ops::Coalesce,
         "generate_series" => &array::GenerateSeries,
         "debug.panic" => &debug::Panic,
+        "from_hex" => &codec::DECODE_HEX,
+        "to_hex" => &codec::ENCODE_HEX,
+        "from_base64" | "from_base64url" => &codec::DECODE_BASE64,
+        "to_base64" => &codec::ENCODE_BASE64,
+        "to_base64url" => &codec::ENCODE_BASE64URL,
         _ => return Err(Error::UnknownFunction),
     })
 }
@@ -899,46 +924,22 @@ fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
 /// Obtains a function from the parser rule.
 fn function_from_rule(rule: Rule) -> &'static dyn Function {
     match rule {
-        Rule::op_lt => &functions::ops::Compare {
-            lt: true,
-            eq: false,
-            gt: false,
-        },
-        Rule::op_eq => &functions::ops::Compare {
-            lt: false,
-            eq: true,
-            gt: false,
-        },
-        Rule::op_gt => &functions::ops::Compare {
-            lt: false,
-            eq: false,
-            gt: true,
-        },
-        Rule::op_le => &functions::ops::Compare {
-            lt: true,
-            eq: true,
-            gt: false,
-        },
-        Rule::op_ne => &functions::ops::Compare {
-            lt: true,
-            eq: false,
-            gt: true,
-        },
-        Rule::op_ge => &functions::ops::Compare {
-            lt: false,
-            eq: true,
-            gt: true,
-        },
+        Rule::op_lt => &functions::ops::LT,
+        Rule::op_eq => &functions::ops::EQ,
+        Rule::op_gt => &functions::ops::GT,
+        Rule::op_le => &functions::ops::LE,
+        Rule::op_ne => &functions::ops::NE,
+        Rule::op_ge => &functions::ops::GE,
         Rule::op_add => &functions::ops::Arith::Add,
         Rule::op_sub => &functions::ops::Arith::Sub,
         Rule::op_mul => &functions::ops::Arith::Mul,
         Rule::op_float_div => &functions::ops::Arith::FloatDiv,
         Rule::op_semicolon => &functions::ops::Last,
         Rule::op_concat => &functions::string::Concat,
-        Rule::kw_is => &functions::ops::Identical { eq: true },
-        Rule::is_not => &functions::ops::Identical { eq: false },
-        Rule::kw_and => &functions::ops::Logic { identity: true },
-        Rule::kw_or => &functions::ops::Logic { identity: false },
+        Rule::kw_is => &functions::ops::IS,
+        Rule::is_not => &functions::ops::IS_NOT,
+        Rule::kw_and => &functions::ops::AND,
+        Rule::kw_or => &functions::ops::OR,
         Rule::op_bit_and => &functions::ops::Bitwise::And,
         Rule::op_bit_or => &functions::ops::Bitwise::Or,
         Rule::op_bit_xor => &functions::ops::Bitwise::Xor,

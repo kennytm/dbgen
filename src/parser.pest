@@ -63,6 +63,7 @@ kw_each     = @{ ^"each" ~ b }
 kw_rows     = @{ ^"row" ~ ^"s"? ~ b }
 kw_of       = @{ ^"of" ~ b }
 kw_generate = @{ ^"generate" ~ b }
+kw_x        = @{ ^"x" ~ b }
 
 open_paren  = @{ "(" }
 close_paren = @{ ")" }
@@ -164,6 +165,7 @@ expr_primary = {
     expr_case_value_when |
     expr_timestamp |
     expr_interval |
+    expr_hex |
     expr_get_variable |
     expr_array |
     expr_substring_function |
@@ -191,6 +193,9 @@ expr_timestamp = {
 }
 expr_interval = {
     kw_interval ~ expr ~ (kw_week | kw_day | kw_hour | kw_minute | kw_second | kw_millisecond | kw_microsecond)
+}
+expr_hex = {
+    kw_x ~ expr_primary
 }
 
 expr_get_variable = {
