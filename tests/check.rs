@@ -43,7 +43,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.quiet = true;
 
         let mut registry = Registry::default();
-        run(args, &mut registry)?;
+        run(args, &mut registry).map_err(|e| {
+            eprintln!("{}", registry.describe(&e));
+            e
+        })?;
 
         for result_entry in read_dir(out_dir.path())? {
             let result_entry = result_entry?;
