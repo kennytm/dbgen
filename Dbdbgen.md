@@ -174,7 +174,7 @@ interface Step {
     time_zone: string,
     zoneinfo: string,
     now: string | null,
-    format: 'sql' | 'csv',
+    format: 'sql' | 'csv' | 'sql-insert-set',
     headers: boolean,
     compression: 'gzip' | 'xz' | 'zstd' | null,
     compress_level: number,

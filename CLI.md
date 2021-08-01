@@ -50,8 +50,8 @@ More options
 * `--qualified`
 
     If specified, the generated INSERT statements will use the fully qualified table name (i.e.
-    `INSERT INTO "db"."schema"."table" VALUES …`. Otherwise, only the table name will be included
-    (i.e. `INSERT INTO "table" VALUES …`).
+    `INSERT INTO "db"."schema"."table" …`. Otherwise, only the table name will be included
+    (i.e. `INSERT INTO "table" …`).
 
 * `-s «SEED»`, `--seed «SEED»`
 
@@ -170,10 +170,13 @@ More options
 
 * `-f «FORMAT»`, `--format «FORMAT»`
 
-    Output format. Could be one of:
+    Output format of the data files. Could be one of:
 
-    * `sql`
-    * `csv`
+    | Format            | Data output sample |
+    |-------------------|--------------------|
+    | sql               | <pre>INSERT INTO tbl (col1, col2) VALUES<br>(1, 'one'),<br>(3, 'three');</pre> |
+    | csv               | <pre>"col1","col2"<br>1,"one"<br>3,"three"</pre> |
+    | sql-insert-set    | <pre>INSERT INTO tbl SET<br>col1 = 1,<br>col2 = 'one';</pre> |
 
 * `--headers`
 

@@ -44,6 +44,10 @@ impl Writer for TableWriter {
         self.write_row_separator()
     }
 
+    fn write_value_header(&mut self, _: &str) -> Result<(), S<Error>> {
+        Ok(())
+    }
+
     fn write_value_separator(&mut self) -> Result<(), S<Error>> {
         Ok(())
     }

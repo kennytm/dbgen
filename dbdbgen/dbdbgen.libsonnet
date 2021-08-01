@@ -102,7 +102,7 @@
         format: {
             short: 'f',
             help: 'Output format.',
-            type: $.choices(['sql', 'csv']),
+            type: $.choices(['sql', 'csv', 'sql-insert-set']),
             default: 'sql',
         },
         headers: {

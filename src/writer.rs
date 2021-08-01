@@ -19,6 +19,9 @@ pub trait Writer {
     /// Writes the content of an INSERT statement before all rows.
     fn write_header(&mut self, schema: &Schema<'_>) -> Result<(), S<Error>>;
 
+    /// Writes the column name before a value.
+    fn write_value_header(&mut self, column: &str) -> Result<(), S<Error>>;
+
     /// Writes the separator between the every value.
     fn write_value_separator(&mut self) -> Result<(), S<Error>>;
 
@@ -101,10 +104,11 @@ impl<'a, W: Writer> Env<'a, W> {
 
         let values = table.table.row.eval(self.state)?;
 
-        for (col_index, value) in values.iter().enumerate() {
+        for (col_index, (column, value)) in table.schema.column_names().zip(&values).enumerate() {
             if col_index != 0 {
                 table.writer.write_value_separator()?;
             }
+            table.writer.write_value_header(column)?;
             table.writer.write_value(value)?;
         }
 

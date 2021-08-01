@@ -23,6 +23,9 @@ pub trait Format {
     /// Writes the content of an INSERT statement before all rows.
     fn write_header(&self, writer: &mut dyn Write, schema: &Schema<'_>) -> Result<(), Error>;
 
+    /// Writes the column name before a value.
+    fn write_value_header(&self, writer: &mut dyn Write, column: &str) -> Result<(), Error>;
+
     /// Writes the separator between the every value.
     fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error>;
 
@@ -49,6 +52,13 @@ pub struct CsvFormat {
     pub escape_backslash: bool,
     /// Whether to include headers at the beginning.
     pub headers: bool,
+}
+
+/// SQL formatter using the INSERT-SET form.
+#[derive(Debug)]
+pub struct SqlInsertSetFormat {
+    /// Whether to escapes backslashes when writing a string.
+    pub escape_backslash: bool,
 }
 
 /// Writes a timestamp in ISO 8601 format.
@@ -257,6 +267,10 @@ impl Format for SqlFormat {
         writer.write_all(b"VALUES\n(")
     }
 
+    fn write_value_header(&self, _: &mut dyn Write, _: &str) -> Result<(), Error> {
+        Ok(())
+    }
+
     fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
         writer.write_all(b", ")
     }
@@ -267,6 +281,40 @@ impl Format for SqlFormat {
 
     fn write_trailer(&self, writer: &mut dyn Write) -> Result<(), Error> {
         writer.write_all(b");\n")
+    }
+}
+
+impl Format for SqlInsertSetFormat {
+    fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
+        SqlFormat {
+            escape_backslash: self.escape_backslash,
+            headers: false,
+        }
+        .write_value(writer, value)
+    }
+
+    fn write_file_header(&self, _: &mut dyn Write, _: &Schema<'_>) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn write_header(&self, writer: &mut dyn Write, schema: &Schema<'_>) -> Result<(), Error> {
+        write!(writer, "INSERT INTO {} SET\n", schema.name)
+    }
+
+    fn write_value_header(&self, writer: &mut dyn Write, column: &str) -> Result<(), Error> {
+        write!(writer, "{} = ", column)
+    }
+
+    fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b",\n")
+    }
+
+    fn write_row_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b";\n\n")
+    }
+
+    fn write_trailer(&self, writer: &mut dyn Write) -> Result<(), Error> {
+        writer.write_all(b";\n\n")
     }
 }
 
@@ -344,6 +392,10 @@ impl Format for CsvFormat {
 
     fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
         writer.write_all(b",")
+    }
+
+    fn write_value_header(&self, _: &mut dyn Write, _: &str) -> Result<(), Error> {
+        Ok(())
     }
 
     fn write_row_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {

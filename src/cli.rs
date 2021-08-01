@@ -3,7 +3,7 @@
 use crate::{
     error::Error,
     eval::{CompileContext, Schema, State, Table},
-    format::{CsvFormat, Format, SqlFormat},
+    format::{CsvFormat, Format, SqlFormat, SqlInsertSetFormat},
     lexctr::LexCtr,
     parser::{QName, Template},
     span::{Registry, ResultExt, SpanExt, S},
@@ -188,7 +188,7 @@ pub struct Args {
     pub now: Option<NaiveDateTime>,
 
     /// Output format.
-    #[structopt(short, long, possible_values(&["sql", "csv"]), default_value = "sql")]
+    #[structopt(short, long, possible_values(&["sql", "csv", "sql-insert-set"]), default_value = "sql")]
     #[serde(skip_serializing_if = "is_sql")]
     pub format: FormatName,
 
@@ -669,12 +669,14 @@ impl RngName {
 
 /// Names of output formats supported by `dbgen`.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum FormatName {
     /// SQL
     Sql,
-    /// Csv
+    /// CSV
     Csv,
+    /// SQL in INSERT-SET form
+    SqlInsertSet,
 }
 
 impl FromStr for FormatName {
@@ -683,6 +685,7 @@ impl FromStr for FormatName {
         Ok(match name {
             "sql" => Self::Sql,
             "csv" => Self::Csv,
+            "sql-insert-set" => Self::SqlInsertSet,
             _ => {
                 return Err(Error::UnsupportedCliParameter {
                     kind: "output format",
@@ -697,7 +700,7 @@ impl FormatName {
     /// Obtains the file extension when using this format.
     fn extension(self) -> &'static str {
         match self {
-            Self::Sql => "sql",
+            Self::Sql | Self::SqlInsertSet => "sql",
             Self::Csv => "csv",
         }
     }
@@ -713,6 +716,7 @@ impl FormatName {
                 escape_backslash,
                 headers,
             }),
+            Self::SqlInsertSet => Box::new(SqlInsertSetFormat { escape_backslash }),
         }
     }
 }
@@ -905,6 +909,11 @@ impl writer::Writer for FormatWriter<'_> {
         self.format
             .write_header(self, schema)
             .with_path_fn("write header", || self.path())
+    }
+    fn write_value_header(&mut self, column: &str) -> Result<(), S<Error>> {
+        self.format
+            .write_value_header(self, column)
+            .with_path_fn("write value header", || self.path())
     }
     fn write_value_separator(&mut self) -> Result<(), S<Error>> {
         self.format
