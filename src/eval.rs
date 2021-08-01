@@ -381,7 +381,7 @@ impl Compiled {
             C::RandUniformF64(uniform) => Value::from_finite_f64(state.rng.sample(uniform)),
             C::RandZipf(zipf) => (state.rng.sample(zipf) as u64).into(),
             C::RandLogNormal(log_normal) => Value::from_finite_f64(state.rng.sample(log_normal)),
-            C::RandBool(bern) => u64::from(state.rng.sample(bern)).into(),
+            C::RandBool(bern) => state.rng.sample(bern).into(),
             C::RandFiniteF32(uniform) => {
                 Value::from_finite_f64(f32::from_bits(state.rng.sample(uniform).rotate_right(1)).into())
             }

@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use dbgen::{
     error::Error,
     eval::{CompileContext, Schema, State},
-    format::{Format, SqlFormat},
+    format::Options,
     parser::Template,
     span::{Registry, ResultExt, S},
     value::{Value, TIMESTAMP_FORMAT},
@@ -12,7 +12,7 @@ use dbgen::{
 use rand::{Rng, SeedableRng};
 use rand_hc::Hc128Rng;
 use serde::Serialize;
-use std::{convert::TryFrom, mem};
+use std::{borrow::Cow, convert::TryFrom, mem};
 use wasm_bindgen::prelude::*;
 
 #[derive(Default)]
@@ -29,8 +29,14 @@ struct Table {
 
 impl Writer for TableWriter {
     fn write_value(&mut self, value: &Value) -> Result<(), S<Error>> {
+        let options = Options {
+            true_string: Cow::Borrowed("TRUE"),
+            false_string: Cow::Borrowed("FALSE"),
+            ..Options::default()
+        };
+
         let mut output = Vec::new();
-        SqlFormat::default().write_value(&mut output, value).unwrap_throw();
+        options.write_sql_value(&mut output, value).unwrap_throw();
         let output = String::from_utf8(output).unwrap_throw();
         self.rows.last_mut().unwrap_throw().push(output);
         Ok(())

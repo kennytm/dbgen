@@ -1,11 +1,13 @@
 //! Number.
 
 use numcmp::NumCmp;
-use std::{cmp::Ordering, convert::TryFrom, fmt, u64};
+use std::{cmp::Ordering, convert::TryFrom, fmt, io, u64};
 
 /// Implementation of a number.
 #[derive(Copy, Clone, Debug)]
 enum N {
+    /// A boolean.
+    B(bool),
     /// An integer.
     I(i128),
     /// A finite floating-point number.
@@ -52,7 +54,7 @@ impl TryFrom<f64> for Number {
 
 impl From<bool> for Number {
     fn from(v: bool) -> Self {
-        Self(N::I(if v { 1 } else { 0 }))
+        Self(N::B(v))
     }
 }
 
@@ -60,6 +62,8 @@ impl From<Number> for f64 {
     #[allow(clippy::cast_precision_loss)]
     fn from(n: Number) -> Self {
         match n.0 {
+            N::B(true) => 1.0,
+            N::B(false) => 0.0,
             N::I(v) => v as _,
             N::F(v) => v,
         }
@@ -72,6 +76,7 @@ macro_rules! impl_try_from_number_for_integer {
             type Error = NumberError;
             fn try_from(n: Number) -> Result<Self, Self::Error> {
                 match n.0 {
+                    N::B(v) => Ok(v.into()),
                     N::I(v) => Self::try_from(v).map_err(|_| NumberError::Overflow),
                     N::F(v) if Self::min_value() as f64 <= v && v <= Self::max_value() as f64 => Ok(v as _),
                     _ => Err(NumberError::Overflow),
@@ -90,13 +95,7 @@ pub struct Number(N);
 
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            N::I(v) => v.fmt(f),
-            N::F(v) => {
-                let mut output = ryu::Buffer::new();
-                f.write_str(output.format(v))
-            }
-        }
+        self.write(f, "1", "0")
     }
 }
 
@@ -107,9 +106,44 @@ impl Number {
         Self(N::F(v))
     }
 
+    fn try_as_i128(self) -> Result<i128, f64> {
+        match self.0 {
+            N::B(v) => Ok(v.into()),
+            N::I(v) => Ok(v),
+            N::F(v) => Err(v),
+        }
+    }
+
+    /// Writes this number into a format writer.
+    pub fn write<W: fmt::Write>(self, sink: &mut W, true_string: &str, false_string: &str) -> fmt::Result {
+        match self.0 {
+            N::B(true) => sink.write_str(true_string),
+            N::B(false) => sink.write_str(false_string),
+            N::I(v) => write!(sink, "{}", v),
+            N::F(v) => {
+                let mut output = ryu::Buffer::new();
+                sink.write_str(output.format_finite(v))
+            }
+        }
+    }
+
+    /// Writes this number into an I/O writer.
+    pub fn write_io(self, sink: &mut dyn io::Write, true_string: &str, false_string: &str) -> io::Result<()> {
+        match self.0 {
+            N::B(true) => sink.write_all(true_string.as_bytes()),
+            N::B(false) => sink.write_all(false_string.as_bytes()),
+            N::I(v) => write!(sink, "{}", v),
+            N::F(v) => {
+                let mut output = ryu::Buffer::new();
+                sink.write_all(output.format_finite(v).as_bytes())
+            }
+        }
+    }
+
     /// Compares this value with zero.
     pub fn sql_sign(self) -> Ordering {
         match self.0 {
+            N::B(v) => v.cmp(&false),
             N::I(v) => v.cmp(&0),
             N::F(v) => v.partial_cmp(&0.0).unwrap_or(Ordering::Equal),
         }
@@ -117,7 +151,7 @@ impl Number {
 
     /// Adds this number with another number.
     pub fn add(self, other: Self) -> Result<Self, NumberError> {
-        if let (N::I(a), N::I(b)) = (self.0, other.0) {
+        if let (Ok(a), Ok(b)) = (self.try_as_i128(), other.try_as_i128()) {
             if let Some(c) = a.checked_add(b) {
                 return Ok(Self(N::I(c)));
             }
@@ -127,7 +161,7 @@ impl Number {
 
     /// Negates itself.
     pub fn neg(self) -> Self {
-        if let N::I(a) = self.0 {
+        if let Ok(a) = self.try_as_i128() {
             if let Some(c) = a.checked_neg() {
                 return Self(N::I(c));
             }
@@ -137,7 +171,7 @@ impl Number {
 
     /// Subtracts this number from another number.
     pub fn sub(self, other: Self) -> Result<Self, NumberError> {
-        if let (N::I(a), N::I(b)) = (self.0, other.0) {
+        if let (Ok(a), Ok(b)) = (self.try_as_i128(), other.try_as_i128()) {
             if let Some(c) = a.checked_sub(b) {
                 return Ok(Self(N::I(c)));
             }
@@ -147,7 +181,7 @@ impl Number {
 
     /// Multiplies this number with another number.
     pub fn mul(self, other: Self) -> Result<Self, NumberError> {
-        if let (N::I(a), N::I(b)) = (self.0, other.0) {
+        if let (Ok(a), Ok(b)) = (self.try_as_i128(), other.try_as_i128()) {
             if let Some(c) = a.checked_mul(b) {
                 return Ok(Self(N::I(c)));
             }
@@ -157,32 +191,40 @@ impl Number {
 
     /// Divides this number with another number, truncated as an integer towards zero.
     pub fn div(self, other: Self) -> Result<Self, NumberError> {
-        match (self.0, other.0) {
-            // Divide by zero is _always_ NULL in SQL, never infinity.
-            (_, N::I(0)) => return Err(NumberError::NaN),
-            (_, N::F(v)) if v == 0.0 => return Err(NumberError::NaN),
-            (N::I(a), N::I(b)) => {
-                if let Some(c) = a.checked_div(b) {
-                    return Ok(Self(N::I(c)));
-                }
+        if let (Ok(a), Ok(b)) = (self.try_as_i128(), other.try_as_i128()) {
+            if let Some(c) = a.checked_div(b) {
+                return Ok(Self(N::I(c)));
             }
-            _ => {}
         }
-        Self::try_from((f64::from(self) / f64::from(other)).trunc())
+
+        let denominator = f64::from(other);
+        if denominator == 0.0 {
+            // Divide by zero is _always_ NULL in SQL, never infinity.
+            Err(NumberError::NaN)
+        } else {
+            Self::try_from((f64::from(self) / denominator).trunc())
+        }
     }
 
     /// Computes the remainder (modulus) when this number is divided by another number.
     pub fn rem(self, other: Self) -> Result<Self, NumberError> {
-        match (self.0, other.0) {
+        if let (Ok(a), Ok(b)) = (self.try_as_i128(), other.try_as_i128()) {
+            match b {
+                // Fallthrough for zero denominator.
+                0 => {}
+                // Avoid Rust's special treatment of `-2^127 % -1`.
+                -1 => return Ok(Self(N::I(0))),
+                // All other cases involving integer will never overflow.
+                _ => return Ok(Self(N::I(a % b))),
+            }
+        }
+
+        let denominator = f64::from(other);
+        if denominator == 0.0 {
             // Divide by zero is _always_ NULL in SQL, never infinity.
-            (_, N::I(0)) => Err(NumberError::NaN),
-            (_, N::F(v)) if v == 0.0 => Err(NumberError::NaN),
-            // Avoid Rust's special treatment of `-2^127 % -1`.
-            (_, N::I(-1)) => Ok(Self(N::I(0))),
-            // All other cases involving integer will never overflow.
-            (N::I(a), N::I(b)) => Ok(Self(N::I(a % b))),
-            // The result is always less than `other` and never overflows.
-            _ => Ok(Self::from_finite_f64(f64::from(self) % f64::from(other))),
+            Err(NumberError::NaN)
+        } else {
+            Ok(Self::from_finite_f64(f64::from(self) % denominator))
         }
     }
 
@@ -201,11 +243,11 @@ impl Number {
 macro_rules! impl_partial_ord_method {
     ($(fn $fn_name:ident(...) -> $ret:ty = $method:ident;)+) => {
         $(fn $fn_name(&self, other: &Self) -> $ret {
-            match (self.0, other.0) {
-                (N::I(a), N::I(b)) => a.$method(b),
-                (N::I(a), N::F(b)) => a.$method(b),
-                (N::F(a), N::I(b)) => a.$method(b),
-                (N::F(a), N::F(b)) => a.$method(b),
+            match (self.try_as_i128(), other.try_as_i128()) {
+                (Ok(a), Ok(b)) => a.$method(b),
+                (Ok(a), Err(b)) => a.$method(b),
+                (Err(a), Ok(b)) => a.$method(b),
+                (Err(a), Err(b)) => a.$method(b),
             }
         })+
     }
@@ -274,6 +316,8 @@ mod tests {
         assert_eq!(Number::from_finite_f64(-1.2).to_string(), "-1.2");
         assert_eq!(Number::from_finite_f64(1.5e300).to_string(), "1.5e300");
         assert_eq!(Number::from_finite_f64(1e-200).to_string(), "1e-200");
+        assert_eq!(Number::from(false).to_string(), "0");
+        assert_eq!(Number::from(true).to_string(), "1");
     }
 
     #[test]
@@ -289,6 +333,8 @@ mod tests {
         assert_eq!(Number::from(i128::MIN).sql_sign(), Ordering::Less);
         assert_eq!(Number::from_finite_f64(f64::MAX).sql_sign(), Ordering::Greater);
         assert_eq!(Number::from_finite_f64(-f64::MAX).sql_sign(), Ordering::Less);
+        assert_eq!(Number::from(false).sql_sign(), Ordering::Equal);
+        assert_eq!(Number::from(true).sql_sign(), Ordering::Greater);
     }
 
     #[test]
@@ -308,6 +354,11 @@ mod tests {
         // i128::MAX never equal due to not enough precision.
         assert_ne!(Number::from_finite_f64(i128::MAX as f64), Number::from(i128::MAX));
         assert_ne!(Number::from_finite_f64(i128::MIN as f64), Number::from(i128::MIN + 1));
+
+        assert_eq!(Number::from(false), Number::from(0));
+        assert_eq!(Number::from(true), Number::from(1));
+        assert_eq!(Number::from(false), Number::from_finite_f64(0.0));
+        assert_eq!(Number::from(true), Number::from_finite_f64(1.0));
     }
 
     #[test]
@@ -325,6 +376,7 @@ mod tests {
             Number::from_finite_f64(f64::MAX).add(Number::from_finite_f64(f64::MAX)),
             Err(NumberError::Overflow)
         );
+        assert_eq!(Number::from(true).add(Number::from(true)), Ok(Number::from(2)));
     }
 
     #[test]
@@ -342,6 +394,7 @@ mod tests {
             Number::from_finite_f64(f64::MAX).sub(Number::from_finite_f64(f64::MIN)),
             Err(NumberError::Overflow)
         );
+        assert_eq!(Number::from(false).sub(Number::from(true)), Ok(Number::from(-1)));
     }
 
     #[test]
@@ -359,6 +412,7 @@ mod tests {
             Number::from_finite_f64(f64::MAX).mul(Number::from_finite_f64(1.25)),
             Err(NumberError::Overflow)
         );
+        assert_eq!(Number::from(true).mul(Number::from(true)), Ok(Number::from(1)));
     }
 
     #[test]
@@ -384,6 +438,11 @@ mod tests {
             Number::from(1).float_div(Number::from_finite_f64(0.0)),
             Err(NumberError::NaN)
         );
+        assert_eq!(Number::from(true).float_div(Number::from(false)), Err(NumberError::NaN));
+        assert_eq!(
+            Number::from(false).float_div(Number::from(true)),
+            Ok(Number::from_finite_f64(0.0))
+        );
     }
 
     #[test]
@@ -403,6 +462,8 @@ mod tests {
         );
         assert_eq!(Number::from(1).div(Number::from(0)), Err(NumberError::NaN));
         assert_eq!(Number::from(1).div(Number::from_finite_f64(0.0)), Err(NumberError::NaN));
+        assert_eq!(Number::from(true).div(Number::from(false)), Err(NumberError::NaN));
+        assert_eq!(Number::from(false).div(Number::from(true)), Ok(Number::from(0)));
     }
 
     #[test]
@@ -419,5 +480,7 @@ mod tests {
         );
         assert_eq!(Number::from(1).rem(Number::from(0)), Err(NumberError::NaN));
         assert_eq!(Number::from(1).rem(Number::from_finite_f64(0.0)), Err(NumberError::NaN));
+        assert_eq!(Number::from(true).rem(Number::from(false)), Err(NumberError::NaN));
+        assert_eq!(Number::from(false).rem(Number::from(true)), Ok(Number::from(0)));
     }
 }

@@ -105,6 +105,18 @@
             type: $.choices(['sql', 'csv', 'sql-insert-set']),
             default: 'sql',
         },
+        format_true: {
+            long: 'format-true',
+            help: 'The keyword to print for a boolean TRUE value.',
+        },
+        format_false: {
+            long: 'format-false',
+            help: 'The keyword to print for a boolean FALSE value.',
+        },
+        format_null: {
+            long: 'format-null',
+            help: 'The keyword to print for a NULL value.',
+        },
         headers: {
             help: 'Include column names or headers in the output.',
             type: 'bool',

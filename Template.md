@@ -38,7 +38,7 @@ row generated.
 
 ### Literals
 
-`dbgen` supports numbers and string literals.
+`dbgen` supports the following literals.
 
 * **Integers**
 
@@ -52,6 +52,14 @@ row generated.
     Numbers will be stored in IEEE-754 double-precision format.
 
     Examples: `0.0`, `1.5`, `.5`, `2.`, `1e100`, `1.38e-23`, `6.02e+23`
+
+* **Booleans**
+
+    `TRUE` and `FALSE`.
+
+    In most cases, a boolean type is converted to an integer (FALSE = 0, TRUE = 1). The only
+    exception is when a boolean result is printed to the data file, which the user can change the
+    output from 0/1 using the `--format-false`/`--format-true` CLI parameters.
 
 * **Strings**
 
@@ -186,7 +194,7 @@ From highest to lowest precedence:
     The syntax `a; b; c` evaluates all 3 expressions in order, but only returns `c`. The results of
     `a` and `b` are discarded. The statement separator `;` can only be used
 
-    * directly inside `{{ … }}`, and
+    * directly inside `{{ … }}`, or
     * as `THEN`/`ELSE` clauses of `CASE WHEN` expressions
 
 ### Symbols
@@ -197,8 +205,8 @@ From highest to lowest precedence:
     table, this constant will take values 1, 2, …, *N*.
 * **current_timestamp**: The timestamp when `dbgen` was started. This can be overridden using the `--now` parameter.
 * **NULL**: The null value.
-* **TRUE**: Equals to 1.
-* **FALSE**: Equals to 0.
+* **TRUE**: The true value.
+* **FALSE**: The false value.
 
 ### Random functions
 
@@ -242,8 +250,8 @@ From highest to lowest precedence:
 
 * **rand.bool(0.3)**
 
-    Generates a random boolean (0 or 1) with probability 0.3 of getting "1". Also known as the
-    Bernoulli distribution.
+    Generates a random boolean (FALSE or TRUE) with probability 0.3 of getting TRUE. Also known as
+    the Bernoulli distribution.
 
 * **rand.zipf(26, 0.8)**
 

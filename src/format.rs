@@ -6,6 +6,7 @@ use chrono::{DateTime, Datelike, TimeZone, Timelike};
 use memchr::{memchr2_iter, memchr3_iter, memchr_iter};
 use rand_regex::Encoding;
 use std::{
+    borrow::Cow,
     io::{Error, Write},
     slice,
 };
@@ -36,30 +37,44 @@ pub trait Format {
     fn write_trailer(&self, writer: &mut dyn Write) -> Result<(), Error>;
 }
 
-/// SQL formatter.
-#[derive(Debug, Default)]
-pub struct SqlFormat {
+/// Common options for the formatters.
+#[derive(Debug)]
+pub struct Options {
     /// Whether to escapes backslashes when writing a string.
     pub escape_backslash: bool,
     /// Whether to include column names in the INSERT statements.
     pub headers: bool,
+    /// The string to print for TRUE result.
+    pub true_string: Cow<'static, str>,
+    /// The string to print for FALSE result.
+    pub false_string: Cow<'static, str>,
+    /// The string to print for NULL result.
+    pub null_string: Cow<'static, str>,
 }
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            escape_backslash: false,
+            headers: false,
+            true_string: Cow::Borrowed("1"),
+            false_string: Cow::Borrowed("0"),
+            null_string: Cow::Borrowed("NULL"),
+        }
+    }
+}
+
+/// SQL formatter.
+#[derive(Debug)]
+pub struct SqlFormat<'a>(pub &'a Options);
 
 /// CSV formatter.
 #[derive(Debug)]
-pub struct CsvFormat {
-    /// Whether to escapes backslashes when writing a string.
-    pub escape_backslash: bool,
-    /// Whether to include headers at the beginning.
-    pub headers: bool,
-}
+pub struct CsvFormat<'a>(pub &'a Options);
 
 /// SQL formatter using the INSERT-SET form.
 #[derive(Debug)]
-pub struct SqlInsertSetFormat {
-    /// Whether to escapes backslashes when writing a string.
-    pub escape_backslash: bool,
-}
+pub struct SqlInsertSetFormat<'a>(pub &'a Options);
 
 /// Writes a timestamp in ISO 8601 format.
 fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &DateTime<ArcTz>) -> Result<(), Error> {
@@ -200,8 +215,8 @@ fn write_with_escape(writer: &mut dyn Write, bytes: &[u8], rules: &[(u8, EscapeR
     writer.write_all(&bytes[state.prev_end..])
 }
 
-impl SqlFormat {
-    fn write_bytes(&self, writer: &mut dyn Write, bytes: &ByteString) -> Result<(), Error> {
+impl Options {
+    fn write_sql_bytes(&self, writer: &mut dyn Write, bytes: &ByteString) -> Result<(), Error> {
         if bytes.encoding() == Encoding::Binary {
             writer.write_all(b"X'")?;
             for b in bytes.as_bytes() {
@@ -225,14 +240,13 @@ impl SqlFormat {
         }
         writer.write_all(b"'")
     }
-}
 
-impl Format for SqlFormat {
-    fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
+    /// Writes a value in SQL format.
+    pub fn write_sql_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
         match value {
-            Value::Null => writer.write_all(b"NULL"),
-            Value::Number(number) => write!(writer, "{}", number),
-            Value::Bytes(bytes) => self.write_bytes(writer, bytes),
+            Value::Null => writer.write_all(self.null_string.as_bytes()),
+            Value::Number(number) => number.write_io(writer, &self.true_string, &self.false_string),
+            Value::Bytes(bytes) => self.write_sql_bytes(writer, bytes),
             Value::Timestamp(timestamp, tz) => write_timestamp(writer, "'", &tz.from_utc_datetime(timestamp)),
             Value::Interval(interval) => write_interval(writer, "'", *interval),
             Value::Array(array) => {
@@ -241,11 +255,17 @@ impl Format for SqlFormat {
                     if i != 0 {
                         writer.write_all(b", ")?;
                     }
-                    self.write_value(writer, item)?;
+                    self.write_sql_value(writer, item)?;
                 }
                 writer.write_all(b"]")
             }
         }
+    }
+}
+
+impl Format for SqlFormat<'_> {
+    fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
+        self.0.write_sql_value(writer, value)
     }
 
     fn write_file_header(&self, _: &mut dyn Write, _: &Schema<'_>) -> Result<(), Error> {
@@ -254,7 +274,7 @@ impl Format for SqlFormat {
 
     fn write_header(&self, writer: &mut dyn Write, schema: &Schema<'_>) -> Result<(), Error> {
         write!(writer, "INSERT INTO {} ", schema.name)?;
-        if self.headers {
+        if self.0.headers {
             writer.write_all(b"(")?;
             for (i, col) in schema.column_names().enumerate() {
                 if i != 0 {
@@ -284,13 +304,9 @@ impl Format for SqlFormat {
     }
 }
 
-impl Format for SqlInsertSetFormat {
+impl Format for SqlInsertSetFormat<'_> {
     fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
-        SqlFormat {
-            escape_backslash: self.escape_backslash,
-            headers: false,
-        }
-        .write_value(writer, value)
+        self.0.write_sql_value(writer, value)
     }
 
     fn write_file_header(&self, _: &mut dyn Write, _: &Schema<'_>) -> Result<(), Error> {
@@ -298,7 +314,7 @@ impl Format for SqlInsertSetFormat {
     }
 
     fn write_header(&self, writer: &mut dyn Write, schema: &Schema<'_>) -> Result<(), Error> {
-        write!(writer, "INSERT INTO {} SET\n", schema.name)
+        writeln!(writer, "INSERT INTO {} SET", schema.name)
     }
 
     fn write_value_header(&self, writer: &mut dyn Write, column: &str) -> Result<(), Error> {
@@ -318,13 +334,13 @@ impl Format for SqlInsertSetFormat {
     }
 }
 
-impl CsvFormat {
+impl CsvFormat<'_> {
     fn write_bytes(&self, writer: &mut dyn Write, bytes: &ByteString) -> Result<(), Error> {
         writer.write_all(b"\"")?;
         write_with_escape(
             writer,
             bytes.as_bytes(),
-            if self.escape_backslash {
+            if self.0.escape_backslash {
                 &[(b'"', EscapeRule::Escape(b"\"\"")), (b'\\', EscapeRule::Escape(br"\\"))]
             } else {
                 &[(b'"', EscapeRule::Escape(b"\"\""))]
@@ -344,7 +360,7 @@ impl CsvFormat {
             Some(b'[') => (vec![(b'"', EscapeRule::Escape(b"\"\""))], &name[1..(name.len() - 1)]),
             _ => (Vec::new(), name),
         };
-        if self.escape_backslash {
+        if self.0.escape_backslash {
             rules.push((b'\\', EscapeRule::Escape(br"\\")));
         }
         write_with_escape(writer, name, &rules)?;
@@ -352,11 +368,11 @@ impl CsvFormat {
     }
 }
 
-impl Format for CsvFormat {
+impl Format for CsvFormat<'_> {
     fn write_value(&self, writer: &mut dyn Write, value: &Value) -> Result<(), Error> {
         match value {
-            Value::Null => writer.write_all(br"\N"),
-            Value::Number(number) => write!(writer, "{}", number),
+            Value::Null => writer.write_all(self.0.null_string.as_bytes()),
+            Value::Number(number) => number.write_io(writer, &self.0.true_string, &self.0.false_string),
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
             Value::Timestamp(timestamp, tz) => write_timestamp(writer, "", &tz.from_utc_datetime(timestamp)),
             Value::Interval(interval) => write_interval(writer, "", *interval),
@@ -374,7 +390,7 @@ impl Format for CsvFormat {
     }
 
     fn write_file_header(&self, writer: &mut dyn Write, schema: &Schema<'_>) -> Result<(), Error> {
-        if !self.headers {
+        if !self.0.headers {
             return Ok(());
         }
         for (i, col) in schema.column_names().enumerate() {

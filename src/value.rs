@@ -93,11 +93,11 @@ where
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use crate::format::{Format, SqlFormat};
-
-        let format = SqlFormat::default();
+        use crate::format::Options;
         let mut writer = Vec::new();
-        format.write_value(&mut writer, self).map_err(|_| fmt::Error)?;
+        Options::default()
+            .write_sql_value(&mut writer, self)
+            .map_err(|_| fmt::Error)?;
         let s = String::from_utf8(writer).map_err(|_| fmt::Error)?;
         f.write_str(&s)
     }

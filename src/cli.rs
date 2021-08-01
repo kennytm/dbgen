@@ -3,7 +3,7 @@
 use crate::{
     error::Error,
     eval::{CompileContext, Schema, State, Table},
-    format::{CsvFormat, Format, SqlFormat, SqlInsertSetFormat},
+    format::{CsvFormat, Format, Options, SqlFormat, SqlInsertSetFormat},
     lexctr::LexCtr,
     parser::{QName, Template},
     span::{Registry, ResultExt, SpanExt, S},
@@ -27,6 +27,7 @@ use rayon::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
+    borrow::Cow,
     collections::HashMap,
     convert::TryInto,
     fmt,
@@ -192,6 +193,21 @@ pub struct Args {
     #[serde(skip_serializing_if = "is_sql")]
     pub format: FormatName,
 
+    /// The keyword to print for a boolean TRUE value.
+    #[structopt(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format_true: Option<String>,
+
+    /// The keyword to print for a boolean FALSE value.
+    #[structopt(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format_false: Option<String>,
+
+    /// The keyword to print for a NULL value.
+    #[structopt(long)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format_null: Option<String>,
+
     /// Include column names or headers in the output.
     #[structopt(long)]
     #[serde(skip_serializing_if = "is_false")]
@@ -254,6 +270,9 @@ impl Default for Args {
             zoneinfo: PathBuf::from("/usr/share/zoneinfo"),
             now: None,
             format: FormatName::Sql,
+            format_true: None,
+            format_false: None,
+            format_null: None,
             headers: false,
             compression: None,
             compress_level: 6,
@@ -463,15 +482,27 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
         ComponentName::Schema.remove_from(&mut components_mask);
         ComponentName::Table.remove_from(&mut components_mask);
     }
+    let format = args.format;
     let env = Env {
         out_dir: args.out_dir,
         file_num_digits: args.files_count.to_string().len(),
         tables,
         qualified: args.qualified,
         rows_count: args.rows_count,
-        escape_backslash: args.escape_backslash,
-        headers: args.headers,
-        format: args.format,
+        format,
+        format_options: Options {
+            escape_backslash: args.escape_backslash,
+            headers: args.headers,
+            true_string: args
+                .format_true
+                .map_or_else(|| format.default_true_string(), Cow::Owned),
+            false_string: args
+                .format_false
+                .map_or_else(|| format.default_false_string(), Cow::Owned),
+            null_string: args
+                .format_null
+                .map_or_else(|| format.default_null_string(), Cow::Owned),
+        },
         compression: args.compression.map(|c| (c, compress_level)),
         components_mask,
         file_size: args.size,
@@ -706,18 +737,29 @@ impl FormatName {
     }
 
     /// Creates a formatter writer given the name.
-    fn create(self, escape_backslash: bool, headers: bool) -> Box<dyn Format> {
+    fn create(self, options: &Options) -> Box<dyn Format + '_> {
         match self {
-            Self::Sql => Box::new(SqlFormat {
-                escape_backslash,
-                headers,
-            }),
-            Self::Csv => Box::new(CsvFormat {
-                escape_backslash,
-                headers,
-            }),
-            Self::SqlInsertSet => Box::new(SqlInsertSetFormat { escape_backslash }),
+            Self::Sql => Box::new(SqlFormat(options)),
+            Self::Csv => Box::new(CsvFormat(options)),
+            Self::SqlInsertSet => Box::new(SqlInsertSetFormat(options)),
         }
+    }
+
+    #[allow(clippy::unused_self)] // future compatibility with other formats.
+    fn default_true_string(self) -> Cow<'static, str> {
+        Cow::Borrowed("1")
+    }
+
+    #[allow(clippy::unused_self)] // future compatibility with other formats.
+    fn default_false_string(self) -> Cow<'static, str> {
+        Cow::Borrowed("0")
+    }
+
+    fn default_null_string(self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
+            Self::Sql | Self::SqlInsertSet => "NULL",
+            Self::Csv => r"\N",
+        })
     }
 }
 
@@ -940,9 +982,8 @@ struct Env {
     tables: Vec<Table>,
     qualified: bool,
     rows_count: u32,
-    escape_backslash: bool,
-    headers: bool,
     format: FormatName,
+    format_options: Options,
     compression: Option<(CompressionName, u8)>,
     components_mask: u8,
     file_size: Option<u64>,
@@ -1005,7 +1046,7 @@ impl Env {
     /// Writes the data file.
     fn write_data_file(&self, info: &FileInfo, state: &mut State) -> Result<(), S<Error>> {
         let path_suffix = format!(".{0:01$}", info.file_index, self.file_num_digits);
-        let format = self.format.create(self.escape_backslash, self.headers);
+        let format = self.format.create(&self.format_options);
 
         let mut fwe = writer::Env::new(&self.tables, state, self.qualified, |table| {
             let path = self.out_dir.join([table.name.unique_name(), &path_suffix].concat());

@@ -178,6 +178,29 @@ More options
     | csv               | <pre>"col1","col2"<br>1,"one"<br>3,"three"</pre> |
     | sql-insert-set    | <pre>INSERT INTO tbl SET<br>col1 = 1,<br>col2 = 'one';</pre> |
 
+* `--format-true «STRING»`, `--format-false «STRING»`, `--format-null «STRING»`
+
+    Change the string printed for TRUE, FALSE and NULL results.
+
+    The default values are:
+
+    | Format              | True | False | Null |
+    |---------------------|------|-------|------|
+    | sql, sql-insert-set | 1    | 0     | NULL |
+    | csv                 | 1    | 0     | \\N  |
+
+    Some database systems (e.g. PostgreSQL) distinguish between boolean and integer types. When
+    targeting these systems, you may need to modify these keywords:
+
+    ```sh
+    ./dbgen -o bool_table -N 10 -R 10 \
+        -e 'create table bool_table(a boolean {{ rand.bool(0.5) }});' \
+        --format-true TRUE --format-false FALSE
+    ```
+
+    Regardless of these settings, when evaluating a boolean value as a string they always turn into
+    `'0'` or `'1'` (e.g. `{{ true || '!' }}` always produces `'1!'`).
+
 * `--headers`
 
     Include column names into the output as headers.

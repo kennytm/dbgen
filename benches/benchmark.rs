@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 use dbgen::{
     eval::{CompileContext, State},
-    format::{Format, SqlFormat},
+    format::Options,
     parser::Template,
     span::Registry,
 };
@@ -18,13 +18,13 @@ fn run_benchmark(b: &mut Bencher<'_>, path: &str) {
     let ctx = CompileContext::new(template.variables_count);
     let row = ctx.compile_row(template.tables.swap_remove(0).exprs).unwrap();
     let mut state = State::new(1, Box::new(Hc128Rng::from_seed([0x41; 32])), ctx);
-    let format = SqlFormat::default();
+    let options = Options::default();
     let mut sink: Box<dyn Write> = Box::new(sink());
 
     b.iter(move || {
         let values = black_box(&row).eval(black_box(&mut state)).unwrap();
         for value in values {
-            format.write_value(black_box(&mut *sink), &value).unwrap();
+            options.write_sql_value(black_box(&mut *sink), &value).unwrap();
         }
     });
 }

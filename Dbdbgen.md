@@ -175,6 +175,9 @@ interface Step {
     zoneinfo: string,
     now: string | null,
     format: 'sql' | 'csv' | 'sql-insert-set',
+    format_true: string | null,
+    format_false: string | null,
+    format_null: string | null,
     headers: boolean,
     compression: 'gzip' | 'xz' | 'zstd' | null,
     compress_level: number,
@@ -205,6 +208,9 @@ Each step describes the arguments sent to `dbgen`. They correspond to the
 | zoneinfo | `--zoneinfo` | '/usr/share/zoneinfo' |
 | now | `--now` | null |
 | format | `-f`/`--format` | 'sql' |
+| format_true | `--format-true` | null |
+| format_false | `--format-false` | null |
+| format_null | `--format-null` | null |
 | headers | `--headers` | false |
 | compression | `-c`/`--compression` | null |
 | compress_level | `--compress-level` | 6 |

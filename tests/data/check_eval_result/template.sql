@@ -162,4 +162,11 @@ CREATE TABLE result (
     bit_or  {{ 80 | 91 | 68 }}
     bit_xor {{ 80 ^ 91 ^ 68 }}
     bit_not {{ ~ ~ - ~ - 69 }}
+
+    bool_false  {{ false }}
+    bool_true   {{ true }}
+    bool_concat {{ true || false }}
+    bool_is     {{ 1 is true }}
+    bool_eq     {{ false = 0 }}
+    bool_arith  {{ true + true }}
 );
