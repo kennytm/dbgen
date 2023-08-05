@@ -310,7 +310,7 @@ impl ByteString {
         let mut it = self.bytes[self.ascii_len..]
             .iter()
             .zip(self.ascii_len..)
-            .filter_map(|(b, i)| is_utf8_leading_byte(*b).then(|| i))
+            .filter_map(|(b, i)| is_utf8_leading_byte(*b).then_some(i))
             .fuse();
 
         let start;

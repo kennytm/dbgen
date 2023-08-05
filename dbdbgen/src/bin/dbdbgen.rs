@@ -1,36 +1,38 @@
-use clap::{App, AppSettings, Arg};
+use clap::{Arg, ArgAction, Command};
 use dbdbgen::{cli::ensure_seed, error::Error, jsvm::Vm};
 use dbgen::{span::Registry, FULL_VERSION};
-use std::error::Error as StdError;
+use std::{error::Error as StdError, ffi::OsStr};
 
 fn run() -> Result<(), Error> {
-    let global_matches = App::new("dbdbgen")
+    let global_matches = Command::new("dbdbgen")
         .long_version(FULL_VERSION)
-        .setting(AppSettings::TrailingVarArg)
+        .trailing_var_arg(true)
         .args(&[
-            Arg::with_name("dry-run")
+            Arg::new("dry-run")
                 .long("dry-run")
+                .action(ArgAction::SetTrue)
                 .help("Only display the evaluated dbdbgen result without generating data."),
-            Arg::with_name("allow-import")
+            Arg::new("allow-import")
                 .long("allow-import")
+                .action(ArgAction::SetTrue)
                 .help("Allows `import` and `importstr` to read files."),
-            Arg::with_name("file")
+            Arg::new("file")
                 .help("The Jsonnet file to execute, followed by the arguments passed to it.")
-                .multiple(true)
+                .action(ArgAction::Append)
                 .required(true)
                 .allow_hyphen_values(true),
         ])
         .get_matches();
-    let mut args = global_matches.values_of_os("file").unwrap();
-    let src_file = args.next().unwrap();
+    let mut args = global_matches.get_many("file").unwrap();
+    let src_file: &&OsStr = args.next().unwrap();
 
-    let mut vm = Vm::new(src_file, global_matches.is_present("allow-import"))?;
+    let mut vm = Vm::new(src_file, global_matches.get_flag("allow-import"))?;
     let app = vm.eval_arguments()?;
     let mut matches = app.get_matches(args);
     ensure_seed(&mut matches);
     let steps = vm.eval_steps(matches)?;
 
-    if global_matches.is_present("dry-run") {
+    if global_matches.get_flag("dry-run") {
         println!(
             "/* dbdbgen{}\n*/\n{{\"steps\": {}}}",
             FULL_VERSION,

@@ -83,7 +83,7 @@ impl<'p> Vm<'p> {
 
         let mut steps = Vec::new();
         for (i, steps_js) in steps_js_stream.iter().enumerate() {
-            let step = deserialize(&steps_js, Purpose::Execution { step: i })?;
+            let step = deserialize(steps_js, Purpose::Execution { step: i })?;
             steps.push(step);
         }
 

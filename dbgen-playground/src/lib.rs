@@ -124,7 +124,7 @@ fn try_generate_rows(
 pub fn generate_rows(template: &str, rows: usize, now: &str, seed: &[u8]) -> Result<JsValue, JsValue> {
     let mut registry = Registry::default();
     match try_generate_rows(template, rows, now, seed, &mut registry) {
-        Ok(result) => JsValue::from_serde(&result).map_err(|e| e.to_string().into()),
+        Ok(result) => serde_wasm_bindgen::to_value(&result).map_err(|e| e.to_string().into()),
         Err(e) => Err(registry.describe(&e).into()),
     }
 }

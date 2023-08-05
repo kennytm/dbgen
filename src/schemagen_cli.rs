@@ -119,7 +119,7 @@ fn gen_int_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
         (Dialect::PostgreSQL, true, _) => "numeric(20)",
         (Dialect::SQLite, _, _) => "integer",
     };
-    let ty = format!("{} not null", ty);
+    let ty = format!("{ty} not null");
     let (min, max) = if unsigned {
         (0, (256 << (8 * bytes)) - 1)
     } else {
@@ -137,7 +137,7 @@ fn gen_int_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
 
     Column {
         ty,
-        expr: format!("rand.range_inclusive({}, {})", min, max),
+        expr: format!("rand.range_inclusive({min}, {max})"),
         neg_log2_prob,
         average_len,
         nullable: false,
@@ -166,10 +166,7 @@ fn gen_decimal_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
     let limit = "9".repeat(before);
     Column {
         ty: format!("decimal({}, {}) not null", before + after, after),
-        expr: format!(
-            "rand.range_inclusive(-{0}, {0}) || rand.regex('\\.[0-9]{{{1}}}')",
-            limit, after
-        ),
+        expr: format!("rand.range_inclusive(-{limit}, {limit}) || rand.regex('\\.[0-9]{{{after}}}')"),
         neg_log2_prob: LOG2_10 * (before + after) as f64 + 1.0,
         average_len: (before + after) as f64 + 17.0 / 9.0,
         nullable: false,
@@ -184,8 +181,8 @@ fn gen_varchar_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
     let len = rng.gen_range(1..=255);
     let residue = (VALID_CHARS_COUNT / (VALID_CHARS_COUNT - 1.0)).log2();
     Column {
-        ty: format!("varchar({}) not null", len),
-        expr: format!("rand.regex('.{{0,{}}}', 's')", len),
+        ty: format!("varchar({len}) not null"),
+        expr: format!("rand.regex('.{{0,{len}}}', 's')"),
         neg_log2_prob: f64::from(len + 1).log2() - residue,
         average_len: AVERAGE_LEN_PER_CHAR * 0.5 * f64::from(len) + 2.0,
         nullable: false,
@@ -196,8 +193,8 @@ fn gen_char_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
     let len = rng.gen_range(1..=255);
     let factor = VALID_CHARS_COUNT.log2();
     Column {
-        ty: format!("char({}) not null", len),
-        expr: format!("rand.regex('.{{{}}}', 's')", len),
+        ty: format!("char({len}) not null"),
+        expr: format!("rand.regex('.{{{len}}}', 's')"),
         neg_log2_prob: factor * f64::from(len),
         average_len: AVERAGE_LEN_PER_CHAR * f64::from(len) + 2.0,
         nullable: false,
@@ -240,7 +237,7 @@ fn gen_nullable_bool_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
     let p = rng.gen::<f64>();
     Column {
         ty: "boolean".to_owned(),
-        expr: format!("CASE WHEN rand.bool({}) THEN '' || rand.bool(0.5) END", p),
+        expr: format!("CASE WHEN rand.bool({p}) THEN '' || rand.bool(0.5) END"),
         neg_log2_prob: -((1.5 * p - 2.0) * p + 1.0).log2(),
         average_len: 4.0 - p,
         nullable: true,
@@ -260,7 +257,7 @@ fn gen_float_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
     };
     Column {
         ty: ty.to_owned(),
-        expr: format!("rand.finite_f{}()", bits),
+        expr: format!("rand.finite_f{bits}()"),
         neg_log2_prob: if bits == 32 {
             NEG_LOG2_PROB_FINITE_F32
         } else {
@@ -327,11 +324,7 @@ impl<'a> IndexAppender<'a> {
             return;
         }
 
-        let index_spec = index_set
-            .iter()
-            .map(|i| format!("c{}", i))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let index_spec = index_set.iter().map(|i| format!("c{i}")).collect::<Vec<_>>().join(", ");
 
         if index_set.is_empty() || !self.index_sets.insert(index_set) {
             return;

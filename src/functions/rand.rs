@@ -83,11 +83,7 @@ impl Function for Zipf {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
         let (count, exponent) = args_2(span, args, None, None)?;
         Ok(C::RandZipf(ZipfDistribution::new(count, exponent).map_err(|()| {
-            Error::InvalidArguments(format!(
-                "count ({}) and exponent ({}) must be positive",
-                count, exponent
-            ))
-            .span(span)
+            Error::InvalidArguments(format!("count ({count}) and exponent ({exponent}) must be positive")).span(span)
         })?))
     }
 }
@@ -103,7 +99,7 @@ impl Function for LogNormal {
         let (mean, std_dev) = args_2::<f64, f64>(span, args, None, None)?;
         let std_dev = std_dev.abs();
         Ok(C::RandLogNormal(rand_distr::LogNormal::new(mean, std_dev).map_err(
-            |e| Error::InvalidArguments(format!("standard deviation ({}) {}", std_dev, e)).span(span),
+            |e| Error::InvalidArguments(format!("standard deviation ({std_dev}) {e}")).span(span),
         )?))
     }
 }
@@ -118,7 +114,7 @@ impl Function for Bool {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
         let p = args_1(span, args, None)?;
         Ok(C::RandBool(rand_distr::Bernoulli::new(p).map_err(|e| {
-            Error::InvalidArguments(format!("probability ({}) {}", p, e)).span(span)
+            Error::InvalidArguments(format!("probability ({p}) {e}")).span(span)
         })?))
     }
 }
@@ -173,7 +169,7 @@ pub struct Regex;
 
 impl Function for Regex {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
-        let (regex, flags, max_repeat) = args_3::<String, String, _>(span, args, None, Some("".to_owned()), Some(100))?;
+        let (regex, flags, max_repeat) = args_3::<String, String, _>(span, args, None, Some(String::new()), Some(100))?;
         let generator = compile_regex_generator(&regex, &flags, max_repeat).span_err(span)?;
         Ok(C::RandRegex(generator))
     }
@@ -184,8 +180,8 @@ fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<
     for flag in flags.chars() {
         match flag {
             'o' => parser.octal(true),
-            'a' => parser.allow_invalid_utf8(true).unicode(false),
-            'u' => parser.allow_invalid_utf8(false).unicode(true),
+            'a' => parser.utf8(false).unicode(false),
+            'u' => parser.utf8(true).unicode(true),
             'x' => parser.ignore_whitespace(true),
             'i' => parser.case_insensitive(true),
             'm' => parser.multi_line(true),

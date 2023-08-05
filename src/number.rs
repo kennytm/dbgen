@@ -102,7 +102,7 @@ impl fmt::Display for Number {
 #[allow(clippy::should_implement_trait)]
 impl Number {
     pub(crate) fn from_finite_f64(v: f64) -> Self {
-        debug_assert!(v.is_finite(), "failed: ({:?}).is_finite()", v);
+        debug_assert!(v.is_finite(), "failed: ({v:?}).is_finite()");
         Self(N::F(v))
     }
 
@@ -119,7 +119,7 @@ impl Number {
         match self.0 {
             N::B(true) => sink.write_str(true_string),
             N::B(false) => sink.write_str(false_string),
-            N::I(v) => write!(sink, "{}", v),
+            N::I(v) => write!(sink, "{v}"),
             N::F(v) => {
                 let mut output = ryu::Buffer::new();
                 sink.write_str(output.format_finite(v))
@@ -132,7 +132,7 @@ impl Number {
         match self.0 {
             N::B(true) => sink.write_all(true_string.as_bytes()),
             N::B(false) => sink.write_all(false_string.as_bytes()),
-            N::I(v) => write!(sink, "{}", v),
+            N::I(v) => write!(sink, "{v}"),
             N::F(v) => {
                 let mut output = ryu::Buffer::new();
                 sink.write_all(output.format_finite(v).as_bytes())
@@ -160,6 +160,7 @@ impl Number {
     }
 
     /// Negates itself.
+    #[must_use]
     pub fn neg(self) -> Self {
         if let Ok(a) = self.try_as_i128() {
             if let Some(c) = a.checked_neg() {

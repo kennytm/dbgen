@@ -12,7 +12,7 @@ use thiserror::Error as ThisError;
 pub enum Error {
     /// Failed to parse template.
     #[error("failed to parse template")]
-    ParseTemplate(#[from] pest::error::Error<Rule>),
+    ParseTemplate(#[source] Box<pest::error::Error<Rule>>),
 
     /// Unknown SQL function.
     #[error("unknown function")]
@@ -126,6 +126,9 @@ pub enum Error {
     },
 }
 
+// ensure the size of error is ≤56 bytes
+const _: usize = 56 - std::mem::size_of::<Error>();
+
 impl fmt::Display for S<Error> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt(f)
@@ -141,6 +144,12 @@ impl std::error::Error for S<Error> {
 impl From<Infallible> for Error {
     fn from(never: Infallible) -> Self {
         match never {}
+    }
+}
+
+impl From<pest::error::Error<Rule>> for Error {
+    fn from(e: pest::error::Error<Rule>) -> Self {
+        Self::ParseTemplate(Box::new(e))
     }
 }
 

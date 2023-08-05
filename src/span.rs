@@ -23,7 +23,7 @@ impl Registry {
     pub fn register(&mut self, span: pest::Span<'_>) -> Span {
         let res = Span(self.0.len());
         self.0.push(Error::new_from_span(
-            ErrorVariant::CustomError { message: "".to_owned() },
+            ErrorVariant::CustomError { message: String::new() },
             span,
         ));
         res
@@ -35,12 +35,12 @@ impl Registry {
         let mut buf = format!("Error: {}\n", err.inner);
 
         if let Some(e) = self.0.get(err.span.0) {
-            writeln!(&mut buf, "{}\n", e).unwrap();
+            writeln!(&mut buf, "{e}\n").unwrap();
         }
 
         let mut err: &(dyn std::error::Error + 'static) = &err.inner;
         while let Some(source) = err.source() {
-            writeln!(&mut buf, "Cause: {}", source).unwrap();
+            writeln!(&mut buf, "Cause: {source}").unwrap();
             err = source;
         }
 

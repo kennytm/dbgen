@@ -34,7 +34,7 @@ impl CompileContext {
         Self {
             zoneinfo: PathBuf::from("/usr/share/zoneinfo"),
             time_zone: ArcTz::new(Utc.into()),
-            current_timestamp: NaiveDateTime::from_timestamp(0, 0),
+            current_timestamp: NaiveDateTime::MIN,
             variables: vec![Value::Null; variables_count].into_boxed_slice(),
         }
     }
@@ -391,7 +391,8 @@ impl Compiled {
 
             C::RandU31Timestamp(uniform) => {
                 let seconds = state.rng.sample(uniform);
-                let timestamp = NaiveDateTime::from_timestamp(seconds, 0);
+                let timestamp =
+                    NaiveDateTime::from_timestamp_opt(seconds, 0).expect("u31 range of timestamp must be valid");
                 Value::new_timestamp(timestamp, state.compile_context.time_zone.clone())
             }
 

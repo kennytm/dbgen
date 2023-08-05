@@ -2,7 +2,7 @@
 name = "dbgen"
 version = "0.8.0"
 authors = ["kennytm <kennytm@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 description = "Generate random test cases for databases"
 repository = "https://github.com/kennytm/dbgen"
@@ -10,57 +10,58 @@ exclude = ["fuzz.sh", "release/*"]
 readme = "README.md"
 keywords = ["cli", "generator", "database", "fake"]
 categories = ["command-line-utilities", "simulation"]
+rust-version = "1.71.0"
 
 [workspace]
 members = ["dbgen-playground", "dbdbgen"]
 
 [dependencies]
 structopt = { version = "0.3", optional = true }
-pest = "2.1"
-pest_derive = "2.1"
+pest = "2.7"
+pest_derive = "2.7"
 thiserror = "1.0"
-rand = { version = "0.8", default-features = false, features = ["getrandom"] }
-data-encoding = "2.3"
+rand = { version = "0.8.5", default-features = false, features = ["getrandom"] }
+data-encoding = "2.4"
 data-encoding-macro = "0.1"
-regex-syntax = "0.6"
-pbr = { version = "1.0", optional = true }
+regex-syntax = "0.7"
+pbr = { version = "1.1", optional = true }
 num-traits = "0.2"
-rayon = { version = "1.3", optional = true }
+rayon = { version = "1.7", optional = true }
 zipf = "7.0"
-chrono = { version = "0.4", default-features = false, features = ["serde"] }
+chrono = { version = "0.4.26", default-features = false, features = ["std", "serde", "clock"] }
 tzfile = "0.1"
 ryu = "1.0"
 serde = "1.0"
 muldiv = { version = "1.0", optional = true }
 rand_distr = { version = "0.4", default-features = false, features = ["alloc"] }
-rand_regex = "0.15.1"
+rand_regex = "0.16"
 rand_pcg = { version = "0.3", optional = true }
 rand_isaac = { version = "0.3", optional = true }
 rand_chacha = { version = "0.3", optional = true }
 rand_hc = "0.3"
 rand_xorshift = { version = "0.3", optional = true }
-shlex = { version = "1.0", optional = true }
+shlex = { version = "1.1", optional = true }
 flate2 = { version = "1.0", optional = true }
 xz2 = { version = "0.1", optional = true }
-zstd = { version = "0.9", default-features = false, optional = true }
-smallvec = { version = "1.1", default-features = false }
-memchr = "2.3"
+zstd = { version = "0.12", default-features = false, optional = true }
+smallvec = { version = "1.11", default-features = false }
+memchr = "2.5"
 numcmp = "0.1"
 parse-size = { version = "1.0", optional = true }
 
 [dev-dependencies]
-regex = { version = "1.3", default-features = false }
-tempfile = "3.1"
+regex = { version = "1.9", default-features = false }
+tempfile = "3.7"
 serde_json = "1.0"
 diff = "0.1"
-criterion = "0.3"
+criterion = "0.5"
 
 [[bench]]
 name = "benchmark"
 harness = false
 
 [build-dependencies]
-vergen = { version = "5.1", default-features = false, features = ["git", "cargo"] }
+vergen = { version = "8.2", default-features = false, features = ["git", "gitcl", "cargo"] }
 
 [features]
 default = ["cli"]

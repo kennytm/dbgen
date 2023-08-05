@@ -445,7 +445,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
         _ => {
             return Err(Error::UnsupportedCliParameter {
                 kind: "template",
-                value: "".to_owned(),
+                value: String::new(),
             }
             .no_span())
         }
@@ -518,7 +518,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
     let show_progress = !args.quiet;
     if show_progress {
-        println!("Using seed: {}", meta_seed);
+        println!("Using seed: {meta_seed}");
     }
     let mut seeding_rng = meta_seed.make_rng();
 
@@ -1006,9 +1006,9 @@ impl Env {
             }
         }
         for (unique_name, name) in schema_names {
-            let path = self.out_dir.join(format!("{}-schema-create.sql", unique_name));
+            let path = self.out_dir.join(format!("{unique_name}-schema-create.sql"));
             let mut file = BufWriter::new(File::create(&path).with_path("create schema schema file", &path)?);
-            writeln!(file, "CREATE SCHEMA {};", name).with_path("write schema schema file", &path)?;
+            writeln!(file, "CREATE SCHEMA {name};").with_path("write schema schema file", &path)?;
         }
         Ok(())
     }

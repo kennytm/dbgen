@@ -130,12 +130,9 @@ impl Value {
             (Self::Bytes(a), Self::Bytes(b)) => a.partial_cmp(b),
             (Self::Timestamp(a, _), Self::Timestamp(b, _)) => a.partial_cmp(b),
             (Self::Interval(a), Self::Interval(b)) => a.partial_cmp(b),
-            (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), |a, b| a.sql_cmp(b))?,
+            (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), Value::sql_cmp)?,
             _ => {
-                return Err(Error::InvalidArguments(format!(
-                    "cannot compare {} with {}",
-                    self, other
-                )));
+                return Err(Error::InvalidArguments(format!("cannot compare {self} with {other}")));
             }
         })
     }
@@ -171,7 +168,7 @@ impl Value {
                 Self::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
             }
             _ => {
-                return Err(Error::InvalidArguments(format!("cannot add {} to {}", self, other)));
+                return Err(Error::InvalidArguments(format!("cannot add {self} to {other}")));
             }
         })
     }
@@ -193,10 +190,7 @@ impl Value {
                 Self::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
             }
             _ => {
-                return Err(Error::InvalidArguments(format!(
-                    "cannot subtract {} from {}",
-                    self, other
-                )));
+                return Err(Error::InvalidArguments(format!("cannot subtract {self} from {other}")));
             }
         })
     }
@@ -209,10 +203,7 @@ impl Value {
                 try_from_number_into_interval!(Number::from(*dur).mul(*m), "interval {} microsecond * {}", dur, m)
             }
             _ => {
-                return Err(Error::InvalidArguments(format!(
-                    "cannot multiply {} with {}",
-                    self, other
-                )));
+                return Err(Error::InvalidArguments(format!("cannot multiply {self} with {other}")));
             }
         })
     }
@@ -225,7 +216,7 @@ impl Value {
                 try_from_number_into_interval!(Number::from(*dur).float_div(*d), "interval {} microsecond / {}", dur, d)
             }
             _ => {
-                return Err(Error::InvalidArguments(format!("cannot divide {} by {}", self, other)));
+                return Err(Error::InvalidArguments(format!("cannot divide {self} by {other}")));
             }
         })
     }
@@ -235,7 +226,7 @@ impl Value {
         if let (Self::Number(lhs), Self::Number(rhs)) = (self, other) {
             Ok(try_from_number!(lhs.div(*rhs), "div({}, {})", lhs, rhs))
         } else {
-            Err(Error::InvalidArguments(format!("cannot divide {} by {}", self, other)))
+            Err(Error::InvalidArguments(format!("cannot divide {self} by {other}")))
         }
     }
 
@@ -245,8 +236,7 @@ impl Value {
             Ok(try_from_number!(lhs.rem(*rhs), "mod({}, {})", lhs, rhs))
         } else {
             Err(Error::InvalidArguments(format!(
-                "cannot compute remainder of {} by {}",
-                self, other
+                "cannot compute remainder of {self} by {other}"
             )))
         }
     }
@@ -264,7 +254,7 @@ impl Value {
                 Self::Timestamp(timestamp, tz) => {
                     write!(res, "{}", tz.from_utc_datetime(timestamp).format(TIMESTAMP_FORMAT)).unwrap();
                 }
-                Self::Interval(interval) => write!(res, "INTERVAL {} MICROSECOND", interval).unwrap(),
+                Self::Interval(interval) => write!(res, "INTERVAL {interval} MICROSECOND").unwrap(),
                 Self::Array(_) => {
                     return Err(Error::InvalidArguments(
                         "cannot concatenate arrays using || operator".to_owned(),
@@ -283,7 +273,7 @@ impl Value {
         match self {
             Self::Null => Ok(false),
             Self::Number(n) => Ok(n.sql_sign() != Ordering::Equal),
-            _ => Err(Error::InvalidArguments(format!("truth value of {} is undefined", self))),
+            _ => Err(Error::InvalidArguments(format!("truth value of {self} is undefined"))),
         }
     }
 

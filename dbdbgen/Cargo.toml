@@ -10,9 +10,9 @@ dbgen = { path = "../" }
 jsonnet-rs = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-clap = "2.33"
+clap = { version = "4.3", features = ["string"] }
 thiserror = "1.0"
 rand_core = { version = "0.6", features = ["getrandom"] }
-data-encoding = "2.3"
-sha2 = "0.9"
-parse-size = "1.0"
+data-encoding = "2.4"
+sha2 = "0.10"
+parse-size = { version = "1.0", features = ["std"] }

@@ -272,7 +272,7 @@ impl Template {
                     let table = alloc.table_from_pairs(pair.into_inner())?;
                     let table_name = table.name.unique_name();
                     if let Some(child_name) = &expected_child_name {
-                        if child_name.inner.unique_name() != &*table_name {
+                        if child_name.inner.unique_name() != table_name {
                             return Err(Error::DerivedTableNameMismatch {
                                 for_each_row: child_name.inner.table_name(true).to_owned(),
                                 create_table: table.name.table_name(true).to_owned(),
@@ -656,8 +656,7 @@ impl<'a> Allocator<'a> {
                         function: &functions::array::Subscript,
                         args: vec![
                             base.span(self.register(base_span)),
-                            self.expr_from_pairs(pair.into_inner())?
-                                .span(self.register(span.clone())),
+                            self.expr_from_pairs(pair.into_inner())?.span(self.register(span)),
                         ],
                     };
                     base_span = span;
@@ -669,7 +668,7 @@ impl<'a> Allocator<'a> {
         for (function, function_span) in op_stack.into_iter().rev() {
             base = Expr::Function {
                 function,
-                args: vec![base.span(self.register(base_span.clone()))],
+                args: vec![base.span(self.register(base_span))],
             };
             base_span = pest::Position::span(&function_span.start_pos(), &base_span.end_pos());
         }
@@ -772,9 +771,7 @@ impl<'a> Allocator<'a> {
             match pair.as_rule() {
                 Rule::kw_interval => {}
                 Rule::expr => {
-                    expr = self
-                        .expr_from_pairs(pair.into_inner())?
-                        .span(self.register(span.clone()));
+                    expr = self.expr_from_pairs(pair.into_inner())?.span(self.register(span));
                 }
                 Rule::kw_week => unit = 604_800_000_000,
                 Rule::kw_day => unit = 86_400_000_000,

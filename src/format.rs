@@ -100,7 +100,7 @@ fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &DateTime<Arc
 fn write_interval(writer: &mut dyn Write, quote: &str, mut interval: i64) -> Result<(), Error> {
     writer.write_all(quote.as_bytes())?;
     if interval == i64::min_value() {
-        return write!(writer, "-106751991 04:00:54.775808{}", quote);
+        return write!(writer, "-106751991 04:00:54.775808{quote}");
     } else if interval < 0 {
         interval = -interval;
         writer.write_all(b"-")?;
@@ -119,11 +119,11 @@ fn write_interval(writer: &mut dyn Write, quote: &str, mut interval: i64) -> Res
     let hours = hours % 24;
 
     if days > 0 {
-        write!(writer, "{} ", days)?;
+        write!(writer, "{days} ")?;
     }
-    write!(writer, "{:02}:{:02}:{:02}", hours, minutes, seconds)?;
+    write!(writer, "{hours:02}:{minutes:02}:{seconds:02}")?;
     if microseconds > 0 {
-        write!(writer, ".{:06}", microseconds)?;
+        write!(writer, ".{microseconds:06}")?;
     }
 
     writer.write_all(quote.as_bytes())
@@ -220,7 +220,7 @@ impl Options {
         if bytes.encoding() == Encoding::Binary {
             writer.write_all(b"X'")?;
             for b in bytes.as_bytes() {
-                write!(writer, "{:02X}", b)?;
+                write!(writer, "{b:02X}")?;
             }
         } else {
             writer.write_all(b"'")?;
@@ -318,7 +318,7 @@ impl Format for SqlInsertSetFormat<'_> {
     }
 
     fn write_value_header(&self, writer: &mut dyn Write, column: &str) -> Result<(), Error> {
-        write!(writer, "{} = ", column)
+        write!(writer, "{column} = ")
     }
 
     fn write_value_separator(&self, writer: &mut dyn Write) -> Result<(), Error> {
