@@ -19,7 +19,7 @@ structopt = { version = "0.3", optional = true }
 pest = "2.1"
 pest_derive = "2.1"
 thiserror = "1.0"
-rand = { version = "0.8", default-features = false }
+rand = { version = "0.8", default-features = false, features = ["getrandom"] }
 data-encoding = "2.3"
 data-encoding-macro = "0.1"
 regex-syntax = "0.6"

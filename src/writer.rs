@@ -55,7 +55,6 @@ struct TableState<'a, W: Writer> {
 #[derive(Debug)]
 pub struct Env<'a, W: Writer> {
     state: &'a mut State,
-    qualified: bool,
     tables: Vec<TableState<'a, W>>,
 }
 
@@ -84,7 +83,6 @@ impl<'a, W: Writer> Env<'a, W> {
                 })
                 .collect::<Result<_, _>>()?,
             state,
-            qualified,
         })
     }
 
