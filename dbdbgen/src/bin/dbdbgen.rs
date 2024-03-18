@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, Command};
 use dbdbgen::{cli::ensure_seed, error::Error, jsvm::Vm};
 use dbgen::{span::Registry, FULL_VERSION};
-use std::{error::Error as StdError, ffi::OsStr};
+use std::error::Error as StdError;
 
 fn run() -> Result<(), Error> {
     let global_matches = Command::new("dbdbgen")
@@ -23,8 +23,8 @@ fn run() -> Result<(), Error> {
                 .allow_hyphen_values(true),
         ])
         .get_matches();
-    let mut args = global_matches.get_many("file").unwrap();
-    let src_file: &&OsStr = args.next().unwrap();
+    let mut args = global_matches.get_raw("file").unwrap();
+    let src_file = args.next().unwrap();
 
     let mut vm = Vm::new(src_file, global_matches.get_flag("allow-import"))?;
     let app = vm.eval_arguments()?;
