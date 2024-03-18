@@ -24,7 +24,9 @@ rand = { version = "0.8.5", default-features = false, features = ["getrandom"] }
 data-encoding = "2.4"
 data-encoding-macro = "0.1"
 regex-syntax = "0.7"
-pbr = { version = "1.1", optional = true }
+# the progress bar will prevent dbgen from finishing
+# forcing a git dependency until https://github.com/a8m/pb/pull/120 is released
+pbr = { version = "1.1", optional = true, git = "https://github.com/a8m/pb.git", rev = "d60b964be6a234c933fdf95d7b7851f383e21206" }
 num-traits = "0.2"
 rayon = { version = "1.7", optional = true }
 zipf = "7.0"

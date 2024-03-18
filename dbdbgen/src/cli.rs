@@ -133,7 +133,7 @@ impl App {
                 ArgType::Float => Match::Float(get_one!(f64)),
                 ArgType::Choices { multiple: true, .. } => {
                     if let Some(values) = matches.get_many(name) {
-                        Match::Array(values.map(|s: &&str| s.to_string()).collect())
+                        Match::Array(values.cloned().collect())
                     } else {
                         continue;
                     }
