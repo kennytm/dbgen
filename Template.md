@@ -287,20 +287,20 @@ From highest to lowest precedence:
 ### Date and Time
 
 * **TIMESTAMP '2016-01-02 15:04:05.999'**
+* **TIMESTAMP WITH TIME ZONE '2016-01-02 15:04:05.999 Asia/Hong_Kong'**
 
-    Converts an ISO-8601-formatted string into a timestamp, using the time zone specified by the
-    `--time-zone` flag. The timestamp is internally stored as UTC.
+    Converts an ISO-8601-formatted string into a timestamp.
+
+    The string may include a specific time zone at the end. By default the one provided by the
+    `--time-zone` flag is used. The timestamp will be converted to UTC internally.
 
     If a time zone observes DST, there will be some time values which are impossible or ambiguous.
     Both of these cases will cause an "invalid timestamp" error.
 
-* **TIMESTAMP WITH TIME ZONE '2016-01-02 15:04:05.999 Asia/Hong_Kong'**
+    Only time zone names in the `tz` database are recognized. The time zone will **not** be printed
+    together with the timestamp.
 
-    Converts an ISO-8601-formatted string into a timestamp, using the time zone specified inside
-    the string. The timestamp is internally stored as UTC.
-
-    Only names in the `tz` database are recognized. The time zone will **not** be printed together
-    with the timestamp.
+    `TIMESTAMP` and `TIMESTAMP WITH TIME ZONE` are alias to each other.
 
 * **INTERVAL 30 MINUTE**
 
@@ -321,7 +321,8 @@ From highest to lowest precedence:
 * **rand.u31_timestamp()**
 
     Generates a random timestamp distributed uniformly between 1970-01-01 00:00:01 and
-    2038-01-19 03:14:07 (UTC). There are exactly 2<sup>31</sup>−1 seconds between these two time.
+    2038-01-19 03:14:07 (UTC), inclusively. There are exactly 2<sup>31</sup>−1 seconds between these
+    two time.
 
 ### Strings
 

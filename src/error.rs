@@ -55,6 +55,10 @@ pub enum Error {
     #[error("invalid timestamp")]
     InvalidTimestampString(#[from] chrono::format::ParseError),
 
+    /// The local time is invalid or ambiguous
+    #[error("invalid or ambiguous local time")]
+    InvalidOrAmbiguousLocalTime,
+
     /// Cannot find parent table for derived table directive.
     #[error("cannot find parent table {parent} to generate derived rows")]
     UnknownParentTable {

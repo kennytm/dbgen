@@ -7,7 +7,7 @@ use crate::{
     span::{ResultExt, Span, SpanExt, S},
     value::Value,
 };
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rand::{distributions::Bernoulli, seq::SliceRandom, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
 use rand_regex::EncodedString;
@@ -391,8 +391,9 @@ impl Compiled {
 
             C::RandU31Timestamp(uniform) => {
                 let seconds = state.rng.sample(uniform);
-                let timestamp =
-                    NaiveDateTime::from_timestamp_opt(seconds, 0).expect("u31 range of timestamp must be valid");
+                let timestamp = DateTime::from_timestamp(seconds, 0)
+                    .expect("u31 range of timestamp must be valid")
+                    .naive_utc();
                 Value::new_timestamp(timestamp, state.compile_context.time_zone.clone())
             }
 

@@ -716,17 +716,13 @@ impl<'a> Allocator<'a> {
 
     /// Creates a `TIMESTAMP` expression.
     fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
-        let mut function: &dyn Function = &functions::time::Timestamp;
         for pair in pairs {
             match pair.as_rule() {
-                Rule::kw_timestamp => {}
-                Rule::kw_with | Rule::kw_time | Rule::kw_zone => {
-                    function = &functions::time::TimestampWithTimeZone;
-                }
+                Rule::kw_timestamp | Rule::kw_with | Rule::kw_time | Rule::kw_zone => {}
                 Rule::expr_primary => {
                     let span = pair.as_span();
                     return Ok(Expr::Function {
-                        function,
+                        function: &functions::time::Timestamp,
                         args: vec![self
                             .expr_primary_from_pairs(pair.into_inner())?
                             .span(self.register(span))],
