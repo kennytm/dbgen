@@ -428,8 +428,8 @@ fn to_human_size(s: f64) -> String {
 
 /// Generates a shell script for invoking `dbgen` into stdout.
 pub fn print_script(args: &Args) {
-    let schema_name = QName::parse(&args.schema_name).expect("invalid schema name");
-    let quoted_schema_name = shlex::quote(&args.schema_name);
+    let schema_name = QName::parse(&args.schema_name).expect("valid schema name");
+    let quoted_schema_name = shlex::try_quote(&args.schema_name).expect("valid schema name");
 
     let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
     println!(
@@ -447,7 +447,7 @@ pub fn print_script(args: &Args) {
     let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
 
     let rng = meta_seed.make_rng();
-    let extra_args = args.args.iter().map(|s| shlex::quote(s)).collect::<Vec<_>>().join(" ");
+    let extra_args = shlex::try_join(args.args.iter().map(|s| &**s)).expect("valid arguments");
     let rows_count_per_file = args.rows_count * args.inserts_count;
     for (i, table) in gen_tables(args.dialect, rng, args.size, args.tables_count).enumerate() {
         println!(
