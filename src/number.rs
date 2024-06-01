@@ -274,12 +274,6 @@ impl PartialOrd for Number {
     }
 }
 
-impl Ord for Number {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.partial_cmp(other).unwrap_or(Ordering::Equal)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

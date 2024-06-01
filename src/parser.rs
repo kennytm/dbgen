@@ -12,6 +12,7 @@ use crate::{
 use pest::{iterators::Pairs, Parser};
 use std::{collections::HashMap, mem, ops::Range};
 
+#[allow(clippy::empty_docs)] // FIXME #[derive(Parser)] generated this lint which can't be fixed.
 mod derived {
     use pest_derive::Parser;
 

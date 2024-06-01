@@ -46,7 +46,7 @@ impl PartialEq for ByteString {
 
 impl PartialOrd for ByteString {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.bytes.partial_cmp(&other.bytes)
+        Some(self.cmp(other))
     }
 }
 

@@ -1,0 +1,8 @@
+doc-valid-idents = [
+    'ChaCha12',
+    'ChaCha20',
+    'MySQL',
+    'PostgreSQL',
+    'SQLite',
+    '..',
+]
