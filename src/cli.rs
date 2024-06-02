@@ -12,6 +12,7 @@ use crate::{
 };
 
 use chrono::{NaiveDateTime, ParseResult, Utc};
+use clap::{Parser, ValueEnum};
 use data_encoding::{DecodeError, DecodeKind, HEXLOWER_PERMISSIVE};
 use flate2::write::GzEncoder;
 use muldiv::MulDiv;
@@ -39,10 +40,6 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     thread::{sleep, spawn},
     time::Duration,
-};
-use structopt::{
-    clap::AppSettings::{NextLineHelp, UnifiedHelpMessage},
-    StructOpt,
 };
 use xz2::write::XzEncoder;
 
@@ -73,173 +70,172 @@ struct RowArgs {
 }
 
 /// Arguments to the `dbgen` CLI program.
-#[derive(StructOpt, Debug, Serialize, Deserialize)]
+#[derive(Parser, Debug, Serialize, Deserialize)]
 #[serde(default)]
-#[structopt(long_version(crate::FULL_VERSION), settings(&[NextLineHelp, UnifiedHelpMessage]))]
+#[command(long_version(crate::FULL_VERSION), next_line_help(true))]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "is_false")]
     pub qualified: bool,
 
     /// Override the table name.
-    #[structopt(short, long, conflicts_with("schema-name"))]
+    #[arg(short, long, conflicts_with("schema_name"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub table_name: Option<String>,
 
     /// Override the schema name.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema_name: Option<String>,
 
     /// Output directory.
-    #[structopt(short, long, parse(from_os_str))]
+    #[arg(short, long)]
     pub out_dir: PathBuf,
 
     /// Total number of file generator threads.
-    #[structopt(short = "k", long, default_value = "1")]
+    #[arg(short = 'k', long, default_value = "1")]
     #[serde(skip_serializing_if = "is_one")]
     pub files_count: u32,
 
     /// Number of INSERT statements per file generator threads.
-    #[structopt(short = "n", long, default_value = "1")]
+    #[arg(short = 'n', long, default_value = "1")]
     #[serde(skip_serializing_if = "is_one")]
     pub inserts_count: u32,
 
     /// Number of rows per INSERT statement.
-    #[structopt(short, long, default_value = "1")]
+    #[arg(short, long, default_value = "1")]
     pub rows_count: u32,
 
     /// Number of INSERT statements in the last file generator thread.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_file_inserts_count: Option<u32>,
 
     /// Number of rows of the last INSERT statement of the last file generator thread.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_insert_rows_count: Option<u32>,
 
     /// Total number of rows of the main table.
-    #[structopt(short = "N", long, parse(try_from_str = parse_row_count), conflicts_with_all(&["files-count", "last-file-inserts-count", "last-insert-rows-count"]))]
+    #[arg(short = 'N', long, value_parser = parse_row_count, conflicts_with_all(&["files_count", "last_file_inserts_count", "last_insert_rows_count"]))]
     pub total_count: Option<u64>,
 
     /// Number of rows per file generator thread.
-    #[structopt(short = "R", long, parse(try_from_str = parse_row_count), conflicts_with_all(&["inserts-count"]))]
+    #[arg(short = 'R', long, value_parser = parse_row_count, conflicts_with_all(&["inserts_count"]))]
     pub rows_per_file: Option<u64>,
 
     /// Target pre-compressed size of each file.
-    #[structopt(short = "z", long, parse(try_from_str = parse_size::parse_size))]
+    #[arg(short = 'z', long, value_parser = |s: &str| parse_size::parse_size(s))]
     pub size: Option<u64>,
 
     /// Escape backslashes when writing a string.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "is_false")]
     pub escape_backslash: bool,
 
     /// Generation template file.
-    #[structopt(
-        short = "i",
+    #[arg(
+        short = 'i',
         long,
-        parse(from_os_str),
-        conflicts_with("template-string"),
-        required_unless("template-string")
+        conflicts_with("template_string"),
+        required_unless_present("template_string")
     )]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub template: Option<PathBuf>,
 
     /// Inline generation template string.
-    #[structopt(short = "e", long)]
+    #[arg(short = 'e', long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub template_string: Option<String>,
 
     /// Random number generator seed (should have 64 hex digits).
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub seed: Option<Seed>,
 
     /// Number of jobs to run in parallel, default to number of CPUs.
-    #[structopt(short, long, default_value = "0")]
+    #[arg(short, long, default_value = "0")]
     #[serde(skip_serializing_if = "is_zero")]
     pub jobs: usize,
 
     /// Random number generator engine.
-    #[structopt(long, possible_values(&["chacha12", "chacha20", "hc128", "isaac", "isaac64", "xorshift", "pcg32", "step"]), default_value = "hc128")]
+    #[arg(long, value_enum, default_value = "hc128")]
     #[serde(skip_serializing_if = "is_hc128")]
     pub rng: RngName,
 
     /// Disable progress bar.
-    #[structopt(short, long)]
+    #[arg(short, long)]
     #[serde(skip_serializing_if = "is_false")]
     pub quiet: bool,
 
     /// Time zone used for timestamps.
-    #[structopt(long, default_value = "UTC")]
+    #[arg(long, default_value = "UTC")]
     #[serde(skip_serializing_if = "is_utc")]
     pub time_zone: String,
 
     /// Directory containing the tz database.
-    #[structopt(long, parse(from_os_str), default_value = "/usr/share/zoneinfo")]
+    #[arg(long, default_value = "/usr/share/zoneinfo")]
     #[serde(skip_serializing_if = "is_default_zoneinfo")]
     pub zoneinfo: PathBuf,
 
     /// Override the current timestamp (always in UTC), in the format "YYYY-mm-dd HH:MM:SS.fff".
-    #[structopt(long, parse(try_from_str = now_from_str))]
+    #[arg(long, value_parser = now_from_str)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub now: Option<NaiveDateTime>,
 
     /// Output format.
-    #[structopt(short, long, possible_values(&["sql", "csv", "sql-insert-set"]), default_value = "sql")]
+    #[arg(short, long, default_value = "sql")]
     #[serde(skip_serializing_if = "is_sql")]
     pub format: FormatName,
 
     /// The keyword to print for a boolean TRUE value.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format_true: Option<String>,
 
     /// The keyword to print for a boolean FALSE value.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format_false: Option<String>,
 
     /// The keyword to print for a NULL value.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format_null: Option<String>,
 
     /// Include column names or headers in the output.
-    #[structopt(long)]
+    #[arg(long)]
     #[serde(skip_serializing_if = "is_false")]
     pub headers: bool,
 
     /// Compress data output.
-    #[structopt(short, long, possible_values(&["gzip", "gz", "xz", "zstd", "zst"]))]
+    #[arg(short, long, value_enum)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compression: Option<CompressionName>,
 
     /// Compression level (0-9 for gzip and xz, 1-21 for zstd).
-    #[structopt(long, default_value = "6")]
+    #[arg(long, default_value = "6")]
     #[serde(skip_serializing_if = "is_six")]
     pub compress_level: u8,
 
     /// Components to write.
-    #[structopt(long, use_delimiter(true), possible_values(&["schema", "table", "data"]), default_value = "table,data", conflicts_with_all(&["no-schemas", "no-data"]))]
+    #[arg(long, value_enum, value_delimiter(','), default_value = "table,data", conflicts_with_all(&["no_schemas", "no_data"]))]
     #[serde(skip_serializing_if = "is_default_components")]
     pub components: Vec<ComponentName>,
 
     /// Do not generate schema files (the CREATE TABLE *.sql files).
-    #[structopt(long, hidden(true))]
+    #[arg(long, hide(true))]
     #[serde(skip)]
     pub no_schemas: bool,
 
     /// Do not generate data files (only useful for benchmarking and fuzzing).
-    #[structopt(long, hidden(true))]
+    #[arg(long, hide(true))]
     #[serde(skip)]
     pub no_data: bool,
 
     /// Initializes the template with these global expressions.
-    #[structopt(long, short = "D")]
+    #[arg(long, short = 'D')]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub initialize: Vec<String>,
 }
@@ -638,13 +634,15 @@ impl Seed {
 }
 
 /// Names of random number generators supported by `dbgen`.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "lowercase")]
+#[value(rename_all = "lowercase")]
 pub enum RngName {
     /// ChaCha12
     ChaCha12,
     /// ChaCha20
     #[serde(alias = "chacha")]
+    #[value(alias = "chacha")]
     ChaCha20,
     /// HC-128
     Hc128,
@@ -699,7 +697,7 @@ impl RngName {
 }
 
 /// Names of output formats supported by `dbgen`.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum FormatName {
     /// SQL
@@ -764,16 +762,19 @@ impl FormatName {
 }
 
 /// Names of the compression output formats supported by `dbgen`.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
+#[value(rename_all = "lowercase")]
 pub enum CompressionName {
     /// Compress as gzip format (`*.gz`).
     #[serde(alias = "gz")]
+    #[value(alias = "gz")]
     Gzip,
     /// Compress as xz format (`*.xz`).
     Xz,
     /// Compress as Zstandard format (`*.zst`).
     #[serde(alias = "zst")]
+    #[value(alias = "zst")]
     Zstd,
 }
 
@@ -819,9 +820,10 @@ impl CompressionName {
 }
 
 /// Names of the components to be produced `dbgen`.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, ValueEnum)]
 #[repr(u8)]
 #[serde(rename_all = "lowercase")]
+#[value(rename_all = "lowercase")]
 pub enum ComponentName {
     /// The `CREATE SCHEMA` SQL file.
     Schema = 1,

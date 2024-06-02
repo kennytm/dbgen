@@ -12,21 +12,6 @@ name = 'zipf'
 version = '7.0'
 
 [[licenses.exceptions]]
-allow = ['Apache-2.0']
-name = 'ciborium'
-version = '0.2'
-
-[[licenses.exceptions]]
-allow = ['Apache-2.0']
-name = 'ciborium-io'
-version = '0.2'
-
-[[licenses.exceptions]]
-allow = ['Apache-2.0']
-name = 'ciborium-ll'
-version = '0.2'
-
-[[licenses.exceptions]]
 allow = ['Unicode-DFS-2016']
 name = 'unicode-ident'
 version = '1.0.11'

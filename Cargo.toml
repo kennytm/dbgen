@@ -16,14 +16,14 @@ rust-version = "1.71.0"
 members = ["dbgen-playground", "dbdbgen"]
 
 [dependencies]
-structopt = { version = "0.3", optional = true }
+clap = { version = "4.5", optional = true, features = ["derive"] }
 pest = "2.7"
 pest_derive = "2.7"
 thiserror = "1.0"
 rand = { version = "0.8.5", default-features = false, features = ["getrandom"] }
 data-encoding = "2.4"
 data-encoding-macro = "0.1"
-regex-syntax = "0.7"
+regex-syntax = "0.8"
 # the progress bar will prevent dbgen from finishing
 # forcing a git dependency until https://github.com/a8m/pb/pull/120 is released
 pbr = { version = "1.1", optional = true, git = "https://github.com/a8m/pb.git", rev = "d60b964be6a234c933fdf95d7b7851f383e21206" }
@@ -36,7 +36,7 @@ ryu = "1.0"
 serde = "1.0"
 muldiv = { version = "1.0", optional = true }
 rand_distr = { version = "0.4", default-features = false, features = ["alloc"] }
-rand_regex = "0.16"
+rand_regex = "0.17"
 rand_pcg = { version = "0.3", optional = true }
 rand_isaac = { version = "0.3", optional = true }
 rand_chacha = { version = "0.3", optional = true }
@@ -49,7 +49,7 @@ zstd = { version = "0.12", default-features = false, optional = true }
 smallvec = { version = "1.11", default-features = false }
 memchr = "2.5"
 numcmp = "0.1"
-parse-size = { version = "1.0", optional = true }
+parse-size = { version = "1.0", optional = true, features = ["std"]}
 
 [dev-dependencies]
 regex = { version = "1.9", default-features = false }
@@ -68,20 +68,20 @@ vergen = { version = "8.2", default-features = false, features = ["git", "gitcl"
 [features]
 default = ["cli"]
 cli = [
-    "structopt",
-    "pbr",
-    "rayon",
+    "dep:clap",
+    "dep:pbr",
+    "dep:rayon",
     "serde/derive",
-    "muldiv",
-    "rand_pcg",
-    "rand_isaac",
-    "rand_chacha",
-    "rand_xorshift",
-    "shlex",
-    "flate2",
-    "xz2",
-    "zstd",
-    "parse-size",
+    "dep:muldiv",
+    "dep:rand_pcg",
+    "dep:rand_isaac",
+    "dep:rand_chacha",
+    "dep:rand_xorshift",
+    "dep:shlex",
+    "dep:flate2",
+    "dep:xz2",
+    "dep:zstd",
+    "dep:parse-size",
 ]
 nightly = ["rand/nightly"]
 

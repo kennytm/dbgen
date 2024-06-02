@@ -1,8 +1,8 @@
+use clap::Parser as _;
 use dbgen::schemagen_cli::{print_script, Args};
-use structopt::StructOpt;
 
 fn main() {
-    let args = Args::from_args();
+    let args = Args::parse();
     print_script(&args);
 
     // if let Err(err) = run(args) {

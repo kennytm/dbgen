@@ -1,6 +1,7 @@
 //! CLI driver of `dbschemagen`.
 
 use crate::{error::Error, parser::QName};
+use clap::{Parser, ValueEnum};
 use rand::{rngs::OsRng, seq::SliceRandom, Rng, RngCore};
 use rand_distr::{Distribution, LogNormal, Pareto, WeightedIndex};
 use std::{
@@ -10,49 +11,47 @@ use std::{
     iter::repeat_with,
     str::FromStr,
 };
-use structopt::{
-    clap::AppSettings::{NextLineHelp, TrailingVarArg, UnifiedHelpMessage},
-    StructOpt,
-};
 
 /// Arguments to the `dbschemagen` CLI program.
-#[derive(StructOpt, Debug)]
-#[structopt(settings(&[NextLineHelp, TrailingVarArg, UnifiedHelpMessage]), long_version(crate::FULL_VERSION))]
+#[derive(Parser, Debug)]
+#[command(long_version(crate::FULL_VERSION), next_line_help(true))]
 pub struct Args {
     /// Schema name.
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub schema_name: String,
 
     /// Estimated total database dump size in bytes.
-    #[structopt(short = "z", long)]
+    #[arg(short = 'z', long)]
     pub size: f64,
 
     /// Number of tables to generate
-    #[structopt(short, long)]
+    #[arg(short, long)]
     pub tables_count: u32,
 
     /// SQL dialect.
-    #[structopt(short, long, possible_values(&["mysql", "postgresql", "sqlite"]))]
+    #[arg(short, long, value_enum)]
     pub dialect: Dialect,
 
     /// Number of INSERT statements per file.
-    #[structopt(short = "n", long, default_value = "1000")]
+    #[arg(short = 'n', long, default_value = "1000")]
     pub inserts_count: u64,
 
     /// Number of rows per INSERT statement.
-    #[structopt(short, long, default_value = "100")]
+    #[arg(short, long, default_value = "100")]
     pub rows_count: u64,
 
     /// Random number generator seed (should have 64 hex digits).
-    #[structopt(long)]
+    #[arg(long)]
     pub seed: Option<crate::cli::Seed>,
 
     /// Additional arguments passed to every `dbgen` invocation
+    #[arg(trailing_var_arg(true))]
     pub args: Vec<String>,
 }
 
 /// The SQL dialect used when generating the schemas.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lowercase")]
 pub enum Dialect {
     /// MySQL dialect.
     MySQL,
