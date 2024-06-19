@@ -149,24 +149,26 @@ impl Value {
         }
     }
 
+    /// Negates the value.
+    pub fn sql_neg(&self) -> Result<Self, Error> {
+        Ok(match self {
+            Self::Number(inner) => Self::Number(inner.neg()),
+            Self::Interval(inner) => Self::Interval(try_or_overflow!(inner.checked_neg(), "-{inner}us")),
+            _ => return Err(Error::InvalidArguments(format!("cannot negate {self}"))),
+        })
+    }
+
     /// Adds two values using the rules common among SQL implementations.
     pub fn sql_add(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.add(*rhs), "{} + {}", lhs, rhs),
             (Self::Timestamp(ts, tz), Self::Interval(dur)) | (Self::Interval(dur), Self::Timestamp(ts, tz)) => {
                 Self::Timestamp(
-                    try_or_overflow!(
-                        ts.checked_add_signed(Duration::microseconds(*dur)),
-                        "{} + {}us",
-                        ts,
-                        dur
-                    ),
+                    try_or_overflow!(ts.checked_add_signed(Duration::microseconds(*dur)), "{ts} + {dur}us"),
                     tz.clone(),
                 )
             }
-            (Self::Interval(a), Self::Interval(b)) => {
-                Self::Interval(try_or_overflow!(a.checked_add(*b), "{} + {}", a, b))
-            }
+            (Self::Interval(a), Self::Interval(b)) => Self::Interval(try_or_overflow!(a.checked_add(*b), "{a} + {b}")),
             _ => {
                 return Err(Error::InvalidArguments(format!("cannot add {self} to {other}")));
             }
@@ -177,18 +179,15 @@ impl Value {
     pub fn sql_sub(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.sub(*rhs), "{} - {}", lhs, rhs),
+            (Self::Timestamp(lhs, _), Self::Timestamp(rhs, _)) => Self::Interval(try_or_overflow!(
+                lhs.signed_duration_since(*rhs).num_microseconds(),
+                "{lhs} - {rhs}"
+            )),
             (Self::Timestamp(ts, tz), Self::Interval(dur)) => Self::Timestamp(
-                try_or_overflow!(
-                    ts.checked_sub_signed(Duration::microseconds(*dur)),
-                    "{} - {}us",
-                    ts,
-                    dur
-                ),
+                try_or_overflow!(ts.checked_sub_signed(Duration::microseconds(*dur)), "{ts} - {dur}us"),
                 tz.clone(),
             ),
-            (Self::Interval(a), Self::Interval(b)) => {
-                Self::Interval(try_or_overflow!(a.checked_sub(*b), "{} + {}", a, b))
-            }
+            (Self::Interval(a), Self::Interval(b)) => Self::Interval(try_or_overflow!(a.checked_sub(*b), "{a} - {b}")),
             _ => {
                 return Err(Error::InvalidArguments(format!("cannot subtract {self} from {other}")));
             }
@@ -198,9 +197,9 @@ impl Value {
     /// Multiplies two values using the rules common among SQL implementations.
     pub fn sql_mul(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.mul(*rhs), "{} * {}", lhs, rhs),
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.mul(*rhs), "{lhs} * {rhs}"),
             (Self::Number(m), Self::Interval(dur)) | (Self::Interval(dur), Self::Number(m)) => {
-                try_from_number_into_interval!(Number::from(*dur).mul(*m), "interval {} microsecond * {}", dur, m)
+                try_from_number_into_interval!(Number::from(*dur).mul(*m), "interval {dur} microsecond * {m}")
             }
             _ => {
                 return Err(Error::InvalidArguments(format!("cannot multiply {self} with {other}")));
@@ -211,9 +210,12 @@ impl Value {
     /// Divides two values using the rules common among SQL implementations.
     pub fn sql_float_div(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
-            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.float_div(*rhs), "{} / {}", lhs, rhs),
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.float_div(*rhs), "{lhs} / {rhs}"),
+            (Self::Interval(lhs), Self::Interval(rhs)) => {
+                try_from_number!(Number::from(*lhs).float_div(Number::from(*rhs)), "{lhs}us / {rhs}us")
+            }
             (Self::Interval(dur), Self::Number(d)) => {
-                try_from_number_into_interval!(Number::from(*dur).float_div(*d), "interval {} microsecond / {}", dur, d)
+                try_from_number_into_interval!(Number::from(*dur).float_div(*d), "interval {dur} microsecond / {d}")
             }
             _ => {
                 return Err(Error::InvalidArguments(format!("cannot divide {self} by {other}")));
@@ -223,22 +225,28 @@ impl Value {
 
     /// Divides two values using the rules common among SQL implementations.
     pub fn sql_div(&self, other: &Self) -> Result<Self, Error> {
-        if let (Self::Number(lhs), Self::Number(rhs)) = (self, other) {
-            Ok(try_from_number!(lhs.div(*rhs), "div({}, {})", lhs, rhs))
-        } else {
-            Err(Error::InvalidArguments(format!("cannot divide {self} by {other}")))
-        }
+        Ok(match (self, other) {
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.div(*rhs), "div({lhs}, {rhs})"),
+            (Self::Interval(lhs), Self::Interval(rhs)) => {
+                try_from_number!(Number::from(*lhs).div(Number::from(*rhs)), "div({lhs}us, {rhs}us)")
+            }
+            _ => return Err(Error::InvalidArguments(format!("cannot divide {self} by {other}"))),
+        })
     }
 
     /// Computes the remainder when dividing two values using the rules common among SQL implementations.
     pub fn sql_rem(&self, other: &Self) -> Result<Self, Error> {
-        if let (Self::Number(lhs), Self::Number(rhs)) = (self, other) {
-            Ok(try_from_number!(lhs.rem(*rhs), "mod({}, {})", lhs, rhs))
-        } else {
-            Err(Error::InvalidArguments(format!(
-                "cannot compute remainder of {self} by {other}"
-            )))
-        }
+        Ok(match (self, other) {
+            (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.rem(*rhs), "mod({lhs}, {rhs})"),
+            (Self::Interval(_), Self::Interval(0)) => Self::Null,
+            (Self::Interval(_), Self::Interval(-1)) => Self::Interval(0),
+            (Self::Interval(lhs), Self::Interval(rhs)) => Self::Interval(lhs % rhs),
+            _ => {
+                return Err(Error::InvalidArguments(format!(
+                    "cannot compute remainder of {self} by {other}"
+                )))
+            }
+        })
     }
 
     /// Concatenates multiple values into a string.

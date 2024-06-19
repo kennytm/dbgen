@@ -18,8 +18,8 @@ pub struct Neg;
 
 impl Function for Neg {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
-        let inner = args_1::<Number>(span, args, None)?;
-        Ok(C::Constant(inner.neg().into()))
+        let inner = args_1::<Value>(span, args, None)?;
+        Ok(C::Constant(inner.sql_neg().span_err(span)?))
     }
 }
 

@@ -125,6 +125,7 @@ CREATE TABLE result (
     ts_sub      {{ timestamp '2010-01-01 00:00:00' - interval 4 week }}
     ts_mul_iv   {{ timestamp '2010-01-01 00:00:00' - interval 3.5 day * 12 }}
     ts_add_iv   {{ timestamp '2010-01-01 00:00:00' + interval 15 hour + interval 71 minute - interval 13 second }}
+    ts_sub_ts   {{ timestamp '2010-01-23 04:56:07' - timestamp '2009-08-07 06:54:32' }}
 
     backslash   {{ '\' }}
 
@@ -139,6 +140,21 @@ CREATE TABLE result (
     interval_pos    {{ interval 1234567890 microsecond }}
     interval_neg    {{ interval -1234567890 microsecond }}
     interval_big    {{ interval 1234567890 second }}
+    interval_big_neg{{ interval -1234567890 second }}
+
+    interval_add    {{ interval 6 minute + interval 25 second }}
+    interval_sub    {{ interval 6 minute - interval 25 second }}
+    interval_mul_r  {{ interval 6 minute * 25 }}
+    interval_mul_l  {{ 18.5 * interval 6 minute }}
+    interval_fdiv_r {{ interval 6 minute / 25 }}
+    interval_fdiv_r0{{ interval 6 minute / 0 }}
+    interval_fdiv   {{ interval 6 minute / interval 25 second }}
+    interval_fdiv_0 {{ interval 6 minute / interval 0 second }}
+    interval_div    {{ div(interval 6 minute, interval 25 second) }}
+    interval_div_0  {{ div(interval 6 minute, interval 0 second) }}
+    interval_mod    {{ mod(interval 6 minute, interval 25 second) }}
+    interval_mod_0  {{ mod(interval 6 minute, interval 0 second) }}
+    interval_neg_l  {{ -interval 6 minute }}
 
     chain_and   {{ true and true and false }}
     chain_or    {{ false or false or true }}

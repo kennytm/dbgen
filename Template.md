@@ -85,6 +85,44 @@ From highest to lowest precedence:
 11. `:=`
 12. `;`
 
+| LHS type  | Op    | RHS type  | Result type   |
+|-----------|-------|-----------|---------------|
+|           | `-`   | Number    | Number        |
+|           | `-`   | Interval  | Interval      |
+|           | `+`   | any       | any           |
+|           | `~`   | Number    | Number        |
+| Number    | `*`   | Number    | Number        |
+| Number    | `*`   | Interval  | Interval      |
+| Interval  | `*`   | Number    | Interval      |
+| Number    | `/`   | Number    | Number        |
+| Interval  | `/`   | Interval  | Number        |
+| Interval  | `/`   | Number    | Interval      |
+| Number    | `+`   | Number    | Number        |
+| Timestamp | `+`   | Interval  | Timestamp     |
+| Interval  | `+`   | Timestamp | Timestamp     |
+| Interval  | `+`   | Interval  | Interval      |
+| Number    | `-`   | Number    | Number        |
+| Timestamp | `-`   | Interval  | Timestamp     |
+| Timestamp | `-`   | Timestamp | Interval      |
+| Interval  | `-`   | Interval  | Interval      |
+| any | <code>&#x7c;&#x7c;</code> | any | String |
+| Number    | `&`   | Number    | Number        |
+| Number | <code>&#x7c;</code> | Number | Number |
+| Number    | `^`   | Number    | Number        |
+| any       | `=`   | any       | Number        |
+| any       | `<>`  | any       | Number        |
+| any       | `<`   | any       | Number        |
+| any       | `>`   | any       | Number        |
+| any       | `<=`  | any       | Number        |
+| any       | `>=`  | any       | Number        |
+| any       | `IS`  | any       | Number        |
+| any   | `IS NOT`  | any       | Number        |
+|           | `NOT` | Number    | Number        |
+| Number    | `AND` | Number    | Number        |
+| Number    | `OR`  | Number    | Number        |
+| variable  | `:=`  | any       | any           |
+| any       | `;`   | any       | any           |
+
 * **Division `/`**
 
     The division operator always result in a floating-point number (i.e. `3 / 2 = 1.5`). Use the
@@ -93,7 +131,8 @@ From highest to lowest precedence:
 * **Concatenation `||`**
 
     The `||` operator concatenates two strings together. If either side is not a string, they will
-    first be converted into a string. This operator cannot be used to concatenate arrays.
+    first be converted into a string, except that NULLs are propagated (`NULL||x` produces `NULL`).
+    This operator cannot be used to concatenate arrays.
 
 * **Comparison `=`, `<>`, `<`, `>`, `<=`, `>=`**
 
@@ -210,7 +249,7 @@ From highest to lowest precedence:
 
 ### Random functions
 
-* **rand.regex('[0-9a-z]+', 'i', 100)**
+* **rand.regex('[0-9a-z\-]+', 'i', 100)**
 
     Generates a random string satisfying the regular expression. The second and third parameters are
     optional. If provided, they specify respectively the regex flags, and maximum repeat count for
@@ -438,6 +477,8 @@ From highest to lowest precedence:
     The result of `mod(n, d)` has the same sign as the numerator `n`.
 
     When the denominator `d` is 0, both of these functions return NULL.
+
+    `n` and `d` may be both numbers or both time intervals.
 
 ### Arrays
 
