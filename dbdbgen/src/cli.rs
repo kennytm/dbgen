@@ -4,7 +4,7 @@ use clap::{
     value_parser, ArgAction, Command,
 };
 use data_encoding::HEXLOWER_PERMISSIVE;
-use rand_core::{OsRng, RngCore};
+use rand::{rngs::OsRng, RngCore as _};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ffi::OsString};
 

@@ -11,9 +11,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 dbgen = { path = "../", default-features = false }
-chrono = { version = "0.4", default-features = false }
+chrono = { workspace = true }
 wasm-bindgen = "0.2"
-serde-wasm-bindgen = "0.4"
-rand = { version = "0.8", default-features = false }
-rand_hc = "0.3"
-serde = { version = "1.0", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+rand = { workspace = true }
+rand_hc = { workspace = true }
+serde = { workspace = true }
+getrandom = { version = "*", features = ["js"]}
