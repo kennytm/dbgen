@@ -28,4 +28,13 @@ CREATE TABLE result (
     gs_implicit_single  {{ generate_series(3, 3) }}
     gs_step_too_large   {{ generate_series(4, 5, 7) }}
     gs_timestamp        {{ generate_series(TIMESTAMP '2019-01-01 13:00:00', TIMESTAMP '2019-01-01 14:00:00', INTERVAL 20 MINUTE) }}
+    gs_elem_3           {{ generate_series(11, 21, 5)[3] }}
+    gs_elem_999         {{ generate_series(11, 21, 5)[999] }}
+
+    shuffle_empty       {{ rand.shuffle(array[]) }}
+    shuffle_one         {{ rand.shuffle(array['one']) }}
+    shuffle_elem_1      {{ rand.shuffle(@a)[1] }}
+    shuffle_elem_999    {{ rand.shuffle(@a)[999] }}
+
+    gs_compare_concrete {{ generate_series(11, 21, 5) = array[11, 16, 21] }}
 );

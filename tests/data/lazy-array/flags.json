@@ -1,0 +1,7 @@
+{
+    "inserts_count": 500,
+    "format": "csv",
+    "components": ["data"],
+    "rng": "hc128",
+    "seed": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

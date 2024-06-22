@@ -23,5 +23,12 @@ gs_neg_float = ARRAY[2.25, 1.75, 1.25],
 gs_implicit = ARRAY[1, 2, 3, 4],
 gs_implicit_single = ARRAY[3],
 gs_step_too_large = ARRAY[4],
-gs_timestamp = ARRAY['2019-01-01 13:00:00', '2019-01-01 13:20:00', '2019-01-01 13:40:00', '2019-01-01 14:00:00'];
+gs_timestamp = ARRAY['2019-01-01 13:00:00', '2019-01-01 13:20:00', '2019-01-01 13:40:00', '2019-01-01 14:00:00'],
+gs_elem_3 = 21,
+gs_elem_999 = NULL,
+shuffle_empty = ARRAY[],
+shuffle_one = ARRAY['one'],
+shuffle_elem_1 = 1,
+shuffle_elem_999 = NULL,
+gs_compare_concrete = 1;
 

@@ -6,11 +6,11 @@ use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
     fmt,
-    sync::Arc,
 };
 use tzfile::ArcTz;
 
 use crate::{
+    array::Array,
     bytes::ByteString,
     error::Error,
     number::{Number, NumberError},
@@ -32,8 +32,8 @@ pub enum Value {
     Timestamp(NaiveDateTime, ArcTz),
     /// A time interval, as multiple of microseconds.
     Interval(i64),
-    /// An array of values.
-    Array(Arc<[Value]>),
+    /// An array of values. The array may be lazily evaluated.
+    Array(Array),
 }
 
 impl Default for Value {
@@ -130,7 +130,7 @@ impl Value {
             (Self::Bytes(a), Self::Bytes(b)) => a.partial_cmp(b),
             (Self::Timestamp(a, _), Self::Timestamp(b, _)) => a.partial_cmp(b),
             (Self::Interval(a), Self::Interval(b)) => a.partial_cmp(b),
-            (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), Value::sql_cmp)?,
+            (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), |x, y| x.sql_cmp(&y))?,
             _ => {
                 return Err(Error::InvalidArguments(format!("cannot compare {self} with {other}")));
             }
@@ -399,7 +399,7 @@ impl TryFrom<Value> for Option<bool> {
     }
 }
 
-impl TryFrom<Value> for Arc<[Value]> {
+impl TryFrom<Value> for Array {
     type Error = Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {

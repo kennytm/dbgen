@@ -255,7 +255,7 @@ impl Options {
                     if i != 0 {
                         writer.write_all(b", ")?;
                     }
-                    self.write_sql_value(writer, item)?;
+                    self.write_sql_value(writer, &item)?;
                 }
                 writer.write_all(b"]")
             }
@@ -382,7 +382,7 @@ impl Format for CsvFormat<'_> {
                     if i != 0 {
                         writer.write_all(b",")?;
                     }
-                    self.write_value(writer, item)?;
+                    self.write_value(writer, &item)?;
                 }
                 writer.write_all(b"}")
             }

@@ -6,9 +6,8 @@ use crate::{
     eval::{CompileContext, C},
     number::Number,
     span::{ResultExt, Span, SpanExt, S},
-    value::Value,
 };
-use std::{convert::TryFrom, sync::Arc};
+use std::convert::TryFrom as _;
 use zipf::ZipfDistribution;
 
 //------------------------------------------------------------------------------
@@ -193,17 +192,4 @@ fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<
 
     let hir = parser.build().parse(regex)?;
     Ok(rand_regex::Regex::with_hir(hir, max_repeat)?)
-}
-
-//------------------------------------------------------------------------------
-
-/// The `rand.shuffle` SQL function.
-#[derive(Debug)]
-pub struct Shuffle;
-
-impl Function for Shuffle {
-    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
-        let array = args_1::<Arc<[Value]>>(span, args, None)?;
-        Ok(C::RandShuffle(array))
-    }
 }

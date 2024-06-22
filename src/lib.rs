@@ -28,6 +28,7 @@ pub const FULL_VERSION: &str = concat!(
     env!("VERGEN_CARGO_TARGET_TRIPLE"),
 );
 
+pub mod array;
 pub mod bytes;
 #[cfg(feature = "cli")]
 pub mod cli;

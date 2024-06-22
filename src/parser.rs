@@ -619,7 +619,7 @@ impl<'a> Allocator<'a> {
         }
 
         Ok(Expr::Function {
-            function: &functions::array::Array,
+            function: &functions::array::ArrayConstructor,
             args,
         })
     }
@@ -894,7 +894,7 @@ fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
         "rand.finite_f32" => &rand::FiniteF32,
         "rand.finite_f64" => &rand::FiniteF64,
         "rand.u31_timestamp" => &rand::U31Timestamp,
-        "rand.shuffle" => &rand::Shuffle,
+        "rand.shuffle" => &array::Shuffle,
         "rand.uuid" => &rand::Uuid,
         "greatest" => &ops::GREATEST,
         "least" => &ops::LEAST,

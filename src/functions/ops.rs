@@ -4,7 +4,6 @@ use super::{args_1, args_2, iter_args, Arguments, Function};
 use crate::{
     error::Error,
     eval::{CompileContext, C},
-    number::Number,
     span::{ResultExt, Span, S},
     value::Value,
 };

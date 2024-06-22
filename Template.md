@@ -140,7 +140,7 @@ From highest to lowest precedence:
     these rules:
 
     - Comparing with NULL always return NULL.
-    - Numbers are ordered by values.
+    - Numbers, timestamps and intervals are ordered by values.
     - Strings are ordered lexicographically in the UTF-8 binary collation.
     - Arrays are ordered lexicographically by their elements.
     - Comparing two values with different types (e.g. `'4' < 5`) will abort the program.
@@ -510,9 +510,24 @@ From highest to lowest precedence:
     generate_series(30, 11, -5) = array[30, 25, 20, 15]
     ```
 
+    The elements produced by `generate_series()` are lazily computed with constant memory usage.
+
 * **rand.shuffle(*arr*)**
 
     Returns a new array by shuffling *arr*.
+
+    When the array length is very long, this function switches from the standard Fisher-Yates
+    shuffle to an FPE-inspired algorithm (currently 8-round Feistel network) to ensure memory usage
+    remains constant. Together with `generate_series()` one could produce a sequence of values that
+    are guaranteed to be distinct but at the same time randomly distributed.
+
+    ```sql
+    /*{{ @phone_numbers := rand.shuffle(generate_series(2000000000, 9999999999)) }}*/
+    CREATE TABLE accounts (
+        id BIGINT PRIMARY KEY /*{{ rownum }}*/,
+        phone_number VARCHAR(10) /*{{ @phone_numbers[rownum] }}*/
+    );
+    ```
 
 ### Debugging
 

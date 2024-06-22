@@ -1,6 +1,7 @@
 //! Evaluating compiled expressions into values.
 
 use crate::{
+    array::{Array, Permutation},
     error::Error,
     functions::{Arguments, Function},
     parser::{Expr, QName},
@@ -8,7 +9,7 @@ use crate::{
     value::Value,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
-use rand::{distributions::Bernoulli, seq::SliceRandom, Rng, RngCore};
+use rand::{distributions::Bernoulli, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
 use rand_regex::EncodedString;
 use std::{cmp::Ordering, fmt, fs, ops::Range, path::PathBuf, sync::Arc};
@@ -243,7 +244,12 @@ pub enum C {
     /// Random u31 timestamp
     RandU31Timestamp(Uniform<i64>),
     /// Random shuffled array
-    RandShuffle(Arc<[Value]>),
+    RandShuffle {
+        /// The cached permutation.
+        permutation: Box<Permutation>,
+        /// The pre-shuffled array.
+        inner: Arc<Array>,
+    },
     /// Random (version 4) UUID
     RandUuid,
 }
@@ -397,10 +403,10 @@ impl Compiled {
                 Value::new_timestamp(timestamp, state.compile_context.time_zone.clone())
             }
 
-            C::RandShuffle(array) => {
-                let mut shuffled_array = Arc::<[Value]>::from(&**array);
-                Arc::get_mut(&mut shuffled_array).unwrap().shuffle(&mut state.rng);
-                Value::Array(shuffled_array)
+            C::RandShuffle { permutation, inner } => {
+                let mut permutation = permutation.clone();
+                permutation.shuffle(inner.len(), &mut state.rng);
+                Value::Array(inner.add_permutation(*permutation))
             }
 
             C::RandUuid => {
