@@ -8,7 +8,7 @@ use crate::{
     span::{Span, SpanExt, S},
     value::Value,
 };
-use std::{convert::TryInto, isize, ops::Range};
+use std::{convert::TryInto, ops::Range};
 
 //------------------------------------------------------------------------------
 
@@ -175,8 +175,8 @@ pub struct Overlay(
 impl Function for Overlay {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
         let (mut input, placing, start, length) = args_4(span, args, None, None, None, Some(None))?;
-        #[allow(clippy::cast_possible_wrap)] // length will never > isize::MAX.
-        let length = length.unwrap_or_else(|| self.0.length_of(&placing) as isize);
+        // length should never > isize::MAX.
+        let length = length.unwrap_or_else(|| self.0.length_of(&placing).try_into().unwrap());
         let range = self.0.parse_sql_range(&input, start, length);
         input.splice(range, placing);
         Ok(C::Constant(input.into()))

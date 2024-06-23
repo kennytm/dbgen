@@ -440,7 +440,7 @@ impl From<EncodedString> for Value {
     }
 }
 
-impl<T: Into<Value>> From<Option<T>> for Value {
+impl<T: Into<Self>> From<Option<T>> for Value {
     fn from(value: Option<T>) -> Self {
         value.map_or(Self::Null, T::into)
     }

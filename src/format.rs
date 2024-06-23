@@ -99,7 +99,7 @@ fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &DateTime<Arc
 /// Writes a time interval in the standard SQL format.
 fn write_interval(writer: &mut dyn Write, quote: &str, mut interval: i64) -> Result<(), Error> {
     writer.write_all(quote.as_bytes())?;
-    if interval == i64::min_value() {
+    if interval == i64::MIN {
         return write!(writer, "-106751991 04:00:54.775808{quote}");
     } else if interval < 0 {
         interval = -interval;
@@ -130,7 +130,6 @@ fn write_interval(writer: &mut dyn Write, quote: &str, mut interval: i64) -> Res
 }
 
 #[derive(Debug, Copy, Clone)]
-#[allow(variant_size_differences)]
 enum EscapeRule {
     Escape(&'static [u8]),
     Unescape(u8),

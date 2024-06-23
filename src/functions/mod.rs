@@ -78,7 +78,8 @@ macro_rules! declare_arg_fn {
 
 declare_arg_fn! {
     /// Extracts one value from the list of arguments.
-    #[allow(unused_parens)] // we do want args_1 to return the value instead of 1-tuple.
+    // ALLOW_REASON: we *do* want args_1 to return the value instead of 1-tuple.
+    #[allow(unused_parens)]
     fn args_1(d1: T1);
 }
 declare_arg_fn! {

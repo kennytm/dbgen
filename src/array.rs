@@ -61,14 +61,18 @@ impl Feistel {
     const ROUNDS: usize = 8;
 
     /// Splits a 64-bit number into two 32-bit numbers separated by the given modulus.
+    // ALLOW_REASON: Normally i ≤ modulo^2, which guaranteed both a, b < modulo ≤ 2^32
+    // so the cast as u32 won't truncate. The compiler won't know a < 2^32 though,
+    // so if we used `u32::try_from().unwrap()` there will be an unnecessary panic branch.
+    #[allow(clippy::cast_possible_truncation)]
     fn split_number(i: u64, modulo: Option<NonZeroU32>) -> (u32, u32) {
-        let divmod = if let Some(modulo) = modulo {
+        let (a, b) = if let Some(modulo) = modulo {
             let modulo = NonZeroU64::from(modulo);
             (i / modulo, i % modulo)
         } else {
             (i >> 32, i & 0xffff_ffff)
         };
-        (divmod.0 as u32, divmod.1 as u32)
+        (a as u32, b as u32)
     }
 
     /// Constructs a new Feistel network with the given domain size.
@@ -77,7 +81,19 @@ impl Feistel {
     /// initialize the network.
     fn prepare(len: u64) -> Self {
         let max = len - 1;
-        // let sqrt = max.isqrt() as u32;
+
+        // Look what #[allow] they need to mimic a fraction of `isqrt()`.
+
+        // ALLOW_REASON: max ≥ 0, so √max ≥ 0 also, there is no sign loss.
+        #[allow(clippy::cast_sign_loss)]
+        // ALLOW_REASON: we do want to truncate the result towards 0.
+        #[allow(clippy::cast_possible_truncation)]
+        // ALLOW_REASON: ok this one is tricky...
+        // According to https://internals.rust-lang.org/t/do-the-square-root-intrinsics-work-on-all-platforms/19665/38,
+        // the result of this expression will be usually ⌊√max⌋ but sometimes ⌈√max⌉,
+        // meaning sqrt might be 1 larger than the tightest possible answer.
+        // But all we requires is modulo^2 = (sqrt+1)^2 ≥ len, so it is fine to overestimate.
+        #[allow(clippy::cast_precision_loss)]
         let sqrt = (max as f64).sqrt() as u32;
         let modulo = sqrt.checked_add(1).and_then(NonZeroU32::new);
 
@@ -103,7 +119,7 @@ impl Feistel {
         let (mut a, mut b) = Self::split_number(i, self.modulo);
         loop {
             for key in &self.seed {
-                let c = Rng::with_seed(key.wrapping_add(b as _)).u32(..) & self.mask;
+                let c = Rng::with_seed(key.wrapping_add(b.into())).u32(..) & self.mask;
                 (a, b) = (b, c.wrapping_add(a));
                 if let Some(modulo) = self.modulo {
                     let modulo = modulo.get();
@@ -157,6 +173,8 @@ impl Permutation {
     /// Get the permuted index at original index `i`.
     pub fn get(&self, i: u64) -> u64 {
         match &self.0 {
+            // ALLOW_REASON: when `P::Simple` is chosen we guarantee i < SHORT_ARRAY_LEN << 2^32.
+            #[allow(clippy::cast_possible_truncation)]
             P::Simple(permutation) => permutation[i as usize].into(),
             P::Feistel(feistel) => feistel.get(i),
         }
@@ -166,6 +184,8 @@ impl Permutation {
     #[auto_enum(Iterator)]
     pub fn iter(&self, len: u64) -> impl Iterator<Item = u64> + '_ {
         match &self.0 {
+            // ALLOW_REASON: when `P::Simple` is chosen we guarantee len ≤ SHORT_ARRAY_LEN << 2^32.
+            #[allow(clippy::cast_possible_truncation)]
             P::Simple(permutation) => permutation[..(len as usize)].iter().map(|i| (*i).into()),
             P::Feistel(feistel) => (0..len).map(|i| feistel.get(i)),
         }
@@ -177,6 +197,8 @@ impl Permutation {
     /// Otherwise
     pub fn shuffle(&mut self, len: u64, rng: &mut dyn RngCore) {
         match &mut self.0 {
+            // ALLOW_REASON: when `P::Simple` is chosen we guarantee len ≤ SHORT_ARRAY_LEN << 2^32.
+            #[allow(clippy::cast_possible_truncation)]
             P::Simple(permutation) => permutation[..(len as usize)].shuffle(rng),
             P::Feistel(feistel) => feistel.shuffle(rng),
         }
@@ -241,7 +263,7 @@ impl Array {
     /// We assume the bounds checking is already done previously.
     pub fn get(&self, index: u64) -> Value {
         match &*self.0 {
-            A::Array(values) => values[index as usize].clone(),
+            A::Array(values) => values[usize::try_from(index).unwrap()].clone(),
             A::Series { start, step, .. } => step
                 .sql_mul(&Value::Number(index.into()))
                 .unwrap()

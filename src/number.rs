@@ -1,7 +1,7 @@
 //! Number.
 
 use numcmp::NumCmp;
-use std::{cmp::Ordering, convert::TryFrom, fmt, io, u64};
+use std::{cmp::Ordering, convert::TryFrom, fmt, io};
 
 /// Implementation of a number.
 #[derive(Copy, Clone, Debug)]
@@ -27,9 +27,11 @@ pub enum NumberError {
 macro_rules! impl_from_integer_for_number {
     ($($ty:ty),+) => {$(
         impl From<$ty> for Number {
+            // ALLOW_REASON: for simplicity of the macro.
+            // we should be using `v.into()` but usize & isize do not impl Into<i128>.
             #[allow(trivial_numeric_casts)]
             fn from(v: $ty) -> Self {
-                Self(N::I(v as _))
+                Self(N::I(v as i128))
             }
         }
     )+}
@@ -59,12 +61,13 @@ impl From<bool> for Number {
 }
 
 impl From<Number> for f64 {
-    #[allow(clippy::cast_precision_loss)]
     fn from(n: Number) -> Self {
         match n.0 {
             N::B(true) => 1.0,
             N::B(false) => 0.0,
-            N::I(v) => v as _,
+            // ALLOW_REASON: this is expected
+            #[allow(clippy::cast_precision_loss)]
+            N::I(v) => v as Self,
             N::F(v) => v,
         }
     }
@@ -78,7 +81,7 @@ macro_rules! impl_try_from_number_for_integer {
                 match n.0 {
                     N::B(v) => Ok(v.into()),
                     N::I(v) => Self::try_from(v).map_err(|_| NumberError::Overflow),
-                    N::F(v) if Self::min_value() as f64 <= v && v <= Self::max_value() as f64 => Ok(v as _),
+                    N::F(v) if Self::MIN as f64 <= v && v <= Self::MAX as f64 => Ok(v as $ty),
                     _ => Err(NumberError::Overflow),
                 }
             }
@@ -99,6 +102,8 @@ impl fmt::Display for Number {
     }
 }
 
+// ALLOW_REASON: the lint suggested implementing the std::ops::{Add, Sub, ...} traits,
+// but the std traits are infallible, while all these methods here return Result.
 #[allow(clippy::should_implement_trait)]
 impl Number {
     pub(crate) fn from_finite_f64(v: f64) -> Self {
@@ -254,6 +259,7 @@ macro_rules! impl_partial_ord_method {
     }
 }
 
+// ALLOW_REASON: we do want to specialize the ne impl.
 #[allow(clippy::partialeq_ne_impl)]
 impl PartialEq for Number {
     impl_partial_ord_method! {
@@ -277,7 +283,6 @@ impl PartialOrd for Number {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{f64, i128};
 
     #[test]
     fn test_from_float() {

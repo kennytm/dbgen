@@ -12,7 +12,6 @@ use crate::{
 use pest::{iterators::Pairs, Parser};
 use std::{collections::HashMap, mem, ops::Range};
 
-#[allow(clippy::empty_docs)] // FIXME #[derive(Parser)] generated this lint which can't be fixed.
 mod derived {
     use pest_derive::Parser;
 
@@ -630,7 +629,7 @@ impl<'a> Allocator<'a> {
     }
 
     /// Creates a local variable expression `@x`.
-    // allow clippy::unnecessary_wraps for consistency with other similarly named functions.
+    // ALLOW_REASON: for consistency with other similarly named functions.
     #[allow(clippy::unnecessary_wraps)]
     fn expr_get_variable_from_pairs(&mut self, mut pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         let pair = pairs.next().unwrap();

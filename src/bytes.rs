@@ -103,6 +103,7 @@ impl TryFrom<ByteString> for String {
     type Error = TryIntoStringError;
     fn try_from(bytes: ByteString) -> Result<Self, Self::Error> {
         if bytes.is_utf8 {
+            // SAFETY: the `is_utf8` check guaranteed the input is UTF-8-only.
             Ok(unsafe { Self::from_utf8_unchecked(bytes.bytes) })
         } else {
             Err(TryIntoStringError(bytes))
@@ -129,9 +130,8 @@ impl fmt::Write for ByteString {
 }
 
 /// Whether the byte is a leading byte in UTF-8 (`0x00..=0x7F`, `0xC0..=0xFF`).
-#[allow(clippy::cast_possible_wrap)] // the wrap is intentional.
 fn is_utf8_leading_byte(b: u8) -> bool {
-    (b as i8) >= -0x40
+    matches!(b, 0x00..=0x7f | 0xc0..=0xff)
 }
 
 /// Computes the expected `ascii_len` from the bytes.
@@ -330,7 +330,7 @@ impl ByteString {
     }
 
     /// Replaces the substring at `range` by a `replacement` string.
-    pub fn splice(&mut self, range: Range<usize>, replacement: ByteString) {
+    pub fn splice(&mut self, range: Range<usize>, replacement: Self) {
         let is_splice_ascii_into_ascii = range.end <= self.ascii_len && replacement.ascii_len == replacement.len();
         if is_splice_ascii_into_ascii {
             // splice a full ASCII string into middle of ASCII region.
@@ -344,6 +344,7 @@ impl ByteString {
         let is_splice_utf8_into_utf8 = self.is_utf8 && replacement.is_utf8;
         if is_splice_utf8_into_utf8 && !is_splice_ascii_into_ascii {
             // splicing UTF-8 text just requires the range to be at character boundaries.
+            // SAFETY: `is_splice_utf8_into_utf8` is true only when `self.is_utf8` is true.
             let s = unsafe { from_utf8_unchecked(&self.bytes) };
             self.is_utf8 = s.is_char_boundary(range.start) && s.is_char_boundary(range.end);
         }

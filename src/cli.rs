@@ -73,6 +73,7 @@ struct RowArgs {
 #[derive(Parser, Debug, Serialize, Deserialize)]
 #[serde(default)]
 #[command(long_version(crate::FULL_VERSION), next_line_help(true))]
+// ALLOW_REASON: command line arguments using bool is expected.
 #[allow(clippy::struct_excessive_bools)]
 pub struct Args {
     /// Keep the qualified name when writing the SQL statements.
@@ -289,22 +290,25 @@ fn div_rem_plus_one(n: u64, d: u64) -> (u64, u64) {
     }
 }
 
-// the arguments of these serde helper must be references.
+// ALLOW_REASON: the arguments of serde helper must be references.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(b: &bool) -> bool {
     !*b
 }
 
+// ALLOW_REASON: the arguments of serde helper must be references.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_one(u: &u32) -> bool {
     *u == 1
 }
 
+// ALLOW_REASON: the arguments of serde helper must be references.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(u: &usize) -> bool {
     *u == 0
 }
 
+// ALLOW_REASON: the arguments of serde helper must be references.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_six(u: &u8) -> bool {
     *u == 6
@@ -318,11 +322,13 @@ fn is_default_zoneinfo(path: &Path) -> bool {
     path == Path::new("/usr/share/zoneinfo")
 }
 
+// ALLOW_REASON: the arguments of serde helper must be references.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_hc128(rng: &RngName) -> bool {
     *rng == RngName::Hc128
 }
 
+// ALLOW_REASON: the arguments of serde helper must be references.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_sql(format: &FormatName) -> bool {
     *format == FormatName::Sql
@@ -433,6 +439,8 @@ fn read_template_file(path: &Path) -> Result<String, S<Error>> {
 }
 
 /// Runs the CLI program.
+// ALLOW_REASON: we will try to refactor this some day...
+#[allow(clippy::too_many_lines)]
 pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     let row_args = args.row_args();
     let input = match (args.template_string, &args.template) {
@@ -743,12 +751,14 @@ impl FormatName {
         }
     }
 
-    #[allow(clippy::unused_self)] // future compatibility with other formats.
+    // ALLOW_REASON: future compatibility with other formats.
+    #[allow(clippy::unused_self)]
     fn default_true_string(self) -> Cow<'static, str> {
         Cow::Borrowed("1")
     }
 
-    #[allow(clippy::unused_self)] // future compatibility with other formats.
+    // ALLOW_REASON: future compatibility with other formats.
+    #[allow(clippy::unused_self)]
     fn default_false_string(self) -> Cow<'static, str> {
         Cow::Borrowed("0")
     }
@@ -977,7 +987,6 @@ impl writer::Writer for FormatWriter<'_> {
 }
 
 /// The environmental data shared by all data writers.
-#[allow(clippy::struct_excessive_bools)] // the booleans aren't used as state-machines.
 struct Env {
     out_dir: PathBuf,
     file_num_digits: usize,
@@ -1090,7 +1099,6 @@ impl Env {
 /// This function will loop and update the progress bar every 0.5 seconds, until [`WRITE_FINISHED`]
 /// becomes `true`.
 fn run_progress_thread(total_rows: u64) {
-    #[allow(clippy::non_ascii_literal)]
     const TICK_FORMAT: &str = "🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛";
 
     let mb = MultiBar::new();
@@ -1117,9 +1125,7 @@ fn run_progress_thread(total_rows: u64) {
 
         let written_size = WRITTEN_SIZE.load(Ordering::Relaxed);
         if rows_count != 0 {
-            speed_bar.total = written_size
-                .mul_div_round(total_rows, rows_count)
-                .unwrap_or_else(u64::max_value);
+            speed_bar.total = written_size.mul_div_round(total_rows, rows_count).unwrap_or(u64::MAX);
             speed_bar.set(written_size);
         }
     }

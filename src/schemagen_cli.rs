@@ -1,14 +1,22 @@
 //! CLI driver of `dbschemagen`.
 
+// ALLOW_REASON: this package is full of math that does not require full precision.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+
 use crate::{error::Error, parser::QName};
 use clap::{Parser, ValueEnum};
 use rand::{rngs::OsRng, seq::SliceRandom, Rng, RngCore};
-use rand_distr::{Distribution, LogNormal, Pareto, WeightedIndex};
+use rand_distr::{weighted_alias::WeightedAliasIndex, Distribution, Geometric, LogNormal, Pareto};
 use std::{
     collections::{BTreeSet, HashSet},
     f64::consts::LOG2_10,
     fmt::Write,
-    iter::repeat_with,
+    iter::{once, repeat_with},
+    mem::replace,
     str::FromStr,
 };
 
@@ -93,10 +101,11 @@ struct Column {
 
 type ColumnGenerator = fn(Dialect, &mut dyn RngCore) -> Column;
 
-#[allow(clippy::cast_precision_loss)]
 fn gen_int_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
     let bytes = rng.gen_range(0..8);
     let unsigned = rng.gen::<bool>();
+    // ALLOW_REASON: different database engines sharing the same name for different type
+    // does not mean we should combine them into the same arm.
     #[allow(clippy::match_same_arms)]
     let ty = match (dialect, unsigned, bytes) {
         (Dialect::MySQL, false, 0) => "tinyint",
@@ -122,7 +131,7 @@ fn gen_int_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
     let (min, max) = if unsigned {
         (0, (256 << (8 * bytes)) - 1)
     } else {
-        let base: i128 = 128 << (8 * bytes);
+        let base = 128_i128 << (8 * bytes);
         (-base, base - 1)
     };
     let neg_log2_prob = f64::from(bytes + 1) * 8.0;
@@ -158,16 +167,15 @@ fn gen_serial_column(dialect: Dialect, _: &mut dyn RngCore) -> Column {
     }
 }
 
-#[allow(clippy::cast_precision_loss)]
 fn gen_decimal_column(_: Dialect, rng: &mut dyn RngCore) -> Column {
-    let before = rng.gen_range(1..19);
-    let after = rng.gen_range(0..31);
-    let limit = "9".repeat(before);
+    let before = rng.gen_range(1_u8..19);
+    let after = rng.gen_range(0_u8..31);
+    let limit = "9".repeat(usize::from(before));
     Column {
         ty: format!("decimal({}, {}) not null", before + after, after),
         expr: format!("rand.range_inclusive(-{limit}, {limit}) || rand.regex('\\.[0-9]{{{after}}}')"),
-        neg_log2_prob: LOG2_10 * (before + after) as f64 + 1.0,
-        average_len: (before + after) as f64 + 17.0 / 9.0,
+        neg_log2_prob: LOG2_10 * f64::from(before + after) + 1.0,
+        average_len: f64::from(before + after) + 17.0 / 9.0,
         nullable: false,
     }
 }
@@ -285,8 +293,8 @@ fn gen_column(dialect: Dialect, rng: &mut dyn RngCore) -> Column {
 }
 
 struct IndexAppender<'a> {
-    index_count_distr: Pareto<f64>,
-    index_distr: WeightedIndex<f64>,
+    index_count_distr: WeightedAliasIndex<f64>,
+    index_distr: WeightedAliasIndex<f64>,
     columns: &'a [Column],
     index_sets: HashSet<BTreeSet<usize>>,
 }
@@ -294,14 +302,23 @@ struct IndexAppender<'a> {
 impl<'a> IndexAppender<'a> {
     fn new(columns: &'a [Column]) -> Self {
         Self {
-            index_count_distr: Pareto::new(1.0, 1.6).unwrap(),
-            index_distr: WeightedIndex::new(columns.iter().map(|col| col.neg_log2_prob.min(32.0))).unwrap(),
+            // This is equivalent to the Pareto distribution
+            // with scale = 1.0, shape = 1.6, truncated at 12.
+            index_count_distr: WeightedAliasIndex::new(
+                (1_u8..13)
+                    .map(|i| f64::from(i).powf(-1.6))
+                    .scan(1.0, |prev, pdf| Some(replace(prev, pdf) - pdf))
+                    .chain(once(12.0_f64.powf(-1.6)))
+                    .collect(),
+            )
+            .unwrap(),
+            index_distr: WeightedAliasIndex::new(columns.iter().map(|col| col.neg_log2_prob.min(32.0)).collect())
+                .unwrap(),
             columns,
             index_sets: HashSet::new(),
         }
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn append_to(
         &mut self,
         schema: &mut String,
@@ -310,7 +327,7 @@ impl<'a> IndexAppender<'a> {
         unique_cutoff: f64,
         is_primary_key: bool,
     ) {
-        let index_count = (self.index_count_distr.sample(rng) as usize).min(12);
+        let index_count = self.index_count_distr.sample(&mut rng);
         let index_set = (&self.index_distr)
             .sample_iter(&mut rng)
             .take(index_count)
@@ -350,7 +367,6 @@ struct Table {
     seed: crate::cli::Seed,
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn gen_table(dialect: Dialect, rng: &mut dyn RngCore, target_size: f64) -> Table {
     let mut schema = String::from("CREATE TABLE _ (\n");
 
@@ -381,7 +397,9 @@ fn gen_table(dialect: Dialect, rng: &mut dyn RngCore, target_size: f64) -> Table
     // pick a random column as primary key
     let mut appender = IndexAppender::new(&columns);
     appender.append_to(&mut schema, dialect, rng, unique_cutoff, true);
-    while rng.gen_ratio(columns_count as u32, (columns_count + appender.index_sets.len()) as u32) {
+    let p = (appender.index_sets.len() as f64) / ((columns_count + appender.index_sets.len()) as f64);
+    let secondary_keys_count = Geometric::new(p).unwrap().sample(rng);
+    for _ in 0..secondary_keys_count {
         appender.append_to(&mut schema, dialect, rng, unique_cutoff, false);
     }
     schema.push_str("\n);");
