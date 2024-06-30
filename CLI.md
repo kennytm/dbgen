@@ -122,29 +122,10 @@ More options
     These four options provide an alternative way to specify the total number of rows. But they are
     more difficult to manage, and are no longer recommended since v0.8.0.
 
-* `--time-zone «TZ»`
-
-    The time zone used to parse and format timestamps. Defaults to `UTC`, regardless of system time
-    zone. Any `tz` database time zone name (e.g. `America/New_York`) can be used.
-
-* `--zoneinfo «PATH»`
-
-    The path to the [tz database], default to `/usr/share/zoneinfo`. On Unix this typically can be
-    kept as default. However, not every OS (esp. Windows) has a built-in tz database, or perhaps
-    you want to precisely control which version of tz database to use. In this case, you may use
-    this parameter to let `dbgen` choose a custom database.
-
-    Note:
-
-    * The time zone data must be compiled into TZif version 2 or 3 format.
-    * Leap seconds are ignored.
-    * Immutable time zones such as `UTC` are hard-coded into `dbgen` and will skip the tz database.
-
 * `--now «TIMESTAMP»`
 
-    Override the timestamp reported by `current_timestamp`. Defaults to the time when `dbgen` was
-    started. The timestamp must be written in the format `YYYY-mm-dd HH:MM:SS.fff`, and it is always
-    in UTC, regardless of the `--time-zone` setting.
+    Override the timestamp reported by `current_timestamp`. Defaults to the time (in UTC) when
+    `dbgen` was started. The timestamp must be written in the format `YYYY-mm-dd HH:MM:SS.fff`.
 
 * `-e «TEMPLATE»`, `--template-string «TEMPLATE»`
 
@@ -298,7 +279,6 @@ More options
 [gzip]: https://en.wikipedia.org/wiki/Gzip
 [xz]: https://en.wikipedia.org/wiki/Xz
 [zstd]: https://facebook.github.io/zstd/
-[tz database]: https://www.iana.org/time-zones
 
 [`NO_BACKSLASH_ESCAPES`]: https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_backslash_escapes
 [`standard_conforming_strings`]: https://www.postgresql.org/docs/current/static/runtime-config-compatible.html#GUC-STANDARD-CONFORMING-STRINGS

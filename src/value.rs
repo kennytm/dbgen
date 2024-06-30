@@ -1,13 +1,12 @@
 //! Values
 
-use chrono::{Duration, NaiveDateTime, TimeZone};
+use chrono::{Duration, NaiveDateTime};
 use rand_regex::EncodedString;
 use std::{
     cmp::Ordering,
     convert::{TryFrom, TryInto},
     fmt,
 };
-use tzfile::ArcTz;
 
 use crate::{
     array::Array,
@@ -29,7 +28,7 @@ pub enum Value {
     /// A string or byte string.
     Bytes(ByteString),
     /// A timestamp. The `NaiveDateTime` field must be in the UTC time zone.
-    Timestamp(NaiveDateTime, ArcTz),
+    Timestamp(NaiveDateTime),
     /// A time interval, as multiple of microseconds.
     Interval(i64),
     /// An array of values. The array may be lazily evaluated.
@@ -105,8 +104,8 @@ impl fmt::Display for Value {
 
 impl Value {
     /// Creates a timestamp value.
-    pub fn new_timestamp(ts: NaiveDateTime, tz: ArcTz) -> Self {
-        Self::Timestamp(ts, tz)
+    pub fn new_timestamp(ts: NaiveDateTime) -> Self {
+        Self::Timestamp(ts)
     }
 
     /// Creates a finite floating point value.
@@ -118,7 +117,7 @@ impl Value {
     ///
     /// * Comparing with NULL always return `None`.
     /// * Numbers and intervals are ordered by value.
-    /// * Timestamps are ordered by its UTC value, ignoring time zone.
+    /// * Timestamps are ordered by its UTC value.
     /// * Strings are ordered by UTF-8 binary collation.
     /// * Arrays are ordered lexicographically.
     /// * Comparing between different types are inconsistent among database
@@ -128,7 +127,7 @@ impl Value {
             (Self::Null, _) | (_, Self::Null) => None,
             (Self::Number(a), Self::Number(b)) => a.partial_cmp(b),
             (Self::Bytes(a), Self::Bytes(b)) => a.partial_cmp(b),
-            (Self::Timestamp(a, _), Self::Timestamp(b, _)) => a.partial_cmp(b),
+            (Self::Timestamp(a), Self::Timestamp(b)) => a.partial_cmp(b),
             (Self::Interval(a), Self::Interval(b)) => a.partial_cmp(b),
             (Self::Array(a), Self::Array(b)) => try_partial_cmp_by(a.iter(), b.iter(), |x, y| x.sql_cmp(&y))?,
             _ => {
@@ -162,12 +161,9 @@ impl Value {
     pub fn sql_add(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.add(*rhs), "{} + {}", lhs, rhs),
-            (Self::Timestamp(ts, tz), Self::Interval(dur)) | (Self::Interval(dur), Self::Timestamp(ts, tz)) => {
-                Self::Timestamp(
-                    try_or_overflow!(ts.checked_add_signed(Duration::microseconds(*dur)), "{ts} + {dur}us"),
-                    tz.clone(),
-                )
-            }
+            (Self::Timestamp(ts), Self::Interval(dur)) | (Self::Interval(dur), Self::Timestamp(ts)) => Self::Timestamp(
+                try_or_overflow!(ts.checked_add_signed(Duration::microseconds(*dur)), "{ts} + {dur}us"),
+            ),
             (Self::Interval(a), Self::Interval(b)) => Self::Interval(try_or_overflow!(a.checked_add(*b), "{a} + {b}")),
             _ => {
                 return Err(Error::InvalidArguments(format!("cannot add {self} to {other}")));
@@ -179,14 +175,14 @@ impl Value {
     pub fn sql_sub(&self, other: &Self) -> Result<Self, Error> {
         Ok(match (self, other) {
             (Self::Number(lhs), Self::Number(rhs)) => try_from_number!(lhs.sub(*rhs), "{} - {}", lhs, rhs),
-            (Self::Timestamp(lhs, _), Self::Timestamp(rhs, _)) => Self::Interval(try_or_overflow!(
+            (Self::Timestamp(lhs), Self::Timestamp(rhs)) => Self::Interval(try_or_overflow!(
                 lhs.signed_duration_since(*rhs).num_microseconds(),
                 "{lhs} - {rhs}"
             )),
-            (Self::Timestamp(ts, tz), Self::Interval(dur)) => Self::Timestamp(
-                try_or_overflow!(ts.checked_sub_signed(Duration::microseconds(*dur)), "{ts} - {dur}us"),
-                tz.clone(),
-            ),
+            (Self::Timestamp(ts), Self::Interval(dur)) => Self::Timestamp(try_or_overflow!(
+                ts.checked_sub_signed(Duration::microseconds(*dur)),
+                "{ts} - {dur}us"
+            )),
             (Self::Interval(a), Self::Interval(b)) => Self::Interval(try_or_overflow!(a.checked_sub(*b), "{a} - {b}")),
             _ => {
                 return Err(Error::InvalidArguments(format!("cannot subtract {self} from {other}")));
@@ -259,8 +255,8 @@ impl Value {
                 Self::Null => return Ok(Self::Null),
                 Self::Number(n) => res.extend_number(n),
                 Self::Bytes(b) => res.extend_byte_string(b),
-                Self::Timestamp(timestamp, tz) => {
-                    write!(res, "{}", tz.from_utc_datetime(timestamp).format(TIMESTAMP_FORMAT)).unwrap();
+                Self::Timestamp(timestamp) => {
+                    write!(res, "{}", timestamp.format(TIMESTAMP_FORMAT)).unwrap();
                 }
                 Self::Interval(interval) => write!(res, "INTERVAL {interval} MICROSECOND").unwrap(),
                 Self::Array(_) => {

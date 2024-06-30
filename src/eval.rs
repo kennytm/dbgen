@@ -8,21 +8,16 @@ use crate::{
     span::{ResultExt, Span, SpanExt, S},
     value::Value,
 };
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime};
 use rand::{distributions::Bernoulli, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
 use rand_regex::EncodedString;
-use std::{cmp::Ordering, fmt, fs, ops::Range, path::PathBuf, sync::Arc};
-use tzfile::{ArcTz, Tz};
+use std::{cmp::Ordering, fmt, ops::Range, sync::Arc};
 use zipf::ZipfDistribution;
 
 /// Environment information shared by all compilations
 #[derive(Clone, Debug)]
 pub struct CompileContext {
-    /// The zoneinfo directory where timezones can be read.
-    pub zoneinfo: PathBuf,
-    /// The time zone used to interpret strings into timestamps.
-    pub time_zone: ArcTz,
     /// The current timestamp in UTC.
     pub current_timestamp: NaiveDateTime,
     /// The global variables.
@@ -33,29 +28,9 @@ impl CompileContext {
     /// Creates a default compile context storing the given number of variables.
     pub fn new(variables_count: usize) -> Self {
         Self {
-            zoneinfo: PathBuf::from("/usr/share/zoneinfo"),
-            time_zone: ArcTz::new(Utc.into()),
             current_timestamp: NaiveDateTime::MIN,
             variables: vec![Value::Null; variables_count].into_boxed_slice(),
         }
-    }
-
-    /// Parses the time zone name into a time zone object.
-    pub fn parse_time_zone(&self, tz: &str) -> Result<ArcTz, Error> {
-        Ok(ArcTz::new(if tz == "UTC" {
-            Utc.into()
-        } else {
-            let path = self.zoneinfo.join(tz);
-            let content = fs::read(&path).map_err(|source| Error::Io {
-                action: "read time zone file",
-                path,
-                source,
-            })?;
-            Tz::parse(tz, &content).map_err(|source| Error::InvalidTimeZone {
-                time_zone: tz.to_owned(),
-                source,
-            })?
-        }))
     }
 }
 
@@ -270,7 +245,7 @@ impl CompileContext {
         Ok(match expr.inner {
             Expr::RowNum => C::RowNum,
             Expr::SubRowNum => C::SubRowNum,
-            Expr::CurrentTimestamp => C::Constant(Value::Timestamp(self.current_timestamp, self.time_zone.clone())),
+            Expr::CurrentTimestamp => C::Constant(Value::Timestamp(self.current_timestamp)),
             Expr::Value(v) => C::Constant(v),
             Expr::GetVariable(index) => C::GetVariable(index),
             Expr::SetVariable(index, e) => C::SetVariable(index, Box::new(self.compile(*e)?)),
@@ -400,7 +375,7 @@ impl Compiled {
                 let timestamp = DateTime::from_timestamp(seconds, 0)
                     .expect("u31 range of timestamp must be valid")
                     .naive_utc();
-                Value::new_timestamp(timestamp, state.compile_context.time_zone.clone())
+                Value::new_timestamp(timestamp)
             }
 
             C::RandShuffle { permutation, inner } => {

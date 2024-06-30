@@ -46,9 +46,6 @@ kw_minute   = @{ ^"minute" ~ b }
 kw_second   = @{ ^"second" ~ b }
 kw_millisecond = @{ ^"millisecond" ~ b }
 kw_microsecond = @{ ^"microsecond" ~ b }
-kw_with     = @{ ^"with" ~ b }
-kw_time     = @{ ^"time" ~ b }
-kw_zone     = @{ ^"zone" ~ b }
 kw_substring = @{ ^"substring" ~ b }
 kw_from     = @{ ^"from" ~ b }
 kw_for      = @{ ^"for" ~ b }
@@ -189,7 +186,7 @@ case_value_when_result = { stmt }
 case_value_when_else = { stmt }
 
 expr_timestamp = {
-    kw_timestamp ~ (kw_with ~ kw_time ~ kw_zone)? ~ expr_primary
+    kw_timestamp ~ expr_primary
 }
 expr_interval = {
     kw_interval ~ expr ~ (kw_week | kw_day | kw_hour | kw_minute | kw_second | kw_millisecond | kw_microsecond)

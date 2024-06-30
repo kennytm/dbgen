@@ -87,15 +87,6 @@
             help: 'Disable progress bar.',
             type: 'bool',
         },
-        time_zone: {
-            long: 'time-zone',
-            help: 'Time zone used for timestamp.',
-            default: 'UTC',
-        },
-        zoneinfo: {
-            help: 'Directory containing the tz database.',
-            default: '/usr/share/zoneinfo',
-        },
         now: {
             help: 'Override the current timestamp (always in UTC), in the format "YYYY-mm-dd HH:MM:SS.fff".',
         },

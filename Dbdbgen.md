@@ -171,8 +171,6 @@ interface Step {
     jobs: number,
     rng: 'chacha12' | 'chacha20' | 'hc128' | 'isaac' | 'isaac64' | 'xorshift' | 'pcg32' | 'step',
     quiet: boolean,
-    time_zone: string,
-    zoneinfo: string,
     now: string | null,
     format: 'sql' | 'csv' | 'sql-insert-set',
     format_true: string | null,
@@ -204,8 +202,6 @@ Each step describes the arguments sent to `dbgen`. They correspond to the
 | jobs | `-j`/`--jobs` | 0 |
 | rng | `--rng` | 'hc128' |
 | quiet | `-q`/`--quiet` | false |
-| time_zone | `--time-zone` | 'UTC' |
-| zoneinfo | `--zoneinfo` | '/usr/share/zoneinfo' |
 | now | `--now` | null |
 | format | `-f`/`--format` | 'sql' |
 | format_true | `--format-true` | null |

@@ -55,10 +55,6 @@ pub enum Error {
     #[error("invalid timestamp")]
     InvalidTimestampString(#[from] chrono::format::ParseError),
 
-    /// The local time is invalid or ambiguous
-    #[error("invalid or ambiguous local time")]
-    InvalidOrAmbiguousLocalTime,
-
     /// Cannot find parent table for derived table directive.
     #[error("cannot find parent table {parent} to generate derived rows")]
     UnknownParentTable {
@@ -93,15 +89,6 @@ pub enum Error {
         path: PathBuf,
         /// Source of error.
         source: std::io::Error,
-    },
-
-    /// Invalid time zone file.
-    #[error("failed to parse time zone file ({time_zone})")]
-    InvalidTimeZone {
-        /// Time zone name.
-        time_zone: String,
-        /// Source of error.
-        source: tzfile::Error,
     },
 
     /// Failed to configure a Rayon thread pool.

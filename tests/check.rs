@@ -25,7 +25,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let no_print_diff = env::var_os("DIFF").as_deref() == Some(OsStr::new("0"));
 
     let data_dir = Path::new(file!()).with_file_name("data");
-    let zoneinfo_dir = Path::new(file!()).with_file_name("zoneinfo");
     let mut content_differed = false;
 
     for child_dir in read_dir(data_dir)? {
@@ -39,7 +38,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut args: Args = from_reader(File::open(child_path.join("flags.json"))?)?;
         args.template = Some(child_path.join("template.sql"));
         args.out_dir = out_dir.path().to_owned();
-        args.zoneinfo = zoneinfo_dir.clone();
         args.quiet = true;
 
         let mut registry = Registry::default();

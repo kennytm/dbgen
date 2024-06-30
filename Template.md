@@ -326,20 +326,10 @@ From highest to lowest precedence:
 ### Date and Time
 
 * **TIMESTAMP '2016-01-02 15:04:05.999'**
-* **TIMESTAMP WITH TIME ZONE '2016-01-02 15:04:05.999 Asia/Hong_Kong'**
 
     Converts an ISO-8601-formatted string into a timestamp.
 
-    The string may include a specific time zone at the end. By default the one provided by the
-    `--time-zone` flag is used. The timestamp will be converted to UTC internally.
-
-    If a time zone observes DST, there will be some time values which are impossible or ambiguous.
-    Both of these cases will cause an "invalid timestamp" error.
-
-    Only time zone names in the `tz` database are recognized. The time zone will **not** be printed
-    together with the timestamp.
-
-    `TIMESTAMP` and `TIMESTAMP WITH TIME ZONE` are alias to each other.
+    The timestamp is always measured in UTC time zone.
 
 * **INTERVAL 30 MINUTE**
 

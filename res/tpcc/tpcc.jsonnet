@@ -34,8 +34,6 @@ local dbdbgen = import 'dbdbgen.libsonnet';
         // TPC-C output contains no special characters.
         escape_backslash:: null,
         // TPC-C output contains no timestamps.
-        time_zone:: null,
-        zoneinfo:: null,
         now:: null,
     },
 

@@ -300,7 +300,7 @@ local dbdbgen = import 'dbdbgen.libsonnet';
 We can also modify the standard argument. For instance, we want to
 * Make `--total-count`/`-N` required too, instead of the default 1
 * Make `--rows-per-file`/`-R` default to a larger number, instead of the default 1
-* Disable irrelevant flags like `--escape-backslash`, `--time-zone`, `--zoneinfo` and `--now`.
+* Disable irrelevant flags like `--escape-backslash` and `--now`.
 
 The outcome is this:
 
@@ -325,8 +325,6 @@ local dbdbgen = import 'dbdbgen.libsonnet';
 
         // remove existing arguments by hiding them
         escape_backslash:: null,
-        time_zone:: null,
-        zoneinfo:: null,
         now:: null,
     },
     steps: [],
@@ -352,8 +350,6 @@ local dbdbgen = import 'dbdbgen.libsonnet';
         total_count+: { required: true },
         rows_per_file+: { default: '1000' },
         escape_backslash:: null,
-        time_zone:: null,
-        zoneinfo:: null,
         now:: null,
     },
 

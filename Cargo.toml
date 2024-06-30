@@ -43,7 +43,6 @@ num-traits = "0.2"
 rayon = { version = "1.7", optional = true }
 zipf = "7.0.1"
 chrono = { workspace = true }
-tzfile = "0.1"
 ryu = "1.0"
 serde = { workspace = true }
 muldiv = { version = "1.0", optional = true }

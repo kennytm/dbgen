@@ -2,7 +2,7 @@
 
 use crate::{bytes::ByteString, eval::Schema, value::Value};
 
-use chrono::{DateTime, Datelike, TimeZone, Timelike};
+use chrono::{Datelike, NaiveDateTime, Timelike};
 use memchr::{memchr2_iter, memchr3_iter, memchr_iter};
 use rand_regex::Encoding;
 use std::{
@@ -10,7 +10,6 @@ use std::{
     io::{Error, Write},
     slice,
 };
-use tzfile::ArcTz;
 
 /// An shared format description of how to serialize values into strings.
 pub trait Format {
@@ -77,7 +76,7 @@ pub struct CsvFormat<'a>(pub &'a Options);
 pub struct SqlInsertSetFormat<'a>(pub &'a Options);
 
 /// Writes a timestamp in ISO 8601 format.
-fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &DateTime<ArcTz>) -> Result<(), Error> {
+fn write_timestamp(writer: &mut dyn Write, quote: &str, timestamp: &NaiveDateTime) -> Result<(), Error> {
     write!(
         writer,
         "{}{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
@@ -246,7 +245,7 @@ impl Options {
             Value::Null => writer.write_all(self.null_string.as_bytes()),
             Value::Number(number) => number.write_io(writer, &self.true_string, &self.false_string),
             Value::Bytes(bytes) => self.write_sql_bytes(writer, bytes),
-            Value::Timestamp(timestamp, tz) => write_timestamp(writer, "'", &tz.from_utc_datetime(timestamp)),
+            Value::Timestamp(timestamp) => write_timestamp(writer, "'", &timestamp),
             Value::Interval(interval) => write_interval(writer, "'", *interval),
             Value::Array(array) => {
                 writer.write_all(b"ARRAY[")?;
@@ -373,7 +372,7 @@ impl Format for CsvFormat<'_> {
             Value::Null => writer.write_all(self.0.null_string.as_bytes()),
             Value::Number(number) => number.write_io(writer, &self.0.true_string, &self.0.false_string),
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
-            Value::Timestamp(timestamp, tz) => write_timestamp(writer, "", &tz.from_utc_datetime(timestamp)),
+            Value::Timestamp(timestamp) => write_timestamp(writer, "", &timestamp),
             Value::Interval(interval) => write_interval(writer, "", *interval),
             Value::Array(array) => {
                 writer.write_all(b"{")?;

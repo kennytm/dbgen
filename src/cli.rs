@@ -170,14 +170,14 @@ pub struct Args {
     #[serde(skip_serializing_if = "is_false")]
     pub quiet: bool,
 
-    /// Time zone used for timestamps.
-    #[arg(long, default_value = "UTC")]
-    #[serde(skip_serializing_if = "is_utc")]
+    /// Time zone used for timestamps. Deprecated, does not have any effect.
+    #[arg(long, hide(true))]
+    #[serde(skip_serializing)]
     pub time_zone: String,
 
-    /// Directory containing the tz database.
-    #[arg(long, default_value = "/usr/share/zoneinfo")]
-    #[serde(skip_serializing_if = "is_default_zoneinfo")]
+    /// Directory containing the tz database. Deprecated, does not have any effect.
+    #[arg(long, hide(true), default_value = "/usr/share/zoneinfo")]
+    #[serde(skip_serializing)]
     pub zoneinfo: PathBuf,
 
     /// Override the current timestamp (always in UTC), in the format "YYYY-mm-dd HH:MM:SS.fff".
@@ -312,14 +312,6 @@ fn is_zero(u: &usize) -> bool {
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_six(u: &u8) -> bool {
     *u == 6
-}
-
-fn is_utc(tz: &str) -> bool {
-    tz == "UTC"
-}
-
-fn is_default_zoneinfo(path: &Path) -> bool {
-    path == Path::new("/usr/share/zoneinfo")
 }
 
 // ALLOW_REASON: the arguments of serde helper must be references.
@@ -466,8 +458,6 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
     }
 
     let mut ctx = CompileContext::new(template.variables_count);
-    ctx.zoneinfo = args.zoneinfo;
-    ctx.time_zone = ctx.parse_time_zone(&args.time_zone).no_span_err()?;
     ctx.current_timestamp = args.now.unwrap_or_else(|| Utc::now().naive_utc());
     let tables = template
         .tables

@@ -718,7 +718,7 @@ impl<'a> Allocator<'a> {
     fn expr_timestamp_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
         for pair in pairs {
             match pair.as_rule() {
-                Rule::kw_timestamp | Rule::kw_with | Rule::kw_time | Rule::kw_zone => {}
+                Rule::kw_timestamp => {}
                 Rule::expr_primary => {
                     let span = pair.as_span();
                     return Ok(Expr::Function {
