@@ -56,7 +56,7 @@ impl<'p> Vm<'p> {
             .vm
             .evaluate_snippet(
                 self.path,
-                "function(src) {[k]: src[k] for k in ['name', 'version', 'about', 'args']}",
+                "function(src) {[k]: src[k] for k in ['name', 'version', 'about', 'args'] if k in src}",
             )
             .map_err(|error| Error::Jsonnet {
                 purpose: Purpose::Arguments,

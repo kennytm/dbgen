@@ -26,18 +26,15 @@ program's name, version and description:
 
 ```console
 $ dbdbgen rand01.jsonnet --help
-dbdbgen-rand01 0.1.0
 Just a sample.
 
-USAGE:
-    dbdbgen rand01
+Usage: dbdbgen rand01
 
-OPTIONS:
-    -h, --help
-            Prints help information
-
-    -V, --version
-            Prints version information
+Options:
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 ## First step
@@ -134,30 +131,25 @@ also check the updated help screen.
 
 ```console
 $ dbdbgen rand01.jsonnet
-error: The following required arguments were not provided:
-    --out-dir <out_dir>
+error: the following required arguments were not provided:
+  --out-dir <out_dir>
 
-USAGE:
-    dbdbgen rand01 --out-dir <out_dir>
+Usage: dbdbgen rand01 --out-dir <out_dir>
 
-For more information try --help
+For more information, try '--help'.
 
 $ dbdbgen rand01.jsonnet --help
-dbdbgen-rand01 0.2.0
 Demonstrating the --out-dir flag.
 
-USAGE:
-    dbdbgen rand01 --out-dir <out_dir>
+Usage: dbdbgen rand01 --out-dir <out_dir>
 
-OPTIONS:
-    -h, --help
-            Prints help information
-
-    -o, --out-dir <out_dir>
-            Output directory.
-
-    -V, --version
-            Prints version information
+Options:
+  -o, --out-dir <out_dir>
+          Output directory.
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 When the arguments are defined, the **steps** should be defined as a function to
@@ -251,17 +243,20 @@ $ dbdbgen rand01.jsonnet -h
 dbdbgen-rand01 0.3.1
 Demonstrating the standard arguments
 
-USAGE:
-    dbdbgen rand01 [OPTIONS] --components <components>... --out-dir <out_dir>
+Usage: dbdbgen rand01 [OPTIONS] --out-dir <out_dir>
 
-OPTIONS:
-        --components <components>...
-            Components to write. [default: table,data]  [possible values: schema, table, data]
+Options:
+      --components <components>
+          Components to write. [default: table,data] [possible values: schema, table, data]
 
 — « skipped » —
 
-        --zoneinfo <zoneinfo>
-            Directory containing the tz database. [default: /usr/share/zoneinfo]
+  -N, --total-count <total_count>
+          Total number of rows of the main table.
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 
 $ dbdbgen rand01.jsonnet -o rand01_3 -N 3 -R 3 -f csv
 step 1 / 1
@@ -373,22 +368,22 @@ local dbdbgen = import 'dbdbgen.libsonnet';
 Execute this to get our desired result:
 
 ```console
-$ dbdbgen rand01.jsonnet -M 5 -N 5 -o rand01_4 -f csv
+$ dbdbgen rand01.jsonnet -M 6 -N 5 -o rand01_4 -f csv
 step 1 / 1
-Using seed: 56d7916a467be073a9deedefb9587673e5052071d43339bcc14c44ec4cef81be
+Using seed: 394dd95f85ccea9f2c001a8cf3df6732dc05c24ff649462e6586bc5d76c40269
 Done!
-Size     50 B / 50 B 🕒  99 B/s
+Size     60 B / 60 B 🕒  120 B/s
 
 $ ls rand01_4/
 rand01.1.csv  rand01-schema.sql
 
 $ cat rand01_4/rand01-schema.sql
-CREATE TABLE rand01 (col1 integer,col2 integer,col3 integer,col4 integer,col5 integer);
+CREATE TABLE rand01 (col1 integer,col2 integer,col3 integer,col4 integer,col5 integer,col6 integer);
 
 $ cat rand01_4/rand01.1.csv
-0,0,1,1,1
-0,1,0,0,0
-1,1,1,0,0
-0,1,0,0,1
-0,1,1,1,0
+0,0,0,0,1,1
+0,0,1,0,1,0
+0,0,1,0,0,1
+0,1,1,1,0,1
+1,0,0,1,1,0
 ```

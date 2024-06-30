@@ -6,7 +6,10 @@ use clap::{
 use data_encoding::HEXLOWER_PERMISSIVE;
 use rand::{rngs::OsRng, RngCore as _};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, ffi::OsString};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ffi::OsString,
+};
 
 #[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -67,7 +70,7 @@ pub struct App {
     pub name: String,
     pub version: String,
     pub about: String,
-    pub args: HashMap<String, Arg>,
+    pub args: BTreeMap<String, Arg>,
 }
 
 #[derive(Serialize, Debug)]
@@ -94,11 +97,16 @@ impl App {
             .no_binary_name(true)
             .next_line_help(true)
             .args(self.args.iter().map(|(name, arg)| {
-                clap::Arg::new(name)
+                let arg_action = arg.r#type.arg_action();
+                let mut clap_arg = clap::Arg::new(name);
+                if matches!(arg_action, ArgAction::Append) {
+                    clap_arg = clap_arg.value_delimiter(',');
+                }
+                clap_arg
                     .long(if arg.long.is_empty() { name } else { &arg.long })
                     .help(&arg.help)
                     .short(arg.short.chars().next())
-                    .action(arg.r#type.arg_action())
+                    .action(arg_action)
                     .value_parser(arg.r#type.value_parser())
                     .required(arg.required)
                     .default_value(Resettable::from(arg.default.as_ref().map(OsStr::from)))
