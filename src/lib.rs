@@ -58,6 +58,9 @@
     clippy::verbose_file_reads
 )]
 #![allow(
+    edition_2024_expr_fragment_specifier,
+    if_let_rescope,
+    tail_expr_drop_order,
     clippy::module_name_repetitions,
     clippy::must_use_candidate,
     clippy::missing_errors_doc,

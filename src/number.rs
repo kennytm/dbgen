@@ -29,7 +29,7 @@ macro_rules! impl_from_integer_for_number {
         impl From<$ty> for Number {
             // ALLOW_REASON: for simplicity of the macro.
             // we should be using `v.into()` but usize & isize do not impl Into<i128>.
-            #[allow(trivial_numeric_casts)]
+            #[allow(trivial_numeric_casts, clippy::cast_lossless)]
             fn from(v: $ty) -> Self {
                 Self(N::I(v as i128))
             }
@@ -81,6 +81,7 @@ macro_rules! impl_try_from_number_for_integer {
                 match n.0 {
                     N::B(v) => Ok(v.into()),
                     N::I(v) => Self::try_from(v).map_err(|_| NumberError::Overflow),
+                    #[allow(clippy::cast_lossless, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
                     N::F(v) if Self::MIN as f64 <= v && v <= Self::MAX as f64 => Ok(v as $ty),
                     _ => Err(NumberError::Overflow),
                 }

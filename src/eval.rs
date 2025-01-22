@@ -108,7 +108,7 @@ pub struct Schema<'a> {
     column_name_ranges: &'a [Range<usize>],
 }
 
-impl<'a> Schema<'a> {
+impl Schema<'_> {
     /// Returns an iterator of column names associated with the table.
     pub fn column_names(&self) -> impl Iterator<Item = &str> + '_ {
         self.column_name_ranges.iter().map(move |r| &self.content[r.clone()])
@@ -386,7 +386,7 @@ impl Compiled {
 
             C::RandUuid => {
                 // we will loss 6 bits but that's still uniform.
-                let g = state.rng.gen::<[u16; 8]>();
+                let g = state.rng.r#gen::<[u16; 8]>();
                 format!(
                     "{:04x}{:04x}-{:04x}-4{:03x}-{:04x}-{:04x}{:04x}{:04x}",
                     g[0],

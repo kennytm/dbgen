@@ -296,6 +296,7 @@ macro_rules! impl_try_from_value {
 
             fn try_from(value: Value) -> Result<Self, Self::Error> {
                 if let Value::Number(n) = value {
+                    #[allow(irrefutable_let_patterns)]
                     if let Ok(v) = n.try_into() {
                         return Ok(v);
                     }
@@ -310,7 +311,9 @@ macro_rules! impl_try_from_value {
             fn try_from(value: Value) -> Result<Self, Self::Error> {
                 match value {
                     Value::Null => return Ok(None),
-                    Value::Number(n) => {
+                    Value::Number(n) =>
+                    {
+                        #[allow(irrefutable_let_patterns)]
                         if let Ok(v) = n.try_into() {
                             return Ok(Some(v));
                         }

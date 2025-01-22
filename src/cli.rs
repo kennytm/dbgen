@@ -509,7 +509,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
         env.write_table_schema()?;
     }
 
-    let meta_seed = args.seed.unwrap_or_else(|| OsRng.gen());
+    let meta_seed = args.seed.unwrap_or_else(|| OsRng.r#gen());
     let show_progress = !args.quiet;
     if show_progress {
         println!("Using seed: {meta_seed}");
@@ -682,13 +682,13 @@ impl RngName {
     /// Creates an RNG engine given the name. The RNG engine instance will be seeded from `src`.
     fn create(self, src: &mut rand_hc::Hc128Rng) -> Box<dyn RngCore + Send> {
         match self {
-            Self::ChaCha12 => Box::new(rand_chacha::ChaCha12Rng::from_seed(src.gen())),
-            Self::ChaCha20 => Box::new(rand_chacha::ChaCha20Rng::from_seed(src.gen())),
-            Self::Hc128 => Box::new(rand_hc::Hc128Rng::from_seed(src.gen())),
-            Self::Isaac => Box::new(rand_isaac::IsaacRng::from_seed(src.gen())),
-            Self::Isaac64 => Box::new(rand_isaac::Isaac64Rng::from_seed(src.gen())),
-            Self::XorShift => Box::new(rand_xorshift::XorShiftRng::from_seed(src.gen())),
-            Self::Pcg32 => Box::new(rand_pcg::Pcg32::from_seed(src.gen())),
+            Self::ChaCha12 => Box::new(rand_chacha::ChaCha12Rng::from_seed(src.r#gen())),
+            Self::ChaCha20 => Box::new(rand_chacha::ChaCha20Rng::from_seed(src.r#gen())),
+            Self::Hc128 => Box::new(rand_hc::Hc128Rng::from_seed(src.r#gen())),
+            Self::Isaac => Box::new(rand_isaac::IsaacRng::from_seed(src.r#gen())),
+            Self::Isaac64 => Box::new(rand_isaac::Isaac64Rng::from_seed(src.r#gen())),
+            Self::XorShift => Box::new(rand_xorshift::XorShiftRng::from_seed(src.r#gen())),
+            Self::Pcg32 => Box::new(rand_pcg::Pcg32::from_seed(src.r#gen())),
             Self::Step => Box::new(StepRng::new(src.next_u64(), src.next_u64() | 1)),
         }
     }
@@ -906,7 +906,7 @@ impl<'a> FormatWriter<'a> {
     fn path(&self) -> PathBuf {
         let mut path_prefix = self.path_prefix.as_os_str().to_owned();
         if let Some((_, counter)) = &self.target_size_and_counter {
-            path_prefix.push(&counter.to_string());
+            path_prefix.push(counter.to_string());
         }
         path_prefix.push(".");
         path_prefix.push(self.path_extension);

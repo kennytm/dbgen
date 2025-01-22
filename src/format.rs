@@ -245,7 +245,7 @@ impl Options {
             Value::Null => writer.write_all(self.null_string.as_bytes()),
             Value::Number(number) => number.write_io(writer, &self.true_string, &self.false_string),
             Value::Bytes(bytes) => self.write_sql_bytes(writer, bytes),
-            Value::Timestamp(timestamp) => write_timestamp(writer, "'", &timestamp),
+            Value::Timestamp(timestamp) => write_timestamp(writer, "'", timestamp),
             Value::Interval(interval) => write_interval(writer, "'", *interval),
             Value::Array(array) => {
                 writer.write_all(b"ARRAY[")?;
@@ -372,7 +372,7 @@ impl Format for CsvFormat<'_> {
             Value::Null => writer.write_all(self.0.null_string.as_bytes()),
             Value::Number(number) => number.write_io(writer, &self.0.true_string, &self.0.false_string),
             Value::Bytes(bytes) => self.write_bytes(writer, bytes),
-            Value::Timestamp(timestamp) => write_timestamp(writer, "", &timestamp),
+            Value::Timestamp(timestamp) => write_timestamp(writer, "", timestamp),
             Value::Interval(interval) => write_interval(writer, "", *interval),
             Value::Array(array) => {
                 writer.write_all(b"{")?;
