@@ -207,15 +207,10 @@ pub enum Expr {
         /// Function arguments.
         args: Vec<S<Expr>>,
     },
-    /// A `CASE … WHEN` expression.
-    CaseValueWhen {
-        /// The expression to match against.
-        value: Option<Box<S<Expr>>>,
-        /// The conditions and their corresponding results.
-        conditions: Vec<(S<Expr>, S<Expr>)>,
-        /// The result when all conditions failed.
-        otherwise: Option<Box<S<Expr>>>,
-    },
+    /// A list of conditions.
+    ///
+    /// The inner array stores the condition and their corresponding results.
+    Conditions(Box<[(S<Expr>, S<Expr>)]>),
 }
 
 impl Default for Expr {
@@ -239,6 +234,7 @@ impl Template {
         let mut alloc = Allocator {
             override_schema: [None; 2],
             map: HashMap::new(),
+            count: 0,
             span_registry,
         };
         if let Some(schema) = override_schema {
@@ -302,7 +298,7 @@ impl Template {
             }
         }
 
-        template.variables_count = alloc.map.len();
+        template.variables_count = alloc.count;
         Ok(template)
     }
 }
@@ -312,6 +308,7 @@ impl Template {
 struct Allocator<'a> {
     override_schema: [Option<&'a str>; 2],
     map: HashMap<String, usize>,
+    count: usize,
     span_registry: &'a mut Registry,
 }
 
@@ -335,8 +332,19 @@ impl<'a> Allocator<'a> {
     fn allocate(&mut self, raw_var_name: &str) -> usize {
         let mut var_name = String::with_capacity(raw_var_name.len());
         unescape_into(&mut var_name, raw_var_name, false);
-        let count = self.map.len();
-        *self.map.entry(var_name).or_insert(count)
+        let count = &mut self.count;
+        *self.map.entry(var_name).or_insert_with(move || {
+            let old_count = *count;
+            *count += 1;
+            old_count
+        })
+    }
+
+    /// Allocates an anonymous local variable.
+    fn allocate_anonymous(&mut self) -> usize {
+        let old_count = self.count;
+        self.count += 1;
+        old_count
     }
 
     fn register(&mut self, span: pest::Span<'_>) -> Span {
@@ -677,40 +685,63 @@ impl<'a> Allocator<'a> {
 
     /// Creates a `CASE … WHEN` expression.
     fn expr_case_value_when_from_pairs(&mut self, pairs: Pairs<'_, Rule>) -> Result<Expr, S<Error>> {
-        let mut value = None;
+        let mut pre_exec = None;
+        let mut compare_with = None;
         let mut pattern = S::default();
         let mut conditions = Vec::with_capacity(2);
-        let mut otherwise = None;
+        let mut case_span = pest::Span::new("", 0, 0).unwrap();
 
         for pair in pairs {
             let rule = pair.as_rule();
             let span = pair.as_span();
             match rule {
-                Rule::kw_case | Rule::kw_when | Rule::kw_then | Rule::kw_else | Rule::kw_end => {}
+                Rule::kw_case => case_span = span,
+                Rule::kw_when | Rule::kw_then | Rule::kw_else | Rule::kw_end => {}
                 Rule::case_value_when_value | Rule::case_value_when_pattern => {
-                    let expr = self.expr_group_from_pairs(pair.into_inner())?.span(self.register(span));
+                    let expr_span = self.register(span);
+                    let expr = self.expr_group_from_pairs(pair.into_inner())?.span(expr_span);
                     match rule {
-                        Rule::case_value_when_value => value = Some(Box::new(expr)),
-                        Rule::case_value_when_pattern => pattern = expr,
+                        Rule::case_value_when_value => {
+                            let index = self.allocate_anonymous();
+                            pre_exec = Some(Expr::SetVariable(index, Box::new(expr)).span(expr_span));
+                            compare_with = Some(Expr::GetVariable(index).span(expr_span));
+                        }
+                        Rule::case_value_when_pattern => {
+                            pattern = if let Some(e) = &compare_with {
+                                Expr::Function {
+                                    function: &functions::ops::EQ,
+                                    args: vec![e.clone(), expr],
+                                }
+                                .span(expr_span)
+                            } else {
+                                expr
+                            }
+                        }
                         _ => unreachable!(),
                     }
                 }
                 Rule::case_value_when_result | Rule::case_value_when_else => {
-                    let expr = self.stmt_from_pairs(pair.into_inner())?.span(self.register(span));
-                    match rule {
-                        Rule::case_value_when_result => conditions.push((mem::take(&mut pattern), expr)),
-                        Rule::case_value_when_else => otherwise = Some(Box::new(expr)),
+                    let expr_span = self.register(span);
+                    let expr = self.stmt_from_pairs(pair.into_inner())?.span(expr_span);
+                    let condition = match rule {
+                        Rule::case_value_when_result => mem::take(&mut pattern),
+                        Rule::case_value_when_else => Expr::Value(true.into()).span(expr_span),
                         _ => unreachable!(),
-                    }
+                    };
+                    conditions.push((condition, expr));
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
             }
         }
 
-        Ok(Expr::CaseValueWhen {
-            value,
-            conditions,
-            otherwise,
+        let conditions = Expr::Conditions(conditions.into_boxed_slice());
+        Ok(if let Some(pre_exec) = pre_exec {
+            Expr::Function {
+                function: &functions::ops::Last,
+                args: vec![pre_exec, conditions.span(self.register(case_span))],
+            }
+        } else {
+            conditions
         })
     }
 

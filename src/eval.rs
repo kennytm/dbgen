@@ -12,7 +12,7 @@ use chrono::{DateTime, NaiveDateTime};
 use rand::{distributions::Bernoulli, Rng, RngCore};
 use rand_distr::{LogNormal, Uniform};
 use rand_regex::EncodedString;
-use std::{cmp::Ordering, fmt, ops::Range, sync::Arc};
+use std::{fmt, ops::Range, sync::Arc};
 use zipf::ZipfDistribution;
 
 /// Environment information shared by all compilations
@@ -188,15 +188,10 @@ pub enum C {
     GetVariable(usize),
     /// Assigns a value to a local variable.
     SetVariable(usize, Box<Compiled>),
-    /// The `CASE … WHEN` expression.
-    CaseValueWhen {
-        /// The value to match against.
-        value: Option<Box<Compiled>>,
-        /// The conditions and their corresponding results.
-        conditions: Box<[(Compiled, Compiled)]>,
-        /// The result when all conditions failed.
-        otherwise: Box<Compiled>,
-    },
+    /// A conditional expression.
+    ///
+    /// The inner array stores the condition and their corresponding results.
+    Conditions(Box<[(Compiled, Compiled)]>),
 
     /// Regex-based random string.
     RandRegex(rand_regex::Regex),
@@ -270,28 +265,12 @@ impl CompileContext {
                     }
                 }
             }
-            Expr::CaseValueWhen {
-                value,
-                conditions,
-                otherwise,
-            } => {
-                let value = value.map(|v| Ok::<_, _>(Box::new(self.compile(*v)?))).transpose()?;
-                let conditions = conditions
-                    .into_iter()
+            Expr::Conditions(conditions) => C::Conditions(
+                IntoIterator::into_iter(conditions)
                     .map(|(p, r)| Ok((self.compile(p)?, self.compile(r)?)))
                     .collect::<Result<Vec<_>, _>>()?
-                    .into_boxed_slice();
-                let otherwise = Box::new(if let Some(o) = otherwise {
-                    self.compile(*o)?
-                } else {
-                    C::Constant(Value::Null).span(expr.span)
-                });
-                C::CaseValueWhen {
-                    value,
-                    conditions,
-                    otherwise,
-                }
-            }
+                    .into_boxed_slice(),
+            ),
         }
         .span(expr.span))
     }
@@ -327,33 +306,13 @@ impl Compiled {
                 value
             }
 
-            C::CaseValueWhen {
-                value: Some(value),
-                conditions,
-                otherwise,
-            } => {
-                let value = value.eval(state)?;
-                for (p, r) in &**conditions {
-                    let p_span = p.0.span;
-                    let p = p.eval(state)?;
-                    if value.sql_cmp(&p).span_err(p_span)? == Some(Ordering::Equal) {
-                        return r.eval(state);
-                    }
-                }
-                otherwise.eval(state)?
-            }
-
-            C::CaseValueWhen {
-                value: None,
-                conditions,
-                otherwise,
-            } => {
+            C::Conditions(conditions) => {
                 for (p, r) in &**conditions {
                     if p.eval(state)?.is_sql_true().span_err(p.0.span)? {
                         return r.eval(state);
                     }
                 }
-                otherwise.eval(state)?
+                Value::Null
             }
 
             C::RandRegex(generator) => state.rng.sample::<EncodedString, _>(generator).into(),
