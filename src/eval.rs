@@ -10,7 +10,7 @@ use crate::{
 };
 use chrono::{DateTime, NaiveDateTime};
 use rand::{distributions::Bernoulli, Rng, RngCore};
-use rand_distr::{LogNormal, Uniform};
+use rand_distr::{weighted_alias::WeightedAliasIndex, LogNormal, Uniform};
 use rand_regex::EncodedString;
 use std::{fmt, ops::Range, sync::Arc};
 use zipf::ZipfDistribution;
@@ -207,6 +207,8 @@ pub enum C {
     RandLogNormal(LogNormal<f64>),
     /// Bernoulli distribution for `bool` (i.e. a weighted random boolean).
     RandBool(Bernoulli),
+    /// Weighted distribution
+    RandWeighted(WeightedAliasIndex<f64>),
     /// Random f32 with uniform bit pattern
     RandFiniteF32(Uniform<u32>),
     /// Random f64 with uniform bit pattern
@@ -322,6 +324,7 @@ impl Compiled {
             C::RandZipf(zipf) => (state.rng.sample(zipf) as u64).into(),
             C::RandLogNormal(log_normal) => Value::from_finite_f64(state.rng.sample(log_normal)),
             C::RandBool(bern) => state.rng.sample(bern).into(),
+            C::RandWeighted(weighted) => (state.rng.sample(weighted) + 1).into(),
             C::RandFiniteF32(uniform) => {
                 Value::from_finite_f64(f32::from_bits(state.rng.sample(uniform).rotate_right(1)).into())
             }

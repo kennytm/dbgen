@@ -921,6 +921,7 @@ fn function_from_name(name: &str) -> Result<&'static dyn Function, Error> {
         "rand.zipf" => &rand::Zipf,
         "rand.log_normal" => &rand::LogNormal,
         "rand.bool" => &rand::Bool,
+        "rand.weighted" => &rand::Weighted,
         "rand.finite_f32" => &rand::FiniteF32,
         "rand.finite_f64" => &rand::FiniteF64,
         "rand.u31_timestamp" => &rand::U31Timestamp,

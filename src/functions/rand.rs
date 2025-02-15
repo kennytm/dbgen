@@ -2,6 +2,7 @@
 
 use super::{args_1, args_2, args_3, require, Arguments, Function};
 use crate::{
+    array::Array,
     error::Error,
     eval::{CompileContext, C},
     number::Number,
@@ -192,4 +193,80 @@ fn compile_regex_generator(regex: &str, flags: &str, max_repeat: u32) -> Result<
 
     let hir = parser.build().parse(regex)?;
     Ok(rand_regex::Regex::with_hir(hir, max_repeat)?)
+}
+
+//------------------------------------------------------------------------------
+
+/// The `rand.weighted` SQL function.
+#[derive(Debug)]
+pub struct Weighted;
+
+impl Function for Weighted {
+    fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
+        let weights = args_1::<Array>(span, args, None)?
+            .iter()
+            .map(|v| v.try_into())
+            .collect::<Result<_, _>>()
+            .span_err(span)?;
+        Ok(C::RandWeighted(
+            rand_distr::weighted_alias::WeightedAliasIndex::new(weights)
+                .map_err(|e| Error::InvalidArguments(e.to_string()).span(span))?,
+        ))
+    }
+}
+
+//------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value::Value;
+
+    #[test]
+    fn test_compile_checks() {
+        struct TestCase {
+            name: &'static str,
+            function: &'static dyn Function,
+            args: Vec<Value>,
+            error: &'static str,
+        }
+
+        fn array_of_numbers(values: &[i64]) -> Value {
+            Value::Array(Array::from_values(values.iter().map(|v| Value::Number((*v).into()))))
+        }
+
+        let test_cases = vec![
+            TestCase {
+                name: "rand.weighted expected an array",
+                function: &Weighted,
+                args: vec![30.into()],
+                error: "cannot convert 30 into array",
+            },
+            TestCase {
+                name: "rand.weighted must not be an empty array",
+                function: &Weighted,
+                args: vec![array_of_numbers(&[])],
+                error: "No weights provided in distribution",
+            },
+            TestCase {
+                name: "rand.weighted must not have negative weight",
+                function: &Weighted,
+                args: vec![array_of_numbers(&[55, -5])],
+                error: "A weight is invalid in distribution",
+            },
+        ];
+
+        let ctx = CompileContext::new(0);
+        let span = Span::default();
+        for tc in test_cases {
+            let args = tc.args.into_iter().map(|v| v.no_span()).collect();
+            let actual_error = tc
+                .function
+                .compile(&ctx, span, args)
+                .expect_err(tc.name)
+                .inner
+                .to_string();
+            assert_eq!(tc.error, actual_error, "{}", tc.name);
+        }
+    }
 }

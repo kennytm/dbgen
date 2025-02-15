@@ -317,6 +317,11 @@ From highest to lowest precedence:
     The numbers are uniform in its *bit-pattern* across the entire supported range
     (±3.4 × 10<sup>38</sup> for `f32`, ±1.8 × 10<sup>308</sup> for `f64`)
 
+* **rand.weighted(ARRAY[10, 25, 40, 75])**
+
+    Generates a random positive integer 1 ≤ *x* ≤ 4 which are distributed in a
+    10:25:40:75 ratio in probability.
+
 * **rand.uuid()**
 
     Generates a [version 4 (random) UUID](https://tools.ietf.org/html/rfc4122#section-4.4).
