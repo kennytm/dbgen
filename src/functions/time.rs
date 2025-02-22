@@ -1,11 +1,11 @@
 //! Time functions.
 
-use super::{args_1, Arguments, Function};
+use super::{Arguments, Function, args_1};
 use crate::{
     error::Error,
-    eval::{CompileContext, C},
-    span::{ResultExt, Span, S},
-    value::{Value, TIMESTAMP_FORMAT},
+    eval::{C, CompileContext},
+    span::{ResultExt, S, Span},
+    value::{TIMESTAMP_FORMAT, Value},
 };
 
 use chrono::NaiveDateTime;

@@ -2,8 +2,8 @@
 
 use crate::{
     error::Error,
-    eval::{CompileContext, C},
-    span::{ResultExt, Span, SpanExt, S},
+    eval::{C, CompileContext},
+    span::{ResultExt, S, Span, SpanExt},
     value::Value,
 };
 

@@ -63,7 +63,9 @@ pub enum Error {
     },
 
     /// Derived table name does not match that of the derived table directive.
-    #[error("derived table name in the FOR EACH ROW and CREATE TABLE statements do not match ({for_each_row} vs {create_table})")]
+    #[error(
+        "derived table name in the FOR EACH ROW and CREATE TABLE statements do not match ({for_each_row} vs {create_table})"
+    )]
     DerivedTableNameMismatch {
         /// The table name in the FOR EACH ROW statement
         for_each_row: String,

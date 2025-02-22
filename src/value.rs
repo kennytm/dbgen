@@ -240,7 +240,7 @@ impl Value {
             _ => {
                 return Err(Error::InvalidArguments(format!(
                     "cannot compute remainder of {self} by {other}"
-                )))
+                )));
             }
         })
     }
@@ -262,7 +262,7 @@ impl Value {
                 Self::Array(_) => {
                     return Err(Error::InvalidArguments(
                         "cannot concatenate arrays using || operator".to_owned(),
-                    ))
+                    ));
                 }
             }
         }

@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
+use criterion::{Bencher, Criterion, black_box, criterion_group, criterion_main};
 use dbgen::{
     eval::{CompileContext, State},
     format::Options,
@@ -9,7 +9,7 @@ use rand::SeedableRng;
 use rand_hc::Hc128Rng;
 use std::{
     fs::read_to_string,
-    io::{sink, Write},
+    io::{Write, sink},
 };
 
 fn run_benchmark(b: &mut Bencher<'_>, path: &str) {

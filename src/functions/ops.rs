@@ -1,10 +1,10 @@
 //! Numerical and logical functions.
 
-use super::{args_1, args_2, iter_args, Arguments, Function};
+use super::{Arguments, Function, args_1, args_2, iter_args};
 use crate::{
     error::Error,
-    eval::{CompileContext, C},
-    span::{ResultExt, Span, S},
+    eval::{C, CompileContext},
+    span::{ResultExt, S, Span},
     value::Value,
 };
 use std::cmp::Ordering;

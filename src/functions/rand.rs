@@ -1,12 +1,12 @@
 //! Random generator functions.
 
-use super::{args_1, args_2, args_3, require, Arguments, Function};
+use super::{Arguments, Function, args_1, args_2, args_3, require};
 use crate::{
     array::Array,
     error::Error,
-    eval::{CompileContext, C},
+    eval::{C, CompileContext},
     number::Number,
-    span::{ResultExt, Span, SpanExt, S},
+    span::{ResultExt, S, Span, SpanExt},
 };
 use std::convert::TryFrom as _;
 
@@ -204,7 +204,7 @@ impl Function for Weighted {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
         let weights = args_1::<Array>(span, args, None)?
             .iter()
-            .map(|v| v.try_into())
+            .map(f64::try_from)
             .collect::<Result<_, _>>()
             .span_err(span)?;
         Ok(C::RandWeighted(

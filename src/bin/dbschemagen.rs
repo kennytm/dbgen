@@ -1,5 +1,5 @@
 use clap::Parser as _;
-use dbgen::schemagen_cli::{print_script, Args};
+use dbgen::schemagen_cli::{Args, print_script};
 
 fn main() {
     let args = Args::parse();

@@ -3,8 +3,8 @@
 use super::{Arguments, Function};
 use crate::{
     error::Error,
-    eval::{CompileContext, C},
-    span::{Span, SpanExt, S},
+    eval::{C, CompileContext},
+    span::{S, Span, SpanExt},
 };
 
 /// The `debug.panic` function.

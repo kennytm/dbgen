@@ -5,12 +5,12 @@ use crate::{
     error::Error,
     functions::{Arguments, Function},
     parser::{Expr, QName},
-    span::{ResultExt, Span, SpanExt, S},
+    span::{ResultExt, S, Span, SpanExt},
     value::Value,
 };
 use chrono::{DateTime, NaiveDateTime};
-use rand::{distributions::Bernoulli, Rng, RngCore};
-use rand_distr::{weighted_alias::WeightedAliasIndex, LogNormal, Uniform, Zipf};
+use rand::{Rng, RngCore, distributions::Bernoulli};
+use rand_distr::{LogNormal, Uniform, Zipf, weighted_alias::WeightedAliasIndex};
 use rand_regex::EncodedString;
 use std::{fmt, ops::Range, sync::Arc};
 

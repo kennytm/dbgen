@@ -1,6 +1,6 @@
 use clap::Parser as _;
 use dbgen::{
-    cli::{run, Args},
+    cli::{Args, run},
     span::Registry,
 };
 

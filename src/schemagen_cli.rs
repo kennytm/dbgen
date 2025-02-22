@@ -9,8 +9,8 @@
 
 use crate::{error::Error, parser::QName};
 use clap::{Parser, ValueEnum};
-use rand::{rngs::OsRng, seq::SliceRandom, Rng, RngCore};
-use rand_distr::{weighted_alias::WeightedAliasIndex, Distribution, Geometric, LogNormal, Pareto};
+use rand::{Rng, RngCore, rngs::OsRng, seq::SliceRandom};
+use rand_distr::{Distribution, Geometric, LogNormal, Pareto, weighted_alias::WeightedAliasIndex};
 use std::{
     collections::{BTreeSet, HashSet},
     f64::consts::LOG2_10,
@@ -80,7 +80,7 @@ impl FromStr for Dialect {
                 return Err(Error::UnsupportedCliParameter {
                     kind: "SQL dialect",
                     value: dialect.to_owned(),
-                })
+                });
             }
         })
     }

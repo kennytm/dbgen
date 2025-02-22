@@ -1,11 +1,11 @@
 //! Array functions.
 
-use super::{args_1, args_2, args_3, Arguments, Function};
+use super::{Arguments, Function, args_1, args_2, args_3};
 use crate::{
     array::{Array, Permutation},
     error::Error,
-    eval::{CompileContext, C},
-    span::{ResultExt as _, Span, SpanExt as _, S},
+    eval::{C, CompileContext},
+    span::{ResultExt as _, S, Span, SpanExt as _},
     value::Value,
 };
 use std::{cmp::Ordering, sync::Arc};

@@ -6,8 +6,8 @@ use crate::{
     format::{CsvFormat, Format, Options, SqlFormat, SqlInsertSetFormat},
     lexctr::LexCtr,
     parser::{QName, Template},
-    span::{Registry, ResultExt, SpanExt, S},
-    value::{Value, TIMESTAMP_FORMAT},
+    span::{Registry, ResultExt, S, SpanExt},
+    value::{TIMESTAMP_FORMAT, Value},
     writer::{self, Writer},
 };
 
@@ -18,13 +18,13 @@ use flate2::write::GzEncoder;
 use muldiv::MulDiv;
 use pbr::{MultiBar, Units};
 use rand::{
-    distributions::{Distribution, Standard},
-    rngs::{mock::StepRng, OsRng},
     Rng, RngCore, SeedableRng,
+    distributions::{Distribution, Standard},
+    rngs::{OsRng, mock::StepRng},
 };
 use rayon::{
-    iter::{IntoParallelIterator, ParallelIterator},
     ThreadPoolBuilder,
+    iter::{IntoParallelIterator, ParallelIterator},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
@@ -32,8 +32,8 @@ use std::{
     collections::HashMap,
     convert::TryInto,
     fmt,
-    fs::{create_dir_all, read_to_string, File},
-    io::{self, sink, stdin, BufWriter, Read, Write},
+    fs::{File, create_dir_all, read_to_string},
+    io::{self, BufWriter, Read, Write, sink, stdin},
     mem,
     path::{Path, PathBuf},
     str::FromStr,
@@ -283,11 +283,7 @@ impl Default for Args {
 
 fn div_rem_plus_one(n: u64, d: u64) -> (u64, u64) {
     let (div, rem) = (n / d, n % d);
-    if rem == 0 {
-        (div, d)
-    } else {
-        (div + 1, rem)
-    }
+    if rem == 0 { (div, d) } else { (div + 1, rem) }
 }
 
 // ALLOW_REASON: the arguments of serde helper must be references.
@@ -443,7 +439,7 @@ pub fn run(args: Args, span_registry: &mut Registry) -> Result<(), S<Error>> {
                 kind: "template",
                 value: String::new(),
             }
-            .no_span())
+            .no_span());
         }
     };
     let mut template = Template::parse(&input, &args.initialize, args.schema_name.as_deref(), span_registry)?;
@@ -672,7 +668,7 @@ impl FromStr for RngName {
                 return Err(Error::UnsupportedCliParameter {
                     kind: "RNG",
                     value: name.to_owned(),
-                })
+                });
             }
         })
     }
@@ -717,7 +713,7 @@ impl FromStr for FormatName {
                 return Err(Error::UnsupportedCliParameter {
                     kind: "output format",
                     value: name.to_owned(),
-                })
+                });
             }
         })
     }
@@ -789,7 +785,7 @@ impl FromStr for CompressionName {
                 return Err(Error::UnsupportedCliParameter {
                     kind: "compression format",
                     value: name.to_owned(),
-                })
+                });
             }
         })
     }
@@ -844,7 +840,7 @@ impl FromStr for ComponentName {
                 return Err(Error::UnsupportedCliParameter {
                     kind: "component",
                     value: name.to_owned(),
-                })
+                });
             }
         })
     }

@@ -1,14 +1,14 @@
 //! Encoding and decoding functions.
 
-use data_encoding::{Encoding, BASE64, BASE64URL_NOPAD};
+use data_encoding::{BASE64, BASE64URL_NOPAD, Encoding};
 use data_encoding_macro::new_encoding;
 
-use super::{args_1, Arguments, Function};
+use super::{Arguments, Function, args_1};
 use crate::{
     bytes::ByteString,
     error::Error,
-    eval::{CompileContext, C},
-    span::{ResultExt, Span, S},
+    eval::{C, CompileContext},
+    span::{ResultExt, S, Span},
 };
 
 const HEX_ENCODING: Encoding = new_encoding! {

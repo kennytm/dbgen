@@ -1,10 +1,10 @@
 use clap::{
-    self,
+    self, ArgAction, Command,
     builder::{PossibleValuesParser, ValueParser},
-    value_parser, ArgAction, Command,
+    value_parser,
 };
 use data_encoding::HEXLOWER_PERMISSIVE;
-use rand::{rngs::OsRng, RngCore as _};
+use rand::{RngCore as _, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},

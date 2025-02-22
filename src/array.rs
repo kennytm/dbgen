@@ -9,7 +9,7 @@ use std::{
 };
 
 use auto_enums::auto_enum;
-use rand::{seq::SliceRandom as _, Rng as _, RngCore};
+use rand::{Rng as _, RngCore, seq::SliceRandom as _};
 
 /// Parameters for a balanced numerical Feistel network.
 //
@@ -136,7 +136,7 @@ impl Feistel {
                 return if let Some(modulo) = self.modulo {
                     u64::from(a) * u64::from(modulo.get()) + u64::from(b)
                 } else {
-                    u64::from(a) << 32 | u64::from(b)
+                    (u64::from(a) << 32) | u64::from(b)
                 };
             }
         }

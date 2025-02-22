@@ -1,13 +1,13 @@
 use chrono::NaiveDateTime;
 use dbgen::{
+    FULL_VERSION,
     error::Error,
     eval::{CompileContext, Schema, State},
     format::Options,
     parser::Template,
     span::{Registry, ResultExt, S},
-    value::{Value, TIMESTAMP_FORMAT},
+    value::{TIMESTAMP_FORMAT, Value},
     writer::{Env, Writer},
-    FULL_VERSION,
 };
 use rand::{Rng, SeedableRng};
 use rand_hc::Hc128Rng;

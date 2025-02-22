@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, Command};
 use dbdbgen::{cli::ensure_seed, error::Error, jsvm::Vm};
-use dbgen::{span::Registry, FULL_VERSION};
+use dbgen::{FULL_VERSION, span::Registry};
 use std::error::Error as StdError;
 
 fn run() -> Result<(), Error> {

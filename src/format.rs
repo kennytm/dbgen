@@ -3,7 +3,7 @@
 use crate::{bytes::ByteString, eval::Schema, value::Value};
 
 use chrono::{Datelike, NaiveDateTime, Timelike};
-use memchr::{memchr2_iter, memchr3_iter, memchr_iter};
+use memchr::{memchr_iter, memchr2_iter, memchr3_iter};
 use rand_regex::Encoding;
 use std::{
     borrow::Cow,

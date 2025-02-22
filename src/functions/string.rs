@@ -1,11 +1,11 @@
 //! String functions.
 
-use super::{args_1, args_3, args_4, Arguments, Function};
+use super::{Arguments, Function, args_1, args_3, args_4};
 use crate::{
     bytes::ByteString,
     error::Error,
-    eval::{CompileContext, C},
-    span::{Span, SpanExt, S},
+    eval::{C, CompileContext},
+    span::{S, Span, SpanExt},
     value::Value,
 };
 use std::{convert::TryInto, ops::Range};

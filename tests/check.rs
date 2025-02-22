@@ -1,14 +1,14 @@
 use dbgen::{
-    cli::{run, Args},
+    cli::{Args, run},
     span::Registry,
 };
-use diff::{lines, Result as DiffResult};
+use diff::{Result as DiffResult, lines};
 use serde_json::from_reader;
 use std::{
     env,
     error::Error,
     ffi::OsStr,
-    fs::{read, read_dir, remove_file, File},
+    fs::{File, read, read_dir, remove_file},
     path::Path,
     str::from_utf8,
 };

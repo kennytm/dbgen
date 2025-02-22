@@ -5,11 +5,11 @@ use self::derived::TemplateParser;
 use crate::{
     error::Error,
     functions::{self, Function},
-    span::{Registry, ResultExt, Span, SpanExt, S},
+    span::{Registry, ResultExt, S, Span, SpanExt},
     value::Value,
 };
 
-use pest::{iterators::Pairs, Parser};
+use pest::{Parser, iterators::Pairs};
 use std::{collections::HashMap, mem, ops::Range};
 
 mod derived {
@@ -500,11 +500,13 @@ impl<'a> Allocator<'a> {
                 | Rule::op_semicolon => {
                     match op {
                         Some(o) if o != rule => {
-                            args = vec![Expr::Function {
-                                function: function_from_rule(o),
-                                args,
-                            }
-                            .span(self.register(span))];
+                            args = vec![
+                                Expr::Function {
+                                    function: function_from_rule(o),
+                                    args,
+                                }
+                                .span(self.register(span)),
+                            ];
                         }
                         _ => {}
                     }
@@ -754,9 +756,10 @@ impl<'a> Allocator<'a> {
                     let span = pair.as_span();
                     return Ok(Expr::Function {
                         function: &functions::time::Timestamp,
-                        args: vec![self
-                            .expr_primary_from_pairs(pair.into_inner())?
-                            .span(self.register(span))],
+                        args: vec![
+                            self.expr_primary_from_pairs(pair.into_inner())?
+                                .span(self.register(span)),
+                        ],
                     });
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
@@ -775,9 +778,10 @@ impl<'a> Allocator<'a> {
                     let span = pair.as_span();
                     return Ok(Expr::Function {
                         function: &functions::codec::DECODE_HEX,
-                        args: vec![self
-                            .expr_primary_from_pairs(pair.into_inner())?
-                            .span(self.register(span))],
+                        args: vec![
+                            self.expr_primary_from_pairs(pair.into_inner())?
+                                .span(self.register(span)),
+                        ],
                     });
                 }
                 r => unreachable!("Unexpected rule {:?}", r),
