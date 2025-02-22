@@ -9,7 +9,6 @@ use crate::{
     span::{ResultExt, Span, SpanExt, S},
 };
 use std::convert::TryFrom as _;
-use zipf::ZipfDistribution;
 
 //------------------------------------------------------------------------------
 
@@ -82,8 +81,8 @@ pub struct Zipf;
 impl Function for Zipf {
     fn compile(&self, _: &CompileContext, span: Span, args: Arguments) -> Result<C, S<Error>> {
         let (count, exponent) = args_2(span, args, None, None)?;
-        Ok(C::RandZipf(ZipfDistribution::new(count, exponent).map_err(|()| {
-            Error::InvalidArguments(format!("count ({count}) and exponent ({exponent}) must be positive")).span(span)
+        Ok(C::RandZipf(rand_distr::Zipf::new(count, exponent).map_err(|e| {
+            Error::InvalidArguments(format!("{e} (n = {count}, s = {exponent})")).span(span)
         })?))
     }
 }

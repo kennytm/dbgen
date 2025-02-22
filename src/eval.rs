@@ -10,10 +10,9 @@ use crate::{
 };
 use chrono::{DateTime, NaiveDateTime};
 use rand::{distributions::Bernoulli, Rng, RngCore};
-use rand_distr::{weighted_alias::WeightedAliasIndex, LogNormal, Uniform};
+use rand_distr::{weighted_alias::WeightedAliasIndex, LogNormal, Uniform, Zipf};
 use rand_regex::EncodedString;
 use std::{fmt, ops::Range, sync::Arc};
-use zipf::ZipfDistribution;
 
 /// Environment information shared by all compilations
 #[derive(Clone, Debug)]
@@ -202,7 +201,7 @@ pub enum C {
     /// Uniform distribution for `f64`.
     RandUniformF64(Uniform<f64>),
     /// Zipfian distribution.
-    RandZipf(ZipfDistribution),
+    RandZipf(Zipf<f64>),
     /// Log-normal distribution.
     RandLogNormal(LogNormal<f64>),
     /// Bernoulli distribution for `bool` (i.e. a weighted random boolean).
