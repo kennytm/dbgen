@@ -2,7 +2,7 @@
 name = "dbdbgen"
 version = "0.8.0"
 authors = ["kennytm <kennytm@gmail.com>"]
-edition = "2018"
+edition = "2024"
 description = "Generate complete database using dbgen"
 
 [dependencies]

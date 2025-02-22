@@ -92,7 +92,7 @@ fn try_generate_rows(
 
     // we perform this double seeding to be compatible with the CLI.
     let mut seeding_rng = Hc128Rng::from_seed(*seed);
-    let mut rng = move || Box::new(Hc128Rng::from_seed(seeding_rng.gen()));
+    let mut rng = move || Box::new(Hc128Rng::from_seed(seeding_rng.r#gen()));
 
     if !template.global_exprs.is_empty() {
         let row_gen = ctx.compile_row(template.global_exprs)?;
