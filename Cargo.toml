@@ -36,9 +36,8 @@ data-encoding = { workspace = true }
 # syn is currently duplicated because of this, wait until next release that includes https://github.com/ia0/data-encoding/pull/108
 data-encoding-macro = "0.1"
 regex-syntax = "0.8"
-# the progress bar will prevent dbgen from finishing
-# forcing a git dependency until https://github.com/a8m/pb/pull/120 is released
-pbr = { version = "1.1", optional = true, git = "https://github.com/a8m/pb.git", rev = "d60b964be6a234c933fdf95d7b7851f383e21206" }
+# switch back to `pbr` once https://github.com/a8m/pb/pull/120 is officially released
+pbr-120 = { version = "1.1", optional = true }
 num-traits = "0.2"
 rayon = { version = "1.7", optional = true }
 chrono = { workspace = true }
@@ -81,7 +80,7 @@ vergen = { version = "8.2", default-features = false, features = ["git", "gitcl"
 default = ["cli"]
 cli = [
     "dep:clap",
-    "dep:pbr",
+    "dep:pbr-120",
     "dep:rayon",
     "serde/derive",
     "dep:muldiv",
