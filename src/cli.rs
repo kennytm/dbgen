@@ -171,7 +171,7 @@ pub struct Args {
     pub quiet: bool,
 
     /// Time zone used for timestamps. Deprecated, does not have any effect.
-    #[arg(long, hide(true))]
+    #[arg(long, hide(true), default_value = "UTC")]
     #[serde(skip_serializing)]
     pub time_zone: String,
 
