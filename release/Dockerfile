@@ -1,8 +1,8 @@
-FROM centos:7
+FROM rockylinux:9
 
-RUN yum install gcc git -y
+RUN dnf install g++ git -y
 
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain 1.50.0 --profile minimal
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain 1.87.0 --profile minimal
 ENV PATH /root/.cargo/bin:$PATH
 
-# docker build -t kennytm/dbgen-build-env .
+# sudo docker build --network=host -t kennytm/dbgen-build-env .

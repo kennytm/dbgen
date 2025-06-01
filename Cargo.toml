@@ -109,3 +109,5 @@ panic = "abort"
 lto = true
 codegen-units = 1
 debug = 2
+split-debuginfo = "packed"
+strip = true
