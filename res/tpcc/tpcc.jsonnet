@@ -30,6 +30,11 @@ local dbdbgen = import 'dbdbgen.libsonnet';
             help: 'Enable foreign keys in the generated schema.',
             type: 'bool',
         },
+        secondary_key: {
+            long: 'secondary-key',
+            help: 'Enable secondary keys in the generated schema (for MySQL only).',
+            type: 'bool',
+        },
 
         // TPC-C output contains no special characters.
         escape_backslash:: null,
@@ -44,6 +49,7 @@ local dbdbgen = import 'dbdbgen.libsonnet';
             prefix: m.table_prefix,
             warehouses: m.warehouses,
             fk: if m.foreign_key then '' else '-- ',
+            sk: if m.secondary_key then '' else '-- ',
         };
         [
             /* 0_config
@@ -372,6 +378,7 @@ local dbdbgen = import 'dbdbgen.libsonnet';
                     c_data         varchar(500),
                         /*{{ rand.regex('[0-9a-zA-Z]{300,500}') }}*/
                     %(fk)sforeign key (c_w_id, c_d_id) references %(prefix)sdistrict (d_w_id, d_id),
+                    %(sk)skey (c_w_id, c_d_id, c_last, c_first),
                     primary key (c_w_id, c_d_id, c_id)
                     );
                 ||| % format,
@@ -396,15 +403,15 @@ local dbdbgen = import 'dbdbgen.libsonnet';
                 rows_per_file: 3e6,
                 template_string: |||
                     create table %(prefix)shistory (
-                        h_c_id   integer,
+                        h_c_id   integer not null,
                             /*{{ mod(rownum-1, 3000)+1 }}*/
-                        h_c_d_id integer,
+                        h_c_d_id integer not null,
                             /*{{ @d_id := mod(div(rownum-1, 3000), 10)+1 }}*/
-                        h_c_w_id integer,
+                        h_c_w_id integer not null,
                             /*{{ @w_id := div(rownum-1, 30000)+1 }}*/
-                        h_d_id   integer,
+                        h_d_id   integer not null,
                             /*{{ @d_id }}*/
-                        h_w_id   integer,
+                        h_w_id   integer not null,
                             /*{{ @w_id }}*/
                         h_date   timestamp,
                             /*{{ current_timestamp }}*/
@@ -414,6 +421,8 @@ local dbdbgen = import 'dbdbgen.libsonnet';
                             /*{{ rand.regex('[0-9a-zA-Z]{12,24}') }}*/
                         %(fk)s,foreign key (h_c_w_id, h_c_d_id, h_c_id) references %(prefix)scustomer (c_w_id, c_d_id, c_id)
                         %(fk)s,foreign key (h_w_id, h_d_id) references %(prefix)sdistrict (d_w_id, d_id)
+                        %(sk)s,key (h_w_id)
+                        %(sk)s,key (h_c_w_id)
                     );
                 ||| % format,
             },
@@ -478,6 +487,7 @@ local dbdbgen = import 'dbdbgen.libsonnet';
                         o_entry_d    timestamp,
                             /*{{ @o_entry_d := current_timestamp }}*/
                         %(fk)sforeign key (o_w_id, o_d_id, o_c_id) references %(prefix)scustomer (c_w_id, c_d_id, c_id),
+                        %(sk)skey (o_w_id, o_d_id, o_c_id, o_id),
                         primary key (o_w_id, o_d_id, o_id)
                     );
 
