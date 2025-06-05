@@ -319,7 +319,7 @@ local dbdbgen = import 'dbdbgen.libsonnet';
                         @last_names := array['BAR', 'OUGHT', 'ABLE', 'PRI', 'PRES', 'ESE', 'ANTI', 'CALLY', 'ATION', 'EING'];
                         @nurand_c := %(nurand_c)d
                     }}*/
-                    create table bmsql_customer (
+                    create table %(prefix)scustomer (
                     c_w_id         integer not null,
                         /*{{ div(rownum-1, 30000)+1 }}*/
                     c_d_id         integer not null,
@@ -396,8 +396,6 @@ local dbdbgen = import 'dbdbgen.libsonnet';
                 rows_per_file: 3e6,
                 template_string: |||
                     create table %(prefix)shistory (
-                        hist_id  serial,
-                            /*{{ rownum }}*/
                         h_c_id   integer,
                             /*{{ mod(rownum-1, 3000)+1 }}*/
                         h_c_d_id integer,
@@ -412,11 +410,10 @@ local dbdbgen = import 'dbdbgen.libsonnet';
                             /*{{ current_timestamp }}*/
                         h_amount decimal(6,2),
                             /*{{ 10.0 }}*/
-                        h_data   varchar(24),
+                        h_data   varchar(24)
                             /*{{ rand.regex('[0-9a-zA-Z]{12,24}') }}*/
-                        %(fk)sforeign key (h_c_w_id, h_c_d_id, h_c_id) references %(prefix)scustomer (c_w_id, c_d_id, c_id),
-                        %(fk)sforeign key (h_w_id, h_d_id) references %(prefix)sdistrict (d_w_id, d_id),
-                        primary key (hist_id)
+                        %(fk)s,foreign key (h_c_w_id, h_c_d_id, h_c_id) references %(prefix)scustomer (c_w_id, c_d_id, c_id)
+                        %(fk)s,foreign key (h_w_id, h_d_id) references %(prefix)sdistrict (d_w_id, d_id)
                     );
                 ||| % format,
             },
